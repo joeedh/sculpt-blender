@@ -1019,7 +1019,8 @@ static PyObject *bpy_bmesh_from_object(BPy_BMesh *self, PyObject *args, PyObject
 
 	BM_mesh_bm_from_me(
 	        bm, me_eval, (&(struct BMeshFromMeshParams){
-	            .calc_face_normal = use_fnorm
+	            .calc_face_normal = use_fnorm,
+				.cd_mask_extra = CD_MASK_ORIGINDEX
 	        }));
 
 	Py_RETURN_NONE;

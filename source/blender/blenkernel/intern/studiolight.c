@@ -1252,6 +1252,7 @@ void BKE_studiolight_free(void)
 	}
 }
 
+
 struct StudioLight *BKE_studiolight_find_default(int flag)
 {
 	const char *default_name = "";

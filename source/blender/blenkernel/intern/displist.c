@@ -329,6 +329,7 @@ static void curve_to_displist(Curve *cu, ListBase *nubase, ListBase *dispbase,
 			if (!BKE_nurb_check_valid_u(nu)) {
 				/* pass */
 			}
+
 			else if (nu->type == CU_BEZIER) {
 				/* count */
 				len = 0;
@@ -393,6 +394,82 @@ static void curve_to_displist(Curve *cu, ListBase *nubase, ListBase *dispbase,
 							                              bezt->vec[0][j],
 							                              bezt->vec[1][j],
 							                              data + j, resolu, 3 * sizeof(float));
+						}
+
+						data += 3 * resolu;
+					}
+
+					if (a == 0 && dl->type == DL_SEGM) {
+						copy_v3_v3(data, bezt->vec[1]);
+					}
+
+					prevbezt = bezt;
+					bezt++;
+				}
+			}
+
+			else if (nu->type == CU_CLOTHOID) {
+				/* count */
+				len = 0;
+				a = nu->pntsu - 1;
+				if (nu->flagu & CU_NURB_CYCLIC) a++;
+
+				prevbezt = nu->bezt;
+				bezt = prevbezt + 1;
+				while (a--) {
+					if (a == 0 && (nu->flagu & CU_NURB_CYCLIC))
+						bezt = nu->bezt;
+
+					if (prevbezt->h2 == HD_VECT && bezt->h1 == HD_VECT)
+						len++;
+					else
+						len += resolu;
+
+					if (a == 0 && (nu->flagu & CU_NURB_CYCLIC) == 0)
+						len++;
+
+					prevbezt = bezt;
+					bezt++;
+				}
+
+				dl = MEM_callocN(sizeof(DispList), "makeDispListbez");
+				/* len+1 because of 'forward_diff_bezier' function */
+				dl->verts = MEM_mallocN((len + 1) * sizeof(float[3]), "dlverts");
+				BLI_addtail(dispbase, dl);
+				dl->parts = 1;
+				dl->nr = len;
+				dl->col = nu->mat_nr;
+				dl->charidx = nu->charidx;
+
+				data = dl->verts;
+
+				/* check that (len != 2) so we don't immediately loop back on ourselves */
+				if (nu->flagu & CU_NURB_CYCLIC && (dl->nr != 2)) {
+					dl->type = DL_POLY;
+					a = nu->pntsu;
+				} else {
+					dl->type = DL_SEGM;
+					a = nu->pntsu - 1;
+				}
+
+				prevbezt = nu->bezt;
+				bezt = prevbezt + 1;
+
+				while (a--) {
+					if (a == 0 && dl->type == DL_POLY)
+						bezt = nu->bezt;
+
+					if (prevbezt->h2 == HD_VECT && bezt->h1 == HD_VECT) {
+						copy_v3_v3(data, prevbezt->vec[1]);
+						data += 3;
+					} else {
+						int j;
+						for (j = 0; j < 3; j++) {
+							BKE_curve_forward_diff_bezier(prevbezt->vec[1][j],
+								prevbezt->vec[2][j],
+								bezt->vec[0][j],
+								bezt->vec[1][j],
+								data + j, resolu, 3 * sizeof(float));
 						}
 
 						data += 3 * resolu;

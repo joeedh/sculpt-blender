@@ -836,7 +836,7 @@ static int arg_handle_debug_mode_set(int UNUSED(argc), const char **UNUSED(argv)
 	printf(BLEND_VERSION_STRING_FMT);
 	MEM_set_memory_debug();
 #ifndef NDEBUG
-	BLI_mempool_set_memory_debug();
+	//BLI_mempool_set_memory_debug();
 #endif
 
 #ifdef WITH_BUILDINFO

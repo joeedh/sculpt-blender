@@ -120,6 +120,10 @@ PyDoc_STRVAR(bpy_bmlayeraccess_collection__paint_mask_doc,
 PyDoc_STRVAR(bpy_bmlayeraccess_collection__face_map_doc,
 "FaceMap custom-data layer.\n\ntype: :class:`BMLayerCollection`"
 );
+PyDoc_STRVAR(bpy_bmlayeraccess_collection__origindex_doc,
+	"Original index layer for modifier-applied bmeshes\n\ntype: :class:`BMLayerCollection`"
+);
+
 #ifdef WITH_FREESTYLE
 PyDoc_STRVAR(bpy_bmlayeraccess_collection__freestyle_edge_doc,
 "Accessor for Freestyle edge layer.\n\ntype: :class:`BMLayerCollection`"
@@ -200,6 +204,7 @@ static PyGetSetDef bpy_bmlayeraccess_vert_getseters[] = {
 	{(char *)"bevel_weight", (getter)bpy_bmlayeraccess_collection_get, (setter)NULL, (char *)bpy_bmlayeraccess_collection__bevel_weight_doc, (void *)CD_BWEIGHT},
 	{(char *)"skin",         (getter)bpy_bmlayeraccess_collection_get, (setter)NULL, (char *)bpy_bmlayeraccess_collection__skin_doc, (void *)CD_MVERT_SKIN},
 	{(char *)"paint_mask",   (getter)bpy_bmlayeraccess_collection_get, (setter)NULL, (char *)bpy_bmlayeraccess_collection__paint_mask_doc, (void *)CD_PAINT_MASK},
+	{(char *)"origindex",    (getter)bpy_bmlayeraccess_collection_get, (setter)NULL, (char *)bpy_bmlayeraccess_collection__origindex_doc, (void *)CD_ORIGINDEX },
 
 	{NULL, NULL, NULL, NULL, NULL} /* Sentinel */
 };
@@ -213,7 +218,9 @@ static PyGetSetDef bpy_bmlayeraccess_edge_getseters[] = {
 	{(char *)"crease",       (getter)bpy_bmlayeraccess_collection_get, (setter)NULL, (char *)bpy_bmlayeraccess_collection__crease_doc, (void *)CD_CREASE},
 #ifdef WITH_FREESTYLE
 	{(char *)"freestyle", (getter)bpy_bmlayeraccess_collection_get, (setter)NULL, (char *)bpy_bmlayeraccess_collection__freestyle_edge_doc, (void *)CD_FREESTYLE_EDGE},
+	{(char *)"origindex",    (getter)bpy_bmlayeraccess_collection_get, (setter)NULL, (char *)bpy_bmlayeraccess_collection__origindex_doc, (void *)CD_ORIGINDEX },
 #endif
+	{(char *)"origindex",    (getter)bpy_bmlayeraccess_collection_get, (setter)NULL, (char *)bpy_bmlayeraccess_collection__origindex_doc, (void *)CD_ORIGINDEX },
 
 	{NULL, NULL, NULL, NULL, NULL} /* Sentinel */
 };
@@ -227,6 +234,7 @@ static PyGetSetDef bpy_bmlayeraccess_face_getseters[] = {
 #ifdef WITH_FREESTYLE
 	{(char *)"freestyle", (getter)bpy_bmlayeraccess_collection_get, (setter)NULL, (char *)bpy_bmlayeraccess_collection__freestyle_face_doc, (void *)CD_FREESTYLE_FACE},
 #endif
+	{(char *)"origindex",    (getter)bpy_bmlayeraccess_collection_get, (setter)NULL, (char *)bpy_bmlayeraccess_collection__origindex_doc, (void *)CD_ORIGINDEX },
 
 	{NULL, NULL, NULL, NULL, NULL} /* Sentinel */
 };
@@ -987,6 +995,7 @@ PyObject *BPy_BMLayerItem_GetItem(BPy_BMElem *py_ele, BPy_BMLayerItem *py_layer)
 			ret = PyFloat_FromDouble(*(float *)value);
 			break;
 		}
+		case CD_ORIGINDEX:
 		case CD_PROP_INT:
 		case CD_FACEMAP:
 		{
@@ -1068,6 +1077,7 @@ int BPy_BMLayerItem_SetItem(BPy_BMElem *py_ele, BPy_BMLayerItem *py_layer, PyObj
 			}
 			break;
 		}
+		case CD_ORIGINDEX:
 		case CD_PROP_INT:
 		case CD_FACEMAP:
 		{

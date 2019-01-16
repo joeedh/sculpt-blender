@@ -61,6 +61,7 @@
 #include "BKE_library_query.h"
 #include "BKE_library_remap.h"
 #include "BKE_main.h"
+#include "BKE_clothoid.h"
 #include "BKE_object.h"
 #include "BKE_material.h"
 
@@ -282,6 +283,8 @@ void BKE_curve_curve_dimension_update(Curve *cu)
 			/* since the handles are moved they need to be auto-located again */
 			if (nu->type == CU_BEZIER)
 				BKE_nurb_handles_calc(nu);
+			else if (nu->type == CU_CLOTHOID)
+				BKE_clothoid_update(nu);
 		}
 	}
 }
@@ -383,7 +386,7 @@ bool BKE_nurbList_index_get_co(ListBase *nurb, const int index, float r_co[3])
 
 	for (nu = nurb->first; nu; nu = nu->next) {
 		int tot_nu;
-		if (nu->type == CU_BEZIER) {
+		if (nu->type == CU_BEZIER || nu->type == CU_CLOTHOID) {
 			tot_nu = nu->pntsu;
 			if (index - tot < tot_nu) {
 				copy_v3_v3(r_co, nu->bezt[index - tot].vec[1]);
@@ -566,7 +569,7 @@ void BKE_nurb_test_2d(Nurb *nu)
 	if ((nu->flag & CU_2D) == 0)
 		return;
 
-	if (nu->type == CU_BEZIER) {
+	if (nu->type == CU_BEZIER || nu->type == CU_CLOTHOID) {
 		a = nu->pntsu;
 		bezt = nu->bezt;
 		while (a--) {
@@ -618,6 +621,8 @@ void BKE_nurb_minmax(Nurb *nu, bool use_radius, float min[3], float max[3])
 			minmax_v3v3_v3(min, max, bezt->vec[2]);
 			bezt++;
 		}
+	} else if (nu->type == CU_CLOTHOID) {
+		BKE_clothspline_minmax(nu, use_radius, min, max);
 	}
 	else {
 		a = nu->pntsu * nu->pntsv;
@@ -669,6 +674,9 @@ float BKE_nurb_calc_length(const Nurb *nu, int resolution)
 			prevbp = bp;
 			++bp;
 		}
+	}
+	else if (nu->type == CU_CLOTHOID) {
+		return BKE_clothspline_get_length(nu);
 	}
 	else if (nu->type == CU_BEZIER) {
 		points = MEM_mallocN(sizeof(float[3]) * (resolu + 1), "getLength_bezier");
@@ -2867,6 +2875,139 @@ void BKE_curve_bevelList_make(Object *ob, ListBase *nurbs, bool for_render)
 					bevlist_firstlast_direction_calc_from_bpoint(nu, bl);
 				}
 			}
+			else if (nu->type == CU_CLOTHOID) {
+				/* in case last point is not cyclic */
+				len = segcount * resolu + 1;
+
+				bl = MEM_callocN(sizeof(BevList), "makeBevelBPoints");
+				bl->bevpoints = MEM_calloc_arrayN(len, sizeof(BevPoint), "makeBevelBPointsPoints");
+				if (need_seglen && (nu->flagu & CU_NURB_CYCLIC) == 0) {
+					bl->seglen = MEM_malloc_arrayN(segcount, sizeof(float), "makeBevelBPoints_seglen");
+					bl->segbevcount = MEM_malloc_arrayN(segcount, sizeof(int), "makeBevelBPoints_segbevcount");
+				}
+				BLI_addtail(bev, bl);
+
+				bl->poly = (nu->flagu & CU_NURB_CYCLIC) ? 0 : -1;
+				bl->charidx = nu->charidx;
+
+				bevp = bl->bevpoints;
+				seglen = bl->seglen;
+				segbevcount = bl->segbevcount;
+
+				bevp->offset = 0;
+				if (seglen != NULL) {
+					*seglen = 0;
+					*segbevcount = 0;
+				}
+
+				a = nu->pntsu - 1;
+				bezt = nu->bezt;
+				if (nu->flagu & CU_NURB_CYCLIC) {
+					a++;
+					prevbezt = nu->bezt + (nu->pntsu - 1);
+				} else {
+					prevbezt = bezt;
+					bezt++;
+				}
+
+				sub_v3_v3v3(bevp->dir, prevbezt->vec[2], prevbezt->vec[1]);
+				normalize_v3(bevp->dir);
+
+				BLI_assert(segcount >= a);
+
+				while (a--) {
+					if (prevbezt->h2 == HD_VECT && bezt->h1 == HD_VECT) {
+
+						copy_v3_v3(bevp->vec, prevbezt->vec[1]);
+						bevp->alfa = prevbezt->alfa;
+						bevp->radius = prevbezt->radius;
+						bevp->weight = prevbezt->weight;
+						bevp->split_tag = true;
+						bevp->dupe_tag = false;
+						bevp++;
+						bl->nr++;
+						bl->dupe_nr = 1;
+						if (seglen != NULL) {
+							*seglen = len_v3v3(prevbezt->vec[1], bezt->vec[1]);
+							bevp->offset = *seglen;
+							seglen++;
+							/* match segbevcount to the cleaned up bevel lists (see STEP 2) */
+							if (bevp->offset > treshold) *segbevcount = 1;
+							segbevcount++;
+						}
+					} else {
+						/* always do all three, to prevent data hanging around */
+						int j;
+
+						/* BevPoint must stay aligned to 4 so sizeof(BevPoint)/sizeof(float) works */
+						for (j = 0; j < 3; j++) {
+							BKE_curve_forward_diff_bezier(prevbezt->vec[1][j], prevbezt->vec[2][j],
+								bezt->vec[0][j], bezt->vec[1][j],
+								&(bevp->vec[j]), resolu, sizeof(BevPoint));
+						}
+
+						/* if both arrays are NULL do nothiong */
+						alfa_bezpart(prevbezt, bezt, nu,
+							do_tilt ? &bevp->alfa : NULL,
+							do_radius ? &bevp->radius : NULL,
+							do_weight ? &bevp->weight : NULL,
+							resolu, sizeof(BevPoint));
+
+
+						if (cu->twist_mode == CU_TWIST_TANGENT) {
+							forward_diff_bezier_cotangent(prevbezt->vec[1], prevbezt->vec[2],
+								bezt->vec[0], bezt->vec[1],
+								bevp->tan, resolu, sizeof(BevPoint));
+						}
+
+						/* indicate with handlecodes double points */
+						if (prevbezt->h1 == prevbezt->h2) {
+							if (prevbezt->h1 == 0 || prevbezt->h1 == HD_VECT)
+								bevp->split_tag = true;
+						} else {
+							if (prevbezt->h1 == 0 || prevbezt->h1 == HD_VECT)
+								bevp->split_tag = true;
+							else if (prevbezt->h2 == 0 || prevbezt->h2 == HD_VECT)
+								bevp->split_tag = true;
+						}
+
+						/* seglen */
+						if (seglen != NULL) {
+							*seglen = 0;
+							*segbevcount = 0;
+							for (j = 0; j < resolu; j++) {
+								bevp0 = bevp;
+								bevp++;
+								bevp->offset = len_v3v3(bevp0->vec, bevp->vec);
+								/* match seglen and segbevcount to the cleaned up bevel lists (see STEP 2) */
+								if (bevp->offset > treshold) {
+									*seglen += bevp->offset;
+									*segbevcount += 1;
+								}
+							}
+							seglen++;
+							segbevcount++;
+						} else {
+							bevp += resolu;
+						}
+						bl->nr += resolu;
+					}
+					prevbezt = bezt;
+					bezt++;
+				}
+
+				if ((nu->flagu & CU_NURB_CYCLIC) == 0) {      /* not cyclic: endpoint */
+					copy_v3_v3(bevp->vec, prevbezt->vec[1]);
+					bevp->alfa = prevbezt->alfa;
+					bevp->radius = prevbezt->radius;
+					bevp->weight = prevbezt->weight;
+
+					sub_v3_v3v3(bevp->dir, prevbezt->vec[1], prevbezt->vec[0]);
+					normalize_v3(bevp->dir);
+
+					bl->nr++;
+				}
+			}
 			else if (nu->type == CU_BEZIER) {
 				/* in case last point is not cyclic */
 				len = segcount * resolu + 1;
@@ -3506,7 +3647,7 @@ static void calchandlesNurb_intern(Nurb *nu, bool skip_align)
 	BezTriple *bezt, *prev, *next;
 	int a;
 
-	if (nu->type != CU_BEZIER)
+	if (nu->type != CU_BEZIER && nu->type != CU_CLOTHOID)
 		return;
 	if (nu->pntsu < 2)
 		return;
@@ -4179,7 +4320,7 @@ void BKE_nurb_handles_test(Nurb *nu, const bool use_handle)
 	BezTriple *bezt;
 	int a;
 
-	if (nu->type != CU_BEZIER)
+	if (nu->type != CU_BEZIER || nu->type != CU_CLOTHOID)
 		return;
 
 	bezt = nu->bezt;
@@ -4293,7 +4434,7 @@ void BKE_nurbList_handles_set(ListBase *editnurb, const char code)
 	if (ELEM(code, HD_AUTO, HD_VECT)) {
 		nu = editnurb->first;
 		while (nu) {
-			if (nu->type == CU_BEZIER) {
+			if (nu->type == CU_BEZIER || nu->type == CU_CLOTHOID) {
 				bezt = nu->bezt;
 				a = nu->pntsu;
 				while (a--) {
@@ -4331,7 +4472,7 @@ void BKE_nurbList_handles_set(ListBase *editnurb, const char code)
 		else {
 			/* Toggle */
 			for (nu = editnurb->first; nu; nu = nu->next) {
-				if (nu->type == CU_BEZIER) {
+				if (nu->type == CU_BEZIER || nu->type == CU_CLOTHOID) {
 					bezt = nu->bezt;
 					a = nu->pntsu;
 					while (a--) {
@@ -4348,7 +4489,7 @@ void BKE_nurbList_handles_set(ListBase *editnurb, const char code)
 			h_new = (h_new == HD_FREE) ? HD_ALIGN : HD_FREE;
 		}
 		for (nu = editnurb->first; nu; nu = nu->next) {
-			if (nu->type == CU_BEZIER) {
+			if (nu->type == CU_BEZIER || nu->type == CU_CLOTHOID) {
 				bezt = nu->bezt;
 				a = nu->pntsu;
 				while (a--) {
@@ -4372,7 +4513,7 @@ void BKE_nurbList_handles_recalculate(ListBase *editnurb, const bool calc_length
 	int a;
 
 	for (nu = editnurb->first; nu; nu = nu->next) {
-		if (nu->type == CU_BEZIER) {
+		if (nu->type == CU_BEZIER || nu->type == CU_CLOTHOID) {
 			bool changed = false;
 
 			for (a = nu->pntsu, bezt = nu->bezt; a--; bezt++) {
@@ -4427,7 +4568,7 @@ void BKE_nurbList_flag_set(ListBase *editnurb, short flag)
 	int a;
 
 	for (nu = editnurb->first; nu; nu = nu->next) {
-		if (nu->type == CU_BEZIER) {
+		if (nu->type == CU_BEZIER || nu->type == CU_CLOTHOID) {
 			a = nu->pntsu;
 			bezt = nu->bezt;
 			while (a--) {
@@ -4457,7 +4598,7 @@ void BKE_nurb_direction_switch(Nurb *nu)
 		return;
 	}
 
-	if (nu->type == CU_BEZIER) {
+	if (nu->type == CU_BEZIER || nu->type == CU_CLOTHOID) {
 		a = nu->pntsu;
 		bezt1 = nu->bezt;
 		bezt2 = bezt1 + (a - 1);
@@ -4576,7 +4717,7 @@ float (*BKE_curve_nurbs_vertexCos_get(ListBase *lb, int *r_numVerts))[3]
 
 	co = cos[0];
 	for (nu = lb->first; nu; nu = nu->next) {
-		if (nu->type == CU_BEZIER) {
+		if (nu->type == CU_BEZIER || nu->type == CU_CLOTHOID) {
 			BezTriple *bezt = nu->bezt;
 
 			for (i = 0; i < nu->pntsu; i++, bezt++) {
@@ -4604,7 +4745,7 @@ void BK_curve_nurbs_vertexCos_apply(ListBase *lb, float (*vertexCos)[3])
 	int i;
 
 	for (nu = lb->first; nu; nu = nu->next) {
-		if (nu->type == CU_BEZIER) {
+		if (nu->type == CU_BEZIER || nu->type == CU_CLOTHOID) {
 			BezTriple *bezt = nu->bezt;
 
 			for (i = 0; i < nu->pntsu; i++, bezt++) {
@@ -4633,7 +4774,7 @@ float (*BKE_curve_nurbs_keyVertexCos_get(ListBase *lb, float *key))[3]
 
 	co = cos[0];
 	for (nu = lb->first; nu; nu = nu->next) {
-		if (nu->type == CU_BEZIER) {
+		if (nu->type == CU_BEZIER || nu->type == CU_CLOTHOID) {
 			BezTriple *bezt = nu->bezt;
 
 			for (i = 0; i < nu->pntsu; i++, bezt++) {
@@ -4662,7 +4803,7 @@ void BKE_curve_nurbs_keyVertexTilts_apply(ListBase *lb, float *key)
 	int i;
 
 	for (nu = lb->first; nu; nu = nu->next) {
-		if (nu->type == CU_BEZIER) {
+		if (nu->type == CU_BEZIER || nu->type == CU_CLOTHOID) {
 			BezTriple *bezt = nu->bezt;
 
 			for (i = 0; i < nu->pntsu; i++, bezt++) {
@@ -4940,7 +5081,7 @@ void *BKE_curve_vert_active_get(Curve *cu)
 
 int BKE_curve_nurb_vert_index_get(const Nurb *nu, const void *vert)
 {
-	if (nu->type == CU_BEZIER) {
+	if (nu->type == CU_BEZIER || nu->type == CU_CLOTHOID) {
 		BLI_assert(ARRAY_HAS_ITEM((BezTriple *)vert, nu->bezt, nu->pntsu));
 		return (BezTriple *)vert - nu->bezt;
 	}
@@ -4979,7 +5120,7 @@ bool BKE_curve_nurb_vert_active_get(Curve *cu, Nurb **r_nu, void **r_vert)
 		nu = BLI_findlink(nurbs, cu->actnu);
 
 		if (nu) {
-			if (nu->type == CU_BEZIER) {
+			if (nu->type == CU_BEZIER || nu->type == CU_CLOTHOID) {
 				BLI_assert(nu->pntsu > cu->actvert);
 				vert = &nu->bezt[cu->actvert];
 			}
@@ -5002,7 +5143,7 @@ void BKE_curve_nurb_vert_active_validate(Curve *cu)
 	void *vert;
 
 	if (BKE_curve_nurb_vert_active_get(cu, &nu, &vert)) {
-		if (nu->type == CU_BEZIER) {
+		if (nu->type == CU_BEZIER || nu->type == CU_CLOTHOID) {
 			BezTriple *bezt = vert;
 			if (BEZT_ISSEL_ANY(bezt) == 0) {
 				cu->actvert = CU_ACT_NONE;
@@ -5059,7 +5200,7 @@ bool BKE_curve_center_median(Curve *cu, float cent[3])
 	for (nu = nurb_lb->first; nu; nu = nu->next) {
 		int i;
 
-		if (nu->type == CU_BEZIER) {
+		if (nu->type == CU_BEZIER || nu->type == CU_CLOTHOID) {
 			BezTriple *bezt;
 			i = nu->pntsu;
 			total += i * 3;
@@ -5109,7 +5250,7 @@ void BKE_curve_transform_ex(
 	int i;
 
 	for (nu = cu->nurb.first; nu; nu = nu->next) {
-		if (nu->type == CU_BEZIER) {
+		if (nu->type == CU_BEZIER || nu->type == CU_CLOTHOID) {
 			i = nu->pntsu;
 			for (bezt = nu->bezt; i--; bezt++) {
 				mul_m4_v3(mat, bezt->vec[0]);
@@ -5139,7 +5280,7 @@ void BKE_curve_transform_ex(
 			int n = kb->totelem;
 
 			for (nu = cu->nurb.first; nu; nu = nu->next) {
-				if (nu->type == CU_BEZIER) {
+				if (nu->type == CU_BEZIER || nu->type == CU_CLOTHOID) {
 					for (i = nu->pntsu; i && (n -= KEYELEM_ELEM_LEN_BEZTRIPLE) >= 0; i--) {
 						mul_m4_v3(mat, &fp[0]);
 						mul_m4_v3(mat, &fp[3]);
@@ -5182,7 +5323,7 @@ void BKE_curve_translate(Curve *cu, float offset[3], const bool do_keys)
 		BezTriple *bezt;
 		BPoint *bp;
 
-		if (nu->type == CU_BEZIER) {
+		if (nu->type == CU_BEZIER || nu->type == CU_CLOTHOID) {
 			i = nu->pntsu;
 			for (bezt = nu->bezt; i--; bezt++) {
 				add_v3_v3(bezt->vec[0], offset);
@@ -5205,7 +5346,7 @@ void BKE_curve_translate(Curve *cu, float offset[3], const bool do_keys)
 			int n = kb->totelem;
 
 			for (nu = cu->nurb.first; nu; nu = nu->next) {
-				if (nu->type == CU_BEZIER) {
+				if (nu->type == CU_BEZIER || nu->type == CU_CLOTHOID) {
 					for (i = nu->pntsu; i && (n -= KEYELEM_ELEM_LEN_BEZTRIPLE) >= 0; i--) {
 						add_v3_v3(&fp[0], offset);
 						add_v3_v3(&fp[3], offset);

@@ -97,6 +97,7 @@ static const EnumPropertyItem curve_type_items[] = {
 	{CU_BSPLINE, "BSPLINE", 0, "BSpline", ""},
 	{CU_CARDINAL, "CARDINAL", 0, "Cardinal", ""},
 	{CU_NURBS, "NURBS", 0, "Ease", ""},
+	{ CU_CLOTHOID, "Clothoid", 0, "Clothoid", "" },
 	{0, NULL, 0, NULL, NULL}
 };
 #endif

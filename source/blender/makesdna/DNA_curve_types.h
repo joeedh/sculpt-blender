@@ -134,6 +134,8 @@ typedef struct BPoint {
 	float radius, pad;		/* user-set radius per point for beveling etc */
 } BPoint;
 
+struct ClothoidSpline;
+
 /**
  * \note Nurb name is misleading, since it can be used for polygons too,
  * also, it should be NURBS (Nurb isn't the singular of Nurbs).
@@ -155,6 +157,8 @@ typedef struct Nurb {
 
 	short tilt_interp;	/* KEY_LINEAR, KEY_CARDINAL, KEY_BSPLINE */
 	short radius_interp;
+
+	struct ClothoidSpline *clothoid;
 
 	/* only used for dynamically generated Nurbs created from OB_FONT's */
 	int charidx;
@@ -363,7 +367,8 @@ enum {
 	CU_BSPLINE            = 2,
 	CU_CARDINAL           = 3,
 	CU_NURBS              = 4,
-	CU_TYPE               = (CU_POLY | CU_BEZIER | CU_BSPLINE | CU_CARDINAL | CU_NURBS),
+	CU_CLOTHOID           = 5,
+	CU_TYPE               = (CU_POLY | CU_BEZIER | CU_BSPLINE | CU_CARDINAL | CU_NURBS | CU_CLOTHOID),
 
 	/* only for adding */
 	CU_PRIMITIVE          = 0xF00,

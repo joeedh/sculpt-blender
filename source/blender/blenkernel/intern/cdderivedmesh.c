@@ -333,6 +333,8 @@ static PBVH *cdDM_getPBVH(Object *ob, DerivedMesh *dm)
 	return cddm->pbvh;
 }
 
+#include "windows.h"
+
 static void cdDM_foreachMappedVert(
         DerivedMesh *dm,
         void (*func)(void *userData, int index, const float co[3], const float no_f[3], const short no_s[3]),
