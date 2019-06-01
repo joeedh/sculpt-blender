@@ -202,6 +202,8 @@ static int rna_Context_mode_get(PointerRNA *ptr)
   return CTX_data_mode_enum(C);
 }
 
+#include "BPY_extern.h"
+
 static struct Depsgraph *rna_Context_evaluated_depsgraph_get(bContext *C)
 {
   struct Depsgraph *depsgraph;

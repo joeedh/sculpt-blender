@@ -77,6 +77,8 @@ NODE_DEFINE(Integrator)
   sampling_pattern_enum.insert("sobol", SAMPLING_PATTERN_SOBOL);
   sampling_pattern_enum.insert("cmj", SAMPLING_PATTERN_CMJ);
   SOCKET_ENUM(sampling_pattern, "Sampling Pattern", sampling_pattern_enum, SAMPLING_PATTERN_SOBOL);
+  SOCKET_INT(bluenoise_shift, "Bluenoise Shift", 9);
+  SOCKET_BOOLEAN(use_bluenoise_seeds, "Bluenoise Shift", true);
 
   return type;
 }
@@ -101,11 +103,13 @@ void Integrator::device_update(Device *device, DeviceScene *dscene, Scene *scene
 
   /* integrator parameters */
   kintegrator->max_bounce = max_bounce + 1;
+  kintegrator->bluenoise_shift = bluenoise_shift;
 
   kintegrator->max_diffuse_bounce = max_diffuse_bounce + 1;
   kintegrator->max_glossy_bounce = max_glossy_bounce + 1;
   kintegrator->max_transmission_bounce = max_transmission_bounce + 1;
   kintegrator->max_volume_bounce = max_volume_bounce + 1;
+  kintegrator->use_bluenoise_seeds = use_bluenoise_seeds;
 
   kintegrator->transparent_max_bounce = transparent_max_bounce + 1;
 

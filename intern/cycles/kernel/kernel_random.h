@@ -15,6 +15,7 @@
  */
 
 #include "kernel/kernel_jitter.h"
+#include "kernel/kernel_bluenoise_mask.h"
 #include "util/util_hash.h"
 
 CCL_NAMESPACE_BEGIN
@@ -129,8 +130,13 @@ ccl_device_inline void path_rng_init(KernelGlobals *kg,
                                      float *fx,
                                      float *fy)
 {
-  /* load state */
-  *rng_hash = hash_int_2d(x, y);
+  if (kernel_data.integrator.use_bluenoise_seeds) {
+    *rng_hash = (sample_bluenoise_mask(x, y) >> kernel_data.integrator.bluenoise_shift) + sample;
+  } else {
+    /* load state */
+    *rng_hash = hash_int_2d(x, y) >> (kernel_data.integrator.bluenoise_shift<<1);
+  }
+
   *rng_hash ^= kernel_data.integrator.seed;
 
 #ifdef __DEBUG_CORRELATION__
