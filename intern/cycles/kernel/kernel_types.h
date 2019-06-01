@@ -261,6 +261,7 @@ enum PathTraceDimension {
 enum SamplingPattern {
   SAMPLING_PATTERN_SOBOL = 0,
   SAMPLING_PATTERN_CMJ = 1,
+  SAMPLING_PATTERN_BLUE = 2,
 
   SAMPLING_NUM_PATTERNS,
 };
@@ -1309,6 +1310,8 @@ typedef struct KernelIntegrator {
 
   /* sampler */
   int sampling_pattern;
+  int bluenoise_shift;
+  int use_bluenoise_seeds;
   int aa_samples;
 
   /* volume render */
@@ -1321,7 +1324,7 @@ typedef struct KernelIntegrator {
 
   int max_closures;
 
-  int pad1, pad2, pad3;
+  int pad1;
 } KernelIntegrator;
 static_assert_align(KernelIntegrator, 16);
 

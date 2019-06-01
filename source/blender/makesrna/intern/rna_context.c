@@ -198,9 +198,17 @@ static int rna_Context_mode_get(PointerRNA *ptr)
   return CTX_data_mode_enum(C);
 }
 
+#include "BPY_extern.h"
+
 static struct Depsgraph *rna_Context_evaluated_depsgraph_get(bContext *C)
 {
-  return CTX_data_evaluated_depsgraph(C);
+
+  struct Depsgraph *ret;
+  BPy_BEGIN_ALLOW_THREADS;
+  ret = CTX_data_evaluated_depsgraph(C);
+  BPy_END_ALLOW_THREADS;
+
+  return ret;
 }
 
 #else
