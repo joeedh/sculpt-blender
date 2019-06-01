@@ -1,0 +1,9 @@
+This module is to prototype C/C++ plugin apis without 
+actually embedding the interfaces in blender.  This is done by
+compiling key libraries independently, and passing data to them
+via rna pointers.  The idea is to try out ideas for C/C++ interfaces
+without disrupting blender's source code.
+
+* bmesh
+* customdata api
+* bli math stuff

@@ -76,3 +76,7 @@ endif()
 if(WITH_OPENVDB)
   add_subdirectory(openvdb)
 endif()
+
+if(WITH_PLUGIN_LITE)
+    add_subdirectory(pluginlite)
+endif()
