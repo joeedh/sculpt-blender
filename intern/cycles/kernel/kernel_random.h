@@ -130,13 +130,22 @@ ccl_device_inline void path_rng_init(KernelGlobals *kg,
                                      float *fx,
                                      float *fy)
 {
+  //see: https://www.arnoldrenderer.com/research/dither_abstract.pdf
+  // also, page 32:8:5.1 http://www.iliyan.com/publications/Arnold/Arnold_TOG2018.pdf
+    
   if (kernel_data.integrator.use_bluenoise_seeds) {
-    *rng_hash = (sample_bluenoise_mask(x, y) >> kernel_data.integrator.bluenoise_shift) + sample;
+    //blue noise mask is 16 bit, while hash_int_2d is 32, so we shift coherency_shift left by 1
+    //to match hash_int_2d
+    uint idx = (y & BLUE_MASK_MASK) * BLUE_MASK_DIMEN + (x & BLUE_MASK_MASK);
+    uint val = kernel_tex_fetch(__bluenoise_mask, idx);
+
+    *rng_hash = (val >> (kernel_data.integrator.coherency_shift >> 1));
   } else {
     /* load state */
-    *rng_hash = hash_int_2d(x, y) >> (kernel_data.integrator.bluenoise_shift<<1);
+    *rng_hash = hash_int_2d(x, y) >> kernel_data.integrator.coherency_shift;
   }
 
+  *rng_hash = *rng_hash << kernel_data.integrator.coherency_shift;
   *rng_hash ^= kernel_data.integrator.seed;
 
 #ifdef __DEBUG_CORRELATION__

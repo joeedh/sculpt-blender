@@ -22,6 +22,7 @@
 #include "render/scene.h"
 #include "render/shader.h"
 #include "render/sobol.h"
+#include "kernel/kernel_bluenoise_mask.h"
 
 #include "util/util_foreach.h"
 #include "util/util_hash.h"
@@ -77,8 +78,8 @@ NODE_DEFINE(Integrator)
   sampling_pattern_enum.insert("sobol", SAMPLING_PATTERN_SOBOL);
   sampling_pattern_enum.insert("cmj", SAMPLING_PATTERN_CMJ);
   SOCKET_ENUM(sampling_pattern, "Sampling Pattern", sampling_pattern_enum, SAMPLING_PATTERN_SOBOL);
-  SOCKET_INT(bluenoise_shift, "Bluenoise Shift", 9);
-  SOCKET_BOOLEAN(use_bluenoise_seeds, "Bluenoise Shift", true);
+  SOCKET_INT(coherency_shift, "Coherency Shift", 9);
+  SOCKET_BOOLEAN(use_bluenoise_seeds, "Bluenoise Seeds", true);
 
   return type;
 }
@@ -103,7 +104,7 @@ void Integrator::device_update(Device *device, DeviceScene *dscene, Scene *scene
 
   /* integrator parameters */
   kintegrator->max_bounce = max_bounce + 1;
-  kintegrator->bluenoise_shift = bluenoise_shift;
+  kintegrator->coherency_shift = coherency_shift;
 
   kintegrator->max_diffuse_bounce = max_diffuse_bounce + 1;
   kintegrator->max_glossy_bounce = max_glossy_bounce + 1;
@@ -209,6 +210,14 @@ void Integrator::device_update(Device *device, DeviceScene *dscene, Scene *scene
 
   dscene->sobol_directions.copy_to_device();
 
+  //seems like it's safer to use a uint texture than a short one, 
+  //dunno if all combinations of cuda arch/gpus supports 16-bit integers or not
+  uint *cuda_bluenoise_mask = dscene->bluenoise_mask.alloc(sizeof(bluenoise_mask));
+  for (int i = 0; i < sizeof(bluenoise_mask); i++) {
+	  cuda_bluenoise_mask[i] = bluenoise_mask[i];
+  }
+  dscene->bluenoise_mask.copy_to_device();
+
   /* Clamping. */
   bool use_sample_clamp = (sample_clamp_direct != 0.0f || sample_clamp_indirect != 0.0f);
   if (use_sample_clamp != scene->film->use_sample_clamp) {
@@ -222,6 +231,7 @@ void Integrator::device_update(Device *device, DeviceScene *dscene, Scene *scene
 void Integrator::device_free(Device *, DeviceScene *dscene)
 {
   dscene->sobol_directions.free();
+  dscene->bluenoise_mask.free();
 }
 
 bool Integrator::modified(const Integrator &integrator)

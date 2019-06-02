@@ -271,9 +271,9 @@ class CyclesRenderSettings(bpy.types.PropertyGroup):
         default='SOBOL',
     )
 
-    bluenoise_shift: IntProperty(
-        name="Blue Noise Shift",
-        description = "How much coherency is added by blue noise",
+    coherency_shift: IntProperty(
+        name="Coherency Shift",
+        description = "Higher values force pixels to be more similar to each other",
         min=0, max=31,
         default=8,
     )

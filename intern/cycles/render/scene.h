@@ -124,6 +124,9 @@ class DeviceScene {
   /* ies lights */
   device_vector<float> ies_lights;
 
+  /* integrator */
+  device_vector<uint> bluenoise_mask;
+
   KernelData data;
 
   DeviceScene(Device *device);

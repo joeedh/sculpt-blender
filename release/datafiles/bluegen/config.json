@@ -1,0 +1,9 @@
+{
+  "generator": "VOIDCLUSTER",
+  "out": "mask${dimen}.png",
+  "gen_csource": "mask${dimen}.h",
+  "large_mask": false,
+  "dimen": 64,
+  "filterwid": 1.25,
+  "seed" : 0
+}
