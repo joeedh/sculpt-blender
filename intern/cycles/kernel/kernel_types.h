@@ -1310,7 +1310,7 @@ typedef struct KernelIntegrator {
 
   /* sampler */
   int sampling_pattern;
-  int bluenoise_shift;
+  int coherency_shift;
   int use_bluenoise_seeds;
   int aa_samples;
 

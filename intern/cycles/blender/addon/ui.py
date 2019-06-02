@@ -233,7 +233,7 @@ class CYCLES_RENDER_PT_sampling_advanced(CyclesButtonsPanel, Panel):
         layout.prop(cscene, "sampling_pattern", text="Pattern")
         layout.prop(cscene, "use_bluenoise_seeds", text="Blue Noise Seeds")
         #if cscene.sampling_pattern == "BLUENOISE":
-        layout.prop(cscene, "bluenoise_shift", text="Shift")
+        layout.prop(cscene, "coherency_shift", text="Coherency")
             
         layout.prop(cscene, "use_square_samples")
 

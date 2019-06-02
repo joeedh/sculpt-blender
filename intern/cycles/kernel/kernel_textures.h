@@ -85,4 +85,7 @@ KERNEL_TEX(TextureInfo, __texture_info)
 /* ies lights */
 KERNEL_TEX(float, __ies)
 
+/* blue noise */
+KERNEL_TEX(uint, __bluenoise_mask)
+
 #undef KERNEL_TEX

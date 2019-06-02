@@ -83,7 +83,7 @@ class Integrator : public Node {
   Method method;
 
   SamplingPattern sampling_pattern;
-  int bluenoise_shift;
+  int coherency_shift;
   int use_bluenoise_seeds;
 
   bool need_update;
