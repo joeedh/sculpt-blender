@@ -101,6 +101,7 @@ CCL_NAMESPACE_BEGIN
 #define __AO__
 #define __PASSES__
 #define __HAIR__
+#define __MUTUALBLUE__
 
 /* Without these we get an AO render, used by OpenCL preview kernel. */
 #ifndef __KERNEL_AO_PREVIEW__
@@ -257,6 +258,12 @@ enum PathTraceDimension {
   PRNG_BEVEL_U = 6, /* reuse volume dimension, correlation won't harm */
   PRNG_BEVEL_V = 7,
 };
+
+#ifdef __MUTUALBLUE__
+typedef unsigned int[PRNG_BASE_NUM] RngPixelHash;
+#else
+typedef unsigned int RngPixelHash;
+#endif
 
 enum SamplingPattern {
   SAMPLING_PATTERN_SOBOL = 0,

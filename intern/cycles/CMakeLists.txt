@@ -290,6 +290,10 @@ if(CMAKE_COMPILER_IS_GNUCXX)
   unset(_has_no_error_unused_macros)
 endif()
 
+if(WITH_CYCLES_INDEPEND_BLUE)
+
+endif()
+
 if(WITH_CYCLES_CUDA_BINARIES AND (NOT WITH_CYCLES_CUBIN_COMPILER))
   if(MSVC)
     set(MAX_MSVC 1800)
