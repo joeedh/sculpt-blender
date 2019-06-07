@@ -79,6 +79,8 @@ NODE_DEFINE(Integrator)
   sampling_pattern_enum.insert("cmj", SAMPLING_PATTERN_CMJ);
   SOCKET_ENUM(sampling_pattern, "Sampling Pattern", sampling_pattern_enum, SAMPLING_PATTERN_SOBOL);
   SOCKET_INT(coherency_shift, "Coherency Shift", 9);
+  
+  SOCKET_BOOLEAN(coherency_only_blue, "Bluenoise Only Coherency", true);
   SOCKET_BOOLEAN(use_bluenoise_seeds, "Bluenoise Seeds", true);
 
   return type;
@@ -105,6 +107,7 @@ void Integrator::device_update(Device *device, DeviceScene *dscene, Scene *scene
   /* integrator parameters */
   kintegrator->max_bounce = max_bounce + 1;
   kintegrator->coherency_shift = coherency_shift;
+  kintegrator->coherency_only_blue = coherency_only_blue;
 
   kintegrator->max_diffuse_bounce = max_diffuse_bounce + 1;
   kintegrator->max_glossy_bounce = max_glossy_bounce + 1;

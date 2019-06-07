@@ -1315,6 +1315,7 @@ typedef struct KernelIntegrator {
   /* sampler */
   int sampling_pattern;
   int coherency_shift;
+  int coherency_only_blue;
   int use_bluenoise_seeds;
   int aa_samples;
 
@@ -1327,8 +1328,6 @@ typedef struct KernelIntegrator {
   int start_sample;
 
   int max_closures;
-
-  int pad1;
 } KernelIntegrator;
 static_assert_align(KernelIntegrator, 16);
 

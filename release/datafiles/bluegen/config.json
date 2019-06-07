@@ -3,7 +3,7 @@
   "out": "mask${dimen}.png",
   "gen_csource": "mask${dimen}.h",
   "large_mask": false,
-  "dimen": 64,
-  "filterwid": 1.25,
+  "dimen": 128,
+  "filterwid": 0.88,
   "seed" : 0
 }

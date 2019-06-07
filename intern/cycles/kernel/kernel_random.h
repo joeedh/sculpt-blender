@@ -142,10 +142,13 @@ ccl_device_inline void path_rng_init(KernelGlobals *kg,
     *rng_hash = (val >> (kernel_data.integrator.coherency_shift >> 1));
   } else {
     /* load state */
-    *rng_hash = hash_int_2d(x, y) >> kernel_data.integrator.coherency_shift;
+    *rng_hash = hash_int_2d(x, y);
+
+    if (!kernel_data.integrator.coherency_only_blue) {
+      *rng_hash = *rng_hash << kernel_data.integrator.coherency_shift;
+    }
   }
 
-  *rng_hash = *rng_hash << kernel_data.integrator.coherency_shift;
   *rng_hash ^= kernel_data.integrator.seed;
 
 #ifdef __DEBUG_CORRELATION__
