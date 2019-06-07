@@ -16,10 +16,10 @@
 
 CCL_NAMESPACE_BEGIN
 
-#define BLUE_MASK_DIMEN 64
+#define BLUE_MASK_DIMEN 128
 #define BLUE_MASK_BYTES_PER_PIXEL 2
-#define BLUE_MASK_MASK 63
+#define BLUE_MASK_MASK 127
 
-extern unsigned short bluenoise_mask[4096];
+extern unsigned short bluenoise_mask[16384];
 
 CCL_NAMESPACE_END

@@ -273,9 +273,15 @@ class CyclesRenderSettings(bpy.types.PropertyGroup):
 
     coherency_shift: IntProperty(
         name="Coherency Shift",
-        description = "Higher values force pixels to be more similar to each other",
+        description="Higher values force pixels to be more similar to each other",
         min=0, max=31,
-        default=8,
+        default=24,
+    )
+    
+    coherency_only_blue : BoolProperty(
+        name="Bluenoise Only",
+        description="Use coherency parameter for bluenoise seeds only",
+        default=True
     )
     
     use_layer_samples: EnumProperty(
