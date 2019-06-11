@@ -275,7 +275,7 @@ class CyclesRenderSettings(bpy.types.PropertyGroup):
         name="Coherency Shift",
         description="Higher values force pixels to be more similar to each other",
         min=0, max=31,
-        default=24,
+        default=16,
     )
     
     coherency_only_blue : BoolProperty(

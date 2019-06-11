@@ -130,6 +130,8 @@ ccl_device_inline void path_rng_init(KernelGlobals *kg,
                                      float *fx,
                                      float *fy)
 {
+  uint shift = kernel_data.integrator.coherency_shift;
+
   //see: https://www.arnoldrenderer.com/research/dither_abstract.pdf
   // also, page 32:8:5.1 http://www.iliyan.com/publications/Arnold/Arnold_TOG2018.pdf
     
@@ -139,13 +141,16 @@ ccl_device_inline void path_rng_init(KernelGlobals *kg,
     uint idx = (y & BLUE_MASK_MASK) * BLUE_MASK_DIMEN + (x & BLUE_MASK_MASK);
     uint val = kernel_tex_fetch(__bluenoise_mask, idx);
 
-    *rng_hash = (val >> (kernel_data.integrator.coherency_shift >> 1));
+    //not sure if I need to stretch across the whole 32-bit space after
+    //chomping off bits for coherency? -joeedh
+    shift >>= 1;
+    *rng_hash = ((val >> shift) << shift) << 1;
   } else {
     /* load state */
     *rng_hash = hash_int_2d(x, y);
 
     if (!kernel_data.integrator.coherency_only_blue) {
-      *rng_hash = *rng_hash << kernel_data.integrator.coherency_shift;
+      *rng_hash = (*rng_hash >> shift) << shift;
     }
   }
 
