@@ -760,8 +760,10 @@ void workbench_deferred_cache_init(WORKBENCH_Data *vedata)
       DRWState depth_fail_state = DRW_STATE_DEPTH_GREATER_EQUAL | DRW_STATE_WRITE_COLOR |
                                   DRW_STATE_BLEND_ADD;
 #else
-      DRWState depth_pass_state = DRW_STATE_DEPTH_LESS | DRW_STATE_WRITE_STENCIL_SHADOW_PASS;
-      DRWState depth_fail_state = DRW_STATE_DEPTH_LESS | DRW_STATE_WRITE_STENCIL_SHADOW_FAIL;
+      DRWState depth_pass_state = DRW_STATE_DEPTH_LESS | DRW_STATE_WRITE_STENCIL_SHADOW_PASS |
+                                  DRW_STATE_STENCIL_ALWAYS;
+      DRWState depth_fail_state = DRW_STATE_DEPTH_LESS | DRW_STATE_WRITE_STENCIL_SHADOW_FAIL |
+                                  DRW_STATE_STENCIL_ALWAYS;
 #endif
       psl->shadow_depth_pass_pass = DRW_pass_create("Shadow Pass", depth_pass_state);
       psl->shadow_depth_pass_mani_pass = DRW_pass_create("Shadow Pass Mani", depth_pass_state);
@@ -809,7 +811,7 @@ void workbench_deferred_cache_init(WORKBENCH_Data *vedata)
   }
 
   /**
-   * Order Independant Transparency.
+   * Order Independent Transparency.
    * Similar to workbench forward. Duplicated code to avoid
    * spaghetti with workbench forward. It would be great if we unify
    * this in a clean way.
@@ -1246,11 +1248,11 @@ void workbench_deferred_draw_scene(WORKBENCH_Data *vedata)
     DRW_draw_pass(psl->shadow_depth_fail_caps_mani_pass);
 
     if (GHOST_ENABLED(psl)) {
-      /* We need to set the stencil buffer to 0 where Ghost objects
+      /* We need to set the stencil buffer to 0 where Ghost objects are
        * else they will get shadow and even badly shadowed. */
-      DRW_pass_state_set(psl->ghost_prepass_pass, DRW_STATE_DEPTH_EQUAL | DRW_STATE_WRITE_STENCIL);
-      DRW_pass_state_set(psl->ghost_prepass_hair_pass,
-                         DRW_STATE_DEPTH_EQUAL | DRW_STATE_WRITE_STENCIL);
+      DRWState state = DRW_STATE_DEPTH_EQUAL | DRW_STATE_WRITE_STENCIL | DRW_STATE_STENCIL_ALWAYS;
+      DRW_pass_state_set(psl->ghost_prepass_pass, state);
+      DRW_pass_state_set(psl->ghost_prepass_hair_pass, state);
 
       DRW_draw_pass(psl->ghost_prepass_pass);
       DRW_draw_pass(psl->ghost_prepass_hair_pass);
@@ -1266,17 +1268,17 @@ void workbench_deferred_draw_scene(WORKBENCH_Data *vedata)
     DRW_draw_pass(psl->composite_pass);
   }
 
+  /* In order to not draw on top of ghost objects, we clear the stencil
+   * to 0xFF and the ghost object to 0x00 and only draw overlays on top if
+   * stencil is not 0. */
+  GPU_framebuffer_bind(dfbl->depth_only_fb);
+  GPU_framebuffer_clear_stencil(dfbl->depth_only_fb, 0xFF);
+
   /* TODO(fclem): only enable when needed (when there is overlays). */
   if (GHOST_ENABLED(psl)) {
-    /* In order to not draw on top of ghost objects, we clear the stencil
-     * to 0xFF and the ghost object to 0x00 and only draw overlays on top if
-     * stencil is not 0. */
-    GPU_framebuffer_bind(dfbl->depth_only_fb);
-    GPU_framebuffer_clear_stencil(dfbl->depth_only_fb, 0xFF);
-
-    DRW_pass_state_set(psl->ghost_prepass_pass, DRW_STATE_DEPTH_EQUAL | DRW_STATE_WRITE_STENCIL);
-    DRW_pass_state_set(psl->ghost_prepass_hair_pass,
-                       DRW_STATE_DEPTH_EQUAL | DRW_STATE_WRITE_STENCIL);
+    DRWState state = DRW_STATE_DEPTH_EQUAL | DRW_STATE_WRITE_STENCIL | DRW_STATE_STENCIL_ALWAYS;
+    DRW_pass_state_set(psl->ghost_prepass_pass, state);
+    DRW_pass_state_set(psl->ghost_prepass_hair_pass, state);
 
     DRW_draw_pass(psl->ghost_prepass_pass);
     DRW_draw_pass(psl->ghost_prepass_hair_pass);

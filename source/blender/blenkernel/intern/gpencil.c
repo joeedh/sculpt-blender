@@ -1172,6 +1172,11 @@ Material *BKE_gpencil_object_material_ensure_from_active_input_material(Main *bm
   if (ma) {
     return ma;
   }
+  /* If the slot is empty, remove because will be added again,
+   * if not, we will get an empty slot. */
+  if ((ob->totcol > 0) && (ob->actcol == ob->totcol)) {
+    BKE_object_material_slot_remove(bmain, ob);
+  }
   return BKE_gpencil_object_material_new(bmain, ob, "Material", NULL);
 }
 
@@ -1640,33 +1645,15 @@ float BKE_gpencil_multiframe_falloff_calc(
   return value;
 }
 
-/* remove strokes using a material */
-void BKE_gpencil_material_index_remove(bGPdata *gpd, int index)
+/* reassign strokes using a material */
+void BKE_gpencil_material_index_reassign(bGPdata *gpd, int totcol, int index)
 {
-  bGPDstroke *gps, *gpsn;
-
   for (bGPDlayer *gpl = gpd->layers.first; gpl; gpl = gpl->next) {
     for (bGPDframe *gpf = gpl->frames.first; gpf; gpf = gpf->next) {
-      for (gps = gpf->strokes.first; gps; gps = gpsn) {
-        gpsn = gps->next;
-        if (gps->mat_nr == index) {
-          if (gps->points) {
-            MEM_freeN(gps->points);
-          }
-          if (gps->dvert) {
-            BKE_gpencil_free_stroke_weights(gps);
-            MEM_freeN(gps->dvert);
-          }
-          if (gps->triangles) {
-            MEM_freeN(gps->triangles);
-          }
-          BLI_freelinkN(&gpf->strokes, gps);
-        }
-        else {
-          /* reassign strokes */
-          if (gps->mat_nr > index) {
-            gps->mat_nr--;
-          }
+      for (bGPDstroke *gps = gpf->strokes.first; gps; gps = gps->next) {
+        /* reassign strokes */
+        if ((gps->mat_nr > index) || (gps->mat_nr > totcol - 1)) {
+          gps->mat_nr--;
         }
       }
     }

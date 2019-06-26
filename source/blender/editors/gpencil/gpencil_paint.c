@@ -1130,8 +1130,9 @@ static void gp_stroke_newfrombuffer(tGPsdata *p)
         }
       }
       else {
-        if ((ts->gpencil_v3d_align & GP_PROJECT_DEPTH_STROKE_ENDPOINTS) ||
-            (ts->gpencil_v3d_align & GP_PROJECT_DEPTH_STROKE_FIRST)) {
+        if ((ts->gpencil_v3d_align & GP_PROJECT_DEPTH_STROKE) &&
+            ((ts->gpencil_v3d_align & GP_PROJECT_DEPTH_STROKE_ENDPOINTS) ||
+             (ts->gpencil_v3d_align & GP_PROJECT_DEPTH_STROKE_FIRST))) {
           int first_valid = 0;
           int last_valid = 0;
 
@@ -2392,6 +2393,10 @@ static void gpencil_draw_exit(bContext *C, wmOperator *op)
       WM_cursor_modal_restore(CTX_wm_window(C));
     }
     else {
+      /* or restore paint if 3D view */
+      if ((p) && (p->paintmode == GP_PAINTMODE_ERASER)) {
+        WM_cursor_modal_set(p->win, CURSOR_STD);
+      }
 
       /* drawing batch cache is dirty now */
       bGPdata *gpd = CTX_data_gpencil_data(C);
@@ -2405,6 +2410,8 @@ static void gpencil_draw_exit(bContext *C, wmOperator *op)
     gpencil_undo_finish();
 
     /* cleanup */
+    WM_cursor_modal_set(p->win, CURSOR_STD);
+
     gp_paint_cleanup(p);
     gp_session_cleanup(p);
     ED_gpencil_toggle_brush_cursor(C, true, NULL);
@@ -2469,6 +2476,18 @@ static int gpencil_draw_init(bContext *C, wmOperator *op, const wmEvent *event)
 
 /* ------------------------------- */
 
+/* ensure that the correct cursor icon is set */
+static void gpencil_draw_cursor_set(tGPsdata *p)
+{
+  Brush *brush = p->brush;
+  if ((p->paintmode == GP_PAINTMODE_ERASER) || (brush->gpencil_tool == GPAINT_TOOL_ERASE)) {
+    WM_cursor_modal_set(p->win, BC_CROSSCURSOR); /* XXX need a better cursor */
+  }
+  else {
+    WM_cursor_modal_set(p->win, CURSOR_NONE);
+  }
+}
+
 /* update UI indicators of status, including cursor and header prints */
 static void gpencil_draw_status_indicators(bContext *C, tGPsdata *p)
 {
@@ -2480,22 +2499,21 @@ static void gpencil_draw_status_indicators(bContext *C, tGPsdata *p)
         case GP_PAINTMODE_ERASER: {
           ED_workspace_status_text(
               C,
-              IFACE_("Grease Pencil Erase Session: Hold and drag LMB or RMB to erase | "
-                     "ESC/Enter to end  (or click outside this area)"));
+              TIP_("Grease Pencil Erase Session: Hold and drag LMB or RMB to erase | "
+                   "ESC/Enter to end  (or click outside this area)"));
           break;
         }
         case GP_PAINTMODE_DRAW_STRAIGHT: {
-          ED_workspace_status_text(
-              C,
-              IFACE_("Grease Pencil Line Session: Hold and drag LMB to draw | "
-                     "ESC/Enter to end  (or click outside this area)"));
+          ED_workspace_status_text(C,
+                                   TIP_("Grease Pencil Line Session: Hold and drag LMB to draw | "
+                                        "ESC/Enter to end  (or click outside this area)"));
           break;
         }
         case GP_PAINTMODE_SET_CP: {
           ED_workspace_status_text(
               C,
-              IFACE_("Grease Pencil Guides: LMB click and release to place reference point | "
-                     "Esc/RMB to cancel"));
+              TIP_("Grease Pencil Guides: LMB click and release to place reference point | "
+                   "Esc/RMB to cancel"));
           break;
         }
         case GP_PAINTMODE_DRAW: {
@@ -2503,26 +2521,26 @@ static void gpencil_draw_status_indicators(bContext *C, tGPsdata *p)
           if (guide->use_guide) {
             ED_workspace_status_text(
                 C,
-                IFACE_("Grease Pencil Freehand Session: Hold and drag LMB to draw | "
-                       "M key to flip guide | O key to move reference point"));
+                TIP_("Grease Pencil Freehand Session: Hold and drag LMB to draw | "
+                     "M key to flip guide | O key to move reference point"));
           }
           else {
             ED_workspace_status_text(
-                C, IFACE_("Grease Pencil Freehand Session: Hold and drag LMB to draw"));
+                C, TIP_("Grease Pencil Freehand Session: Hold and drag LMB to draw"));
           }
           break;
         }
         case GP_PAINTMODE_DRAW_POLY: {
           ED_workspace_status_text(
               C,
-              IFACE_("Grease Pencil Poly Session: LMB click to place next stroke vertex | "
-                     "Release Shift/ESC/Enter to end  (or click outside this area)"));
+              TIP_("Grease Pencil Poly Session: LMB click to place next stroke vertex | "
+                   "Release Shift/ESC/Enter to end (or click outside this area)"));
           break;
         }
         default: /* unhandled future cases */
         {
           ED_workspace_status_text(
-              C, IFACE_("Grease Pencil Session: ESC/Enter to end   (or click outside this area)"));
+              C, TIP_("Grease Pencil Session: ESC/Enter to end (or click outside this area)"));
           break;
         }
       }
@@ -3184,6 +3202,11 @@ static int gpencil_draw_invoke(bContext *C, wmOperator *op, const wmEvent *event
   else {
     ED_gpencil_toggle_brush_cursor(C, true, NULL);
   }
+  /* set cursor
+   * NOTE: This may change later (i.e. intentionally via brush toggle,
+   *       or unintentionally if the user scrolls outside the area)...
+   */
+  gpencil_draw_cursor_set(p);
 
   /* only start drawing immediately if we're allowed to do so... */
   if (RNA_boolean_get(op->ptr, "wait_for_input") == false) {
@@ -3750,6 +3773,7 @@ static int gpencil_draw_modal(bContext *C, wmOperator *op, const wmEvent *event)
   else {
     /* update status indicators - cursor, header, etc. */
     gpencil_draw_status_indicators(C, p);
+    gpencil_draw_cursor_set(p); /* cursor may have changed outside our control - T44084 */
   }
 
   /* process last operations before exiting */

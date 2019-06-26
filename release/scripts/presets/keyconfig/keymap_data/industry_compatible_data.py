@@ -514,6 +514,7 @@ def km_uv_editor(params):
          {"properties": [("extend", False), ("deselect_all", True)]}),
         ("uv.select", {"type": 'LEFTMOUSE', "value": 'PRESS', "shift": True},
          {"properties": [("extend", True), ("deselect_all", False)]}),
+        ("uv.select_box", {"type": 'EVT_TWEAK_L', "value": 'ANY'}, None),
         ("uv.select_loop", {"type": 'LEFTMOUSE', "value": 'DOUBLE_CLICK', "shift": True},
          {"properties": [("extend", True)]}),
         ("uv.select_loop", {"type": 'LEFTMOUSE', "value": 'DOUBLE_CLICK'},
@@ -531,15 +532,14 @@ def km_uv_editor(params):
         ("uv.reveal", {"type": 'H', "value": 'PRESS', "alt": True}, None),
         op_menu_pie("IMAGE_MT_uvs_snap_pie", {"type": 'S', "value": 'PRESS', "shift": True}),
         op_menu("IMAGE_MT_uvs_select_mode", {"type": 'TAB', "value": 'PRESS', "ctrl": True}),
-        ("transform.translate", {"type": 'W', "value": 'PRESS'}, None),
-        ("transform.translate", {"type": 'EVT_TWEAK_L', "value": 'ANY'}, None),
-        ("transform.rotate", {"type": 'E', "value": 'PRESS'}, None),
-        ("transform.resize", {"type": 'R', "value": 'PRESS'}, None),
         op_menu("IMAGE_MT_uvs_context_menu", {"type": 'RIGHTMOUSE', "value": 'PRESS'}),
         ("wm.context_toggle", {"type": 'B', "value": 'PRESS'},
          {"properties": [("data_path", 'tool_settings.use_proportional_edit')]}),
         # Tools
         op_tool("builtin.select_box", {"type": 'Q', "value": 'PRESS'}),
+        op_tool("builtin.move", {"type": 'W', "value": 'PRESS'}),
+        op_tool("builtin.rotate", {"type": 'E', "value": 'PRESS'}),
+        op_tool("builtin.scale", {"type": 'R', "value": 'PRESS'}),
         op_tool("builtin.transform", {"type": 'T', "value": 'PRESS'}),
         op_tool("builtin.cursor", {"type": 'C', "value": 'PRESS'}),
         op_tool("builtin.annotate", {"type": 'D', "value": 'PRESS'}),
@@ -1009,7 +1009,7 @@ def km_node_editor(params):
     def node_select_ops(select_mouse):
         return [
             ("node.select", {"type": select_mouse, "value": 'PRESS'},
-             {"properties": [("extend", False)]}),
+             {"properties": [("extend", False), ("deselect_all", True)]}),
             ("node.select", {"type": select_mouse, "value": 'PRESS', "ctrl": True},
              {"properties": [("extend", False)]}),
             ("node.select", {"type": select_mouse, "value": 'PRESS', "alt": True},
@@ -1485,7 +1485,6 @@ def km_text_generic(params):
     )
 
     items.extend([
-        ("wm.search_menu", {"type": 'TAB', "value": 'PRESS'}, None),
         ("text.start_find", {"type": 'F', "value": 'PRESS', "ctrl": True}, None),
         ("text.jump", {"type": 'J', "value": 'PRESS', "ctrl": True}, None),
         ("text.find", {"type": 'G', "value": 'PRESS', "ctrl": True}, None),
@@ -2721,16 +2720,14 @@ def km_curve(params):
 
 
     items.extend([
-        ("curve.handle_type_set", {"type": 'V', "value": 'PRESS'}, None),
-        ("curve.vertex_add", {"type": 'LEFTMOUSE', "value": 'CLICK', "ctrl": True}, None),
-        ("curve.select_all", {"type": 'A', "value": 'CLICK', "ctrl": True}, {"properties": [("action", 'SELECT')]}),
-        ("curve.select_all", {"type": 'A', "value": 'CLICK', "ctrl": True, "shift": True}, {"properties": [("action", 'DESELECT')]}),
-        ("curve.select_all", {"type": 'I', "value": 'CLICK', "ctrl": True}, {"properties": [("action", 'INVERT')]}),
+        ("curve.select_all", {"type": 'A', "value": 'PRESS', "ctrl": True}, {"properties": [("action", 'SELECT')]}),
+        ("curve.select_all", {"type": 'A', "value": 'PRESS', "ctrl": True, "shift": True}, {"properties": [("action", 'DESELECT')]}),
+        ("curve.select_all", {"type": 'I', "value": 'PRESS', "ctrl": True}, {"properties": [("action", 'INVERT')]}),
         ("curve.select_row", {"type": 'R', "value": 'PRESS', "shift": True}, None),
         ("curve.select_more", {"type": 'UP_ARROW', "value": 'PRESS'}, None),
         ("curve.select_less", {"type": 'DOWN_ARROW', "value": 'PRESS'}, None),
         ("curve.select_linked", {"type": 'RIGHT_BRACKET', "value": 'PRESS'}, None),
-        ("curve.shortest_path_pick", {"type": 'LEFTMOUSE', "value": 'CLICK', "ctrl": True, "shift": True}, None),
+        ("curve.shortest_path_pick", {"type": 'LEFTMOUSE', "value": 'PRESS', "ctrl": True, "shift": True}, None),
         ("curve.duplicate_move", {"type": 'D', "value": 'PRESS', "ctrl": True}, None),
         op_menu("VIEW3D_MT_edit_curve_delete", {"type": 'BACK_SPACE', "value": 'PRESS'}),
         op_menu("VIEW3D_MT_edit_curve_delete", {"type": 'DEL', "value": 'PRESS'}),

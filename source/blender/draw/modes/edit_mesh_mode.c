@@ -175,7 +175,7 @@ typedef struct EDIT_MESH_PrivateData {
   DRWView *view_faces;
   DRWView *view_faces_cage;
   DRWView *view_edges;
-  DRWView *view_wires;
+  DRWView *view_verts;
 
   int data_mask[4];
   int ghost_ob;
@@ -226,9 +226,9 @@ static void EDIT_MESH_engine_init(void *vedata)
                                  datatoc_common_globals_lib_glsl,
                                  datatoc_common_view_lib_glsl,
                                  datatoc_edit_mesh_overlay_common_lib_glsl);
-    /* Use geometry shader to draw edge wireframe. This ensure us
-     * the same result accross platforms and more flexibility. But
-     * we pay the cost of running a geometry shader.
+    /* Use geometry shader to draw edge wire-frame. This ensure us
+     * the same result across platforms and more flexibility.
+     * But we pay the cost of running a geometry shader.
      * In the future we might consider using only the vertex shader
      * and loading data manually with buffer textures. */
     const bool use_geom_shader = true;
@@ -333,7 +333,7 @@ static void EDIT_MESH_engine_init(void *vedata)
     stl->g_data->view_faces = (DRWView *)DRW_view_default_get();
     stl->g_data->view_faces_cage = DRW_view_create_with_zoffset(draw_ctx->rv3d, 0.5f);
     stl->g_data->view_edges = DRW_view_create_with_zoffset(draw_ctx->rv3d, 1.0f);
-    stl->g_data->view_wires = DRW_view_create_with_zoffset(draw_ctx->rv3d, 1.5f);
+    stl->g_data->view_verts = DRW_view_create_with_zoffset(draw_ctx->rv3d, 1.5f);
   }
 }
 
@@ -587,6 +587,7 @@ static void EDIT_MESH_cache_init(void *vedata)
     psl->facefill_occlude_cage = DRW_pass_create("Front Face Cage Color", state);
 
     if (g_data->do_faces) {
+      const bool select_face = (tsettings->selectmode & SCE_SELECT_FACE) != 0;
       DRWShadingGroup *shgrp;
 
       /* however we loose the front faces value (because we need the depth of occluded wires and
@@ -595,6 +596,7 @@ static void EDIT_MESH_cache_init(void *vedata)
                                                                    psl->facefill_occlude);
       DRW_shgroup_uniform_block(shgrp, "globalsBlock", G_draw.block_ubo);
       DRW_shgroup_uniform_ivec4(shgrp, "dataMask", g_data->data_mask, 1);
+      DRW_shgroup_uniform_bool_copy(shgrp, "selectFaces", select_face);
       if (rv3d->rflag & RV3D_CLIPPING) {
         DRW_shgroup_state_enable(shgrp, DRW_STATE_CLIP_PLANES);
       }
@@ -603,6 +605,7 @@ static void EDIT_MESH_cache_init(void *vedata)
           sh_data->overlay_facefill, psl->facefill_occlude_cage);
       DRW_shgroup_uniform_block(shgrp, "globalsBlock", G_draw.block_ubo);
       DRW_shgroup_uniform_ivec4(shgrp, "dataMask", g_data->data_mask, 1);
+      DRW_shgroup_uniform_bool_copy(shgrp, "selectFaces", select_face);
       if (rv3d->rflag & RV3D_CLIPPING) {
         DRW_shgroup_state_enable(shgrp, DRW_STATE_CLIP_PLANES);
       }
@@ -791,7 +794,7 @@ static void edit_mesh_draw_components(EDIT_MESH_ComponentPassList *passes,
   DRW_view_set_active(g_data->view_edges);
   DRW_draw_pass(passes->edges);
 
-  DRW_view_set_active(g_data->view_wires);
+  DRW_view_set_active(g_data->view_verts);
   DRW_draw_pass(passes->verts);
 
   DRW_view_set_active(NULL);

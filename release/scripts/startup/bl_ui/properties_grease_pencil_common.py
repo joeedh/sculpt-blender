@@ -116,7 +116,7 @@ class AnnotationDrawingToolsPanel:
         col.separator()
         col.separator()
 
-        if context.space_data.type in {'CLIP_EDITOR'}:
+        if context.space_data.type == 'CLIP_EDITOR':
             col.separator()
             col.label(text="Data Source:")
             row = col.row(align=True)
@@ -241,7 +241,7 @@ class GreasePencilStrokeSculptPanel:
         layout.template_icon_view(settings, "sculpt_tool", show_labels=True)
 
         if not self.is_popover:
-            from .properties_paint_common import (
+            from bl_ui.properties_paint_common import (
                 brush_basic_gpencil_sculpt_settings,
             )
             brush_basic_gpencil_sculpt_settings(layout, context, brush)

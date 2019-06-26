@@ -4590,7 +4590,7 @@ static int edbm_fill_grid_exec(bContext *C, wmOperator *op)
 
       /* Only reuse on redo because these settings need to match the current selection.
        * We never want to use them on other geometry, repeat last for eg, see: T60777. */
-      if ((op->flag & OP_IS_REPEAT) && RNA_property_is_set(op->ptr, prop_span)) {
+      if ((op->flag & OP_IS_REPEAT_LAST) == 0 && RNA_property_is_set(op->ptr, prop_span)) {
         span = RNA_property_int_get(op->ptr, prop_span);
         span = min_ii(span, (clamp / 2) - 1);
         calc_span = false;
@@ -7689,7 +7689,7 @@ static int point_normals_init(bContext *C, wmOperator *op, const wmEvent *UNUSED
 
   BKE_editmesh_ensure_autosmooth(em);
   BKE_editmesh_lnorspace_update(em);
-  BMLoopNorEditDataArray *lnors_ed_arr = BM_loop_normal_editdata_array_init(bm);
+  BMLoopNorEditDataArray *lnors_ed_arr = BM_loop_normal_editdata_array_init(bm, false);
 
   op->customdata = lnors_ed_arr;
 
@@ -7718,11 +7718,11 @@ static void point_normals_update_header(bContext *C, wmOperator *op)
 
   BLI_snprintf(header,
                sizeof(header),
-               IFACE_("%s: confirm, %s: cancel, "
-                      "%s: point to mouse (%s), %s: point to Pivot, "
-                      "%s: point to object origin, %s: reset normals, "
-                      "%s: set & point to 3D cursor, %s: select & point to mesh item, "
-                      "%s: invert normals (%s), %s: spherize (%s), %s: align (%s)"),
+               TIP_("%s: confirm, %s: cancel, "
+                    "%s: point to mouse (%s), %s: point to Pivot, "
+                    "%s: point to object origin, %s: reset normals, "
+                    "%s: set & point to 3D cursor, %s: select & point to mesh item, "
+                    "%s: invert normals (%s), %s: spherize (%s), %s: align (%s)"),
                WM_MODALKEY(EDBM_CLNOR_MODAL_CONFIRM),
                WM_MODALKEY(EDBM_CLNOR_MODAL_CANCEL),
                WM_MODALKEY(EDBM_CLNOR_MODAL_POINTTO_USE_MOUSE),
@@ -8246,7 +8246,10 @@ static int normals_split_merge(bContext *C, const bool do_merge)
   BKE_editmesh_ensure_autosmooth(em);
   BKE_editmesh_lnorspace_update(em);
 
-  BMLoopNorEditDataArray *lnors_ed_arr = do_merge ? BM_loop_normal_editdata_array_init(bm) : NULL;
+  /* Note that we need temp lnor editing data for all loops of all affected vertices, since by
+   * setting some faces/edges as smooth we are going to change clnors spaces... See also T65809. */
+  BMLoopNorEditDataArray *lnors_ed_arr = do_merge ? BM_loop_normal_editdata_array_init(bm, true) :
+                                                    NULL;
 
   mesh_set_smooth_faces(em, do_merge);
 
@@ -8568,12 +8571,16 @@ static int edbm_normals_tools_exec(bContext *C, wmOperator *op)
   BMEditMesh *em = BKE_editmesh_from_object(obedit);
   BMesh *bm = em->bm;
 
+  if (bm->totloop == 0) {
+    return OPERATOR_CANCELLED;
+  }
+
   const int mode = RNA_enum_get(op->ptr, "mode");
   const bool absolute = RNA_boolean_get(op->ptr, "absolute");
 
   BKE_editmesh_ensure_autosmooth(em);
   BKE_editmesh_lnorspace_update(em);
-  BMLoopNorEditDataArray *lnors_ed_arr = BM_loop_normal_editdata_array_init(bm);
+  BMLoopNorEditDataArray *lnors_ed_arr = BM_loop_normal_editdata_array_init(bm, false);
   BMLoopNorEditData *lnor_ed = lnors_ed_arr->lnor_editdata;
 
   float *normal_vector = scene->toolsettings->normal_vector;
@@ -8867,7 +8874,7 @@ static int edbm_smoothen_normals_exec(bContext *C, wmOperator *op)
 
   BKE_editmesh_ensure_autosmooth(em);
   BKE_editmesh_lnorspace_update(em);
-  BMLoopNorEditDataArray *lnors_ed_arr = BM_loop_normal_editdata_array_init(bm);
+  BMLoopNorEditDataArray *lnors_ed_arr = BM_loop_normal_editdata_array_init(bm, false);
 
   float(*smooth_normal)[3] = MEM_callocN(sizeof(*smooth_normal) * lnors_ed_arr->totloop, __func__);
 
