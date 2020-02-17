@@ -472,6 +472,212 @@ ccl_device_inline void kernel_path_surface_connect_light_indirect(KernelGlobals*
 #endif
 }
 
+constexpr size_t HCLEN = 1024*16;
+
+typedef struct _hitcache {
+  Ray rays[HCLEN];
+  int cur, used;
+} _hitcache;
+
+static _hitcache hitcache[2] = { 0, };
+
+static void hitcache_add(Ray ray, int thread) {
+  hitcache[thread].rays[hitcache[thread].cur] = ray;
+  hitcache[thread].cur = (hitcache[thread].cur + 1) % HCLEN;
+
+  if (hitcache[thread].used < HCLEN) {
+    hitcache[thread].used++;
+  }
+}
+
+static int hitcache_get(KernelGlobals *kg, PathState* state, int thread) {
+  if (hitcache[thread].used == 0)
+    return -1;
+
+  //is path_state_rng_1D only giving numbers from 0.5-1.0?
+  float r = path_state_rng_1D(kg, state, PRNG_LIGHT_U);
+  r = r > 0.5 ? (r - 0.5) * 2.0 : r;
+
+  int idx = (int)(r * ((float)hitcache[thread].used) * 0.9999);
+
+  return idx;
+}
+
+//bastardized one-bounce bidirection tracing
+ccl_device_inline void kernel_path_surface_connect_light_indirect(KernelGlobals* kg,
+  ShaderData* sd,
+  ShaderData* emission_sd,
+  float3 throughput,
+  ccl_addr_space PathState* state,
+  PathRadiance* L)
+{
+  PROFILING_INIT(kg, PROFILING_CONNECT_LIGHT);
+
+#ifdef __EMISSION__
+  if (!(kernel_data.integrator.use_direct_light && (sd->flag & SD_BSDF_HAS_EVAL)))
+    return;
+
+  /* sample illumination from lights to find path contribution */
+  float light_u, light_v;
+  path_state_rng_2D(kg, state, PRNG_LIGHT_U, &light_u, &light_v);
+
+  Ray light_ray;
+  BsdfEval L_light;
+  PathRadiance L2 = { 0, };
+  bool is_lamp;
+
+#  ifdef __OBJECT_MOTION__
+  light_ray.time = sd->time;
+#  endif
+
+  LightSample ls;
+  if (light_sample(kg, light_u, light_v, sd->time, sd->P, state->bounce, &ls)) {
+    float terminate = path_state_rng_light_termination(kg, state);
+
+    if (1) { //direct_emission(kg, sd, emission_sd, &ls, state, &light_ray, &L_light, &is_lamp, terminate) || true) {
+      Ray ray;
+      float3 omega;
+      float3 Ng;
+      float pdf = 0.0;
+
+      /*trace a ray*/
+      if (ls.type == LIGHT_DISTANT) {
+        const ccl_global KernelLight* klight = &kernel_tex_fetch(__lights, ls.lamp);
+
+        ray.P = make_float3(klight->co[0], klight->co[1], klight->co[2]);
+        Ng = ls.P;
+      } else if (ls.type == LIGHT_POINT) {
+        Ng = -ls.D;
+        ray.P = ls.P + Ng * 0.00015f;
+      } else {
+        Ng = ls.Ng;
+        ray.P = ls.P + Ng * 0.00015f;
+      }
+
+      ray.t = ls.t;
+
+      sample_cos_hemisphere(Ng, light_u, light_v, &omega, &pdf);
+
+      omega = normalize(omega);
+      ray.D = omega;
+
+      float prob = path_state_rng_1D(kg, state, PRNG_LIGHT_U);
+      bool has_cache = prob > 0.75;
+
+      if (has_cache) {
+        int i = hitcache_get(kg, state, 0);
+
+        if (i >= 0) {
+          ray = hitcache[0].rays[i];
+        }
+      }
+
+      /* trace shadow ray */
+      float3 shadow = make_float3(1.0f, 1.0f, 1.0f);
+
+      if (1) { //!shadow_blocked(kg, sd, emission_sd, state, &ray, &shadow)) {
+        Intersection isect, isect2;
+        PathState _state2 = *state, *state2 = &_state2;
+        ShaderData sd2;
+        float3 P, Ng;
+        BsdfEval bsdf_eval;
+        Ray ray2;
+
+        //bool hit = scene_intersect(kg, *ray, visibility, isect);
+        //bool hit = kernel_path_scene_intersect(kg, state2, &ray, &isect, &L2);
+        bool hit = scene_intersect(kg, ray, PATH_RAY_ALL_VISIBILITY, &isect);
+        if (!hit) {
+          return;
+        }
+
+        P = ray.P + ray.D * isect.t;
+        Ng = normalize(isect.Ng);
+
+        float d1 = dot(Ng, -ray.D);
+        d1 = d1 < 0.0 ? 0.0 : d1;
+
+        ray2.P = sd->P + sd->Ng * 0.00015;
+
+        float dis = len(P - ray2.P) * 0.99999;
+
+        ray2.D = normalize(P - ray2.P);
+        ray2.t = dis;
+
+        float3 N2 = ray2.D;
+        
+        bool hit2 = scene_intersect(kg, ray2, PATH_RAY_ALL_VISIBILITY, &isect2);
+        bool bad = false;
+
+        if (hit2) {
+          bad = (isect.object != isect2.object || isect.prim != isect2.prim);
+        } else {
+          //?
+        }
+
+        if (bad) {
+          return;
+        }
+
+        shader_setup_from_ray(kg, &sd2, &isect, &ray);
+
+        /* Evaluate shader. */
+        shader_eval_surface(kg, &sd2, state2, state2->flag);
+        shader_prepare_closures(&sd2, state2);
+
+        float d2 = dot(sd->N, N2);
+
+        d2 = d2 < 0.0 ? 0.0 : d2;
+
+        d1 = d2 = 1.0f;
+        float3 throughput2 = throughput * d2 * d1 * make_float3(1.0f, 1.0f, 1.0f) / (1.0f + dis * dis);
+
+        if (1) { //direct_emission(kg, &sd2, emission_sd, &ls, state2, &light_ray, &L_light, &is_lamp, terminate)) {
+          differential3 dD = differential3_zero();
+
+          /* evaluate light closure */
+          float3 light_eval = direct_emissive_eval(
+              kg, emission_sd, &ls, state, -ls.D, dD, ls.t, sd->time);
+
+          throughput2 *= light_eval / ls.pdf; //L_light.diffuse;
+        }
+
+        if (1) {
+          /* sample BSDF */
+          float bsdf_pdf;
+          BsdfEval bsdf_eval;
+          float3 bsdf_omega_in;
+          differential3 bsdf_domega_in;
+          float bsdf_u, bsdf_v;
+          path_state_rng_2D(kg, state2, PRNG_BSDF_U, &bsdf_u, &bsdf_v);
+          int label;
+
+          label = shader_bsdf_sample(
+            kg, sd, bsdf_u, bsdf_v, &bsdf_eval, &bsdf_omega_in, &bsdf_domega_in, &bsdf_pdf);
+
+          if (!(bsdf_pdf == 0.0f || bsdf_eval_is_zero(&bsdf_eval))) {
+            //throughput2 *= bsdf_eval.sum_no_mis;
+            throughput2 *= bsdf_eval.diffuse;
+            //path_radiance_accum_light(L, state, throughput2, &bsdf_eval, shadow, 1.0f, is_lamp);
+            /* modify throughput */
+            //path_radiance_bsdf_bounce(kg, L, &throughput, &bsdf_eval, bsdf_pdf, state->bounce, label);
+          }
+        }
+
+        //path_radiance_accum_light(&L2, state2, throughput, &L_light, shadow, 1.0f, is_lamp);
+
+        
+        //path_radiance_accum_light(L, state, throughput2, &L_light, shadow, 1.0f, is_lamp);
+        L->emission += throughput2;
+
+        if (!has_cache) {
+          hitcache_add(ray, 0);
+        }
+      }
+    }
+  }
+#endif
+}
+
 /* path tracing: bounce off or through surface to with new direction stored in ray */
 ccl_device bool kernel_path_surface_bounce(KernelGlobals *kg,
                                            ShaderData *sd,
