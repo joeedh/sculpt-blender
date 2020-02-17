@@ -87,6 +87,7 @@ class Integrator : public Node {
   SamplingPattern sampling_pattern;
 
   bool need_update;
+  bool use_light_bounce;
 
   Integrator();
   ~Integrator();

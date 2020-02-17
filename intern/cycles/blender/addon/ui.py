@@ -242,13 +242,13 @@ class CYCLES_RENDER_PT_sampling_advanced(CyclesButtonsPanel, Panel):
 
         scene = context.scene
         cscene = scene.cycles
-
+        
         row = layout.row(align=True)
         row.prop(cscene, "seed")
         row.prop(cscene, "use_animated_seed", text="", icon='TIME')
 
+        layout.prop(cscene, "use_light_bounce")
         layout.prop(cscene, "sampling_pattern", text="Pattern")
-
         layout.prop(cscene, "use_square_samples")
 
         layout.separator()

@@ -245,6 +245,8 @@ void BlenderSync::sync_integrator()
   Integrator *integrator = scene->integrator;
   Integrator previntegrator = *integrator;
 
+  integrator->use_light_bounce = get_boolean(cscene, "use_light_bounce");
+
   integrator->min_bounce = get_int(cscene, "min_light_bounces");
   integrator->max_bounce = get_int(cscene, "max_bounces");
 

@@ -56,6 +56,8 @@ NODE_DEFINE(Integrator)
   SOCKET_FLOAT(sample_clamp_indirect, "Sample Clamp Indirect", 0.0f);
   SOCKET_BOOLEAN(motion_blur, "Motion Blur", false);
 
+  SOCKET_BOOLEAN(use_light_bounce, "Use Light Bounce", false);
+
   SOCKET_INT(aa_samples, "AA Samples", 0);
   SOCKET_INT(diffuse_samples, "Diffuse Samples", 1);
   SOCKET_INT(glossy_samples, "Glossy Samples", 1);
@@ -174,6 +176,7 @@ void Integrator::device_update(Device *device, DeviceScene *dscene, Scene *scene
 
   kintegrator->sampling_pattern = sampling_pattern;
   kintegrator->aa_samples = aa_samples;
+  kintegrator->use_light_bounce = use_light_bounce;
 
   if (light_sampling_threshold > 0.0f) {
     kintegrator->light_inv_rr_threshold = 1.0f / light_sampling_threshold;
