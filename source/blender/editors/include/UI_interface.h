@@ -28,6 +28,10 @@
 #include "BLI_sys_types.h" /* size_t */
 #include "RNA_types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Struct Declarations */
 
 struct ARegion;
@@ -1732,7 +1736,7 @@ enum {
 };
 
 enum {
-  UI_ITEM_O_RETURN_PROPS = 1 << 0,
+  /* UI_ITEM_O_RETURN_PROPS = 1 << 0, */ /* UNUSED */
   UI_ITEM_R_EXPAND = 1 << 1,
   UI_ITEM_R_SLIDER = 1 << 2,
   /**
@@ -2031,7 +2035,6 @@ eAutoPropButsReturn uiTemplateOperatorPropertyButs(const struct bContext *C,
                                                    const eButLabelAlign label_align,
                                                    const short flag);
 void uiTemplateHeader3D_mode(uiLayout *layout, struct bContext *C);
-void uiTemplateHeader3D(uiLayout *layout, struct bContext *C);
 void uiTemplateEditModeSelection(uiLayout *layout, struct bContext *C);
 void uiTemplateReportsBanner(uiLayout *layout, struct bContext *C);
 void uiTemplateInputStatus(uiLayout *layout, struct bContext *C);
@@ -2051,8 +2054,6 @@ void uiTemplateCacheFile(uiLayout *layout,
                          struct bContext *C,
                          struct PointerRNA *ptr,
                          const char *propname);
-
-struct ColorBand *UI_block_get_colorband_from_template_menu(struct uiBlock *block);
 
 /* Default UIList class name, keep in sync with its declaration in bl_ui/__init__.py */
 #define UI_UL_DEFAULT_CLASS_NAME "UI_UL_list"
@@ -2483,5 +2484,9 @@ void UI_interface_tag_script_reload(void);
 
 /* Support click-drag motion which presses the button and closes a popover (like a menu). */
 #define USE_UI_POPOVER_ONCE
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __UI_INTERFACE_H__ */

@@ -1727,10 +1727,8 @@ def km_sequencer(params):
         ("sequencer.select_all", {"type": 'A', "value": 'PRESS', "ctrl": True}, {"properties": [("action", 'SELECT')]}),
         ("sequencer.select_all", {"type": 'A', "value": 'PRESS', "ctrl": True, "shift": True}, {"properties": [("action", 'DESELECT')]}),
         ("sequencer.select_all", {"type": 'I', "value": 'PRESS', "ctrl": True}, {"properties": [("action", 'INVERT')]}),
-        ("sequencer.cut", {"type": 'K', "value": 'PRESS'},
+        ("sequencer.split", {"type": 'B', "value": 'PRESS', "ctrl": True},
          {"properties": [("type", 'SOFT')]}),
-        ("sequencer.cut", {"type": 'K', "value": 'PRESS', "shift": True},
-         {"properties": [("type", 'HARD')]}),
         ("sequencer.mute", {"type": 'M', "value": 'PRESS'},
          {"properties": [("unselected", False)]}),
         ("sequencer.mute", {"type": 'M', "value": 'PRESS', "shift": True},
@@ -1779,7 +1777,7 @@ def km_sequencer(params):
         ("sequencer.snap", {"type": 'X', "value": 'PRESS'}, None),
         ("sequencer.swap_inputs", {"type": 'S', "value": 'PRESS', "alt": True}, None),
         *(
-            (("sequencer.cut_multicam",
+            (("sequencer.split_multicam",
               {"type": NUMBERS_1[i], "value": 'PRESS'},
               {"properties": [("camera", i + 1)]})
              for i in range(10)
@@ -1804,7 +1802,6 @@ def km_sequencer(params):
         ("sequencer.select_linked_pick", {"type": 'RIGHT_BRACKET', "value": 'PRESS', "shift": True},
          {"properties": [("extend", True)]}),
         ("sequencer.select_linked", {"type": 'RIGHT_BRACKET', "value": 'PRESS', "ctrl": True}, None),
-        ("sequencer.select_box", {"type": 'Q', "value": 'PRESS'}, None),
         ("sequencer.select_box", {"type": 'EVT_TWEAK_L', "value": 'ANY'},
          {"properties":[("tweak", True), ("mode", 'SET')]}),
         ("sequencer.select_box", {"type": 'EVT_TWEAK_L', "value": 'ANY', "shift": True},
@@ -1823,6 +1820,9 @@ def km_sequencer(params):
         *_template_items_context_menu("SEQUENCER_MT_context_menu", {"type": 'RIGHTMOUSE', "value": 'PRESS'}),
         ("marker.add", {"type": 'M', "value": 'PRESS'}, None),
         ("marker.rename", {"type": 'RET', "value": 'PRESS'}, None),
+        # Tools
+        op_tool_cycle("builtin.select_box", {"type": 'Q', "value": 'PRESS'}),
+        op_tool_cycle("builtin.blade", {"type": 'B', "value": 'PRESS'}),
     ])
 
     return keymap
@@ -3404,7 +3404,8 @@ def km_object_non_modal(params):
     )
 
     items.extend([
-
+        ("object.mode_set",{"type": 'THREE', "value": 'PRESS'},
+         {"properties": [("mode", 'POSE')]}),
         ("object.mode_set_with_submode",{"type": 'ONE', "value": 'PRESS'},
          {"properties": [("mode", 'EDIT'), ("mesh_select_mode", {'VERT'})]}),
         ("object.mode_set_with_submode",{"type": 'TWO', "value": 'PRESS'},
@@ -3423,7 +3424,6 @@ def km_object_non_modal(params):
          {"properties": [("mode", 'WEIGHT_PAINT')]}),
         ("object.mode_set",{"type": 'EIGHT', "value": 'PRESS'},
          {"properties": [("mode", 'TEXTURE_PAINT')]}),
-
         ("object.mode_set",{"type": 'TWO', "value": 'PRESS'},
          {"properties": [("mode", 'EDIT_GPENCIL')]}),
         ("object.mode_set",{"type": 'THREE', "value": 'PRESS'},
@@ -3432,9 +3432,7 @@ def km_object_non_modal(params):
          {"properties": [("mode", 'PAINT_GPENCIL')]}),
         ("object.mode_set",{"type": 'FIVE', "value": 'PRESS'},
          {"properties": [("mode", 'WEIGHT_GPENCIL')]}),
-
-        ("object.mode_set",{"type": 'THREE', "value": 'PRESS'},
-         {"properties": [("mode", 'POSE')]})
+        
     ])
 
     return keymap
