@@ -25,6 +25,8 @@
 #include "DRW_engine.h"
 #include "DRW_render.h"
 
+#include "DEG_depsgraph_query.h"
+
 #include "ED_view3d.h"
 
 #include "BKE_object.h"
@@ -75,9 +77,11 @@ static void OVERLAY_engine_init(void *vedata)
 
   pd->wireframe_mode = (v3d->shading.type == OB_WIRE);
   pd->clipping_state = RV3D_CLIPPING_ENABLED(v3d, rv3d) ? DRW_STATE_CLIP_PLANES : 0;
+  pd->xray_opacity = XRAY_ALPHA(v3d);
   pd->xray_enabled = XRAY_ACTIVE(v3d);
   pd->xray_enabled_and_not_wire = pd->xray_enabled && v3d->shading.type > OB_WIRE;
   pd->clear_in_front = (v3d->shading.type != OB_SOLID);
+  pd->cfra = DEG_get_ctime(draw_ctx->depsgraph);
 
   OVERLAY_antialiasing_init(vedata);
 
@@ -132,11 +136,14 @@ static void OVERLAY_cache_init(void *vedata)
     case CTX_MODE_SCULPT:
       OVERLAY_sculpt_cache_init(vedata);
       break;
-    case CTX_MODE_OBJECT:
-    case CTX_MODE_PAINT_GPENCIL:
     case CTX_MODE_EDIT_GPENCIL:
+    case CTX_MODE_PAINT_GPENCIL:
     case CTX_MODE_SCULPT_GPENCIL:
+    case CTX_MODE_VERTEX_GPENCIL:
     case CTX_MODE_WEIGHT_GPENCIL:
+      OVERLAY_edit_gpencil_cache_init(vedata);
+      break;
+    case CTX_MODE_OBJECT:
       break;
     default:
       BLI_assert(!"Draw mode invalid");
@@ -147,6 +154,7 @@ static void OVERLAY_cache_init(void *vedata)
   OVERLAY_background_cache_init(vedata);
   OVERLAY_extra_cache_init(vedata);
   OVERLAY_facing_cache_init(vedata);
+  OVERLAY_gpencil_cache_init(vedata);
   OVERLAY_grid_cache_init(vedata);
   OVERLAY_image_cache_init(vedata);
   OVERLAY_metaball_cache_init(vedata);
@@ -215,8 +223,9 @@ static void OVERLAY_cache_populate(void *vedata, Object *ob)
   const bool in_paint_mode = (ob == draw_ctx->obact) &&
                              (draw_ctx->object_mode & OB_MODE_ALL_PAINT);
   const bool in_sculpt_mode = (ob == draw_ctx->obact) && (ob->sculpt != NULL);
-  const bool has_surface = ELEM(ob->type, OB_MESH, OB_CURVE, OB_SURF, OB_MBALL, OB_FONT);
-  const bool draw_surface = !((ob->dt < OB_WIRE) || (!renderable && (ob->dt != OB_WIRE)));
+  const bool has_surface = ELEM(
+      ob->type, OB_MESH, OB_CURVE, OB_SURF, OB_MBALL, OB_FONT, OB_GPENCIL);
+  const bool draw_surface = (ob->dt >= OB_WIRE) && (renderable || (ob->dt == OB_WIRE));
   const bool draw_facing = draw_surface && (pd->overlay.flag & V3D_OVERLAY_FACE_ORIENTATION);
   const bool draw_bones = (pd->overlay.flag & V3D_OVERLAY_HIDE_BONES) == 0;
   const bool draw_wires = draw_surface && has_surface &&
@@ -410,6 +419,7 @@ static void OVERLAY_draw_scene(void *vedata)
   }
 
   OVERLAY_outline_draw(vedata);
+  OVERLAY_xray_depth_copy(vedata);
 
   if (DRW_state_is_fbo()) {
     GPU_framebuffer_bind(fbl->overlay_default_fb);
@@ -427,12 +437,14 @@ static void OVERLAY_draw_scene(void *vedata)
   OVERLAY_armature_draw(vedata);
   OVERLAY_particle_draw(vedata);
   OVERLAY_metaball_draw(vedata);
+  OVERLAY_gpencil_draw(vedata);
   OVERLAY_extra_draw(vedata);
 
   if (DRW_state_is_fbo()) {
     GPU_framebuffer_bind(fbl->overlay_color_only_fb);
   }
 
+  OVERLAY_xray_fade_draw(vedata);
   OVERLAY_grid_draw(vedata);
 
   if (DRW_state_is_fbo()) {
@@ -487,6 +499,13 @@ static void OVERLAY_draw_scene(void *vedata)
       break;
     case CTX_MODE_SCULPT:
       OVERLAY_sculpt_draw(vedata);
+      break;
+    case CTX_MODE_EDIT_GPENCIL:
+    case CTX_MODE_PAINT_GPENCIL:
+    case CTX_MODE_SCULPT_GPENCIL:
+    case CTX_MODE_VERTEX_GPENCIL:
+    case CTX_MODE_WEIGHT_GPENCIL:
+      OVERLAY_edit_gpencil_draw(vedata);
       break;
     default:
       break;

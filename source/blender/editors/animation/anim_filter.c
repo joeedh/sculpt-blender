@@ -397,7 +397,7 @@ bool ANIM_animdata_get_context(const bContext *C, bAnimContext *ac)
 {
   Main *bmain = CTX_data_main(C);
   ScrArea *sa = CTX_wm_area(C);
-  ARegion *ar = CTX_wm_region(C);
+  ARegion *region = CTX_wm_region(C);
   SpaceLink *sl = CTX_wm_space_data(C);
   Scene *scene = CTX_data_scene(C);
 
@@ -416,10 +416,10 @@ bool ANIM_animdata_get_context(const bContext *C, bAnimContext *ac)
   ac->view_layer = CTX_data_view_layer(C);
   ac->obact = (ac->view_layer->basact) ? ac->view_layer->basact->object : NULL;
   ac->sa = sa;
-  ac->ar = ar;
+  ac->region = region;
   ac->sl = sl;
   ac->spacetype = (sa) ? sa->spacetype : 0;
-  ac->regiontype = (ar) ? ar->regiontype : 0;
+  ac->regiontype = (region) ? region->regiontype : 0;
 
   /* initialise default y-scale factor */
   animedit_get_yscale_factor(ac);
@@ -2996,7 +2996,7 @@ static bool animdata_filter_base_is_ok(bDopeSheet *ads, Base *base, int filter_m
    */
   if ((filter_mode & ANIMFILTER_DATA_VISIBLE) && !(ads->filterflag & ADS_FILTER_INCL_HIDDEN)) {
     /* layer visibility - we check both object and base, since these may not be in sync yet */
-    if ((base->flag & BASE_VISIBLE_DEPSGRAPH) == 0) {
+    if ((base->flag & BASE_VISIBLE_DEPSGRAPH) == 0 || (base->flag & BASE_VISIBLE_VIEWLAYER) == 0) {
       return false;
     }
 

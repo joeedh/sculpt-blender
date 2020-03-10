@@ -24,6 +24,10 @@
 #ifndef __ED_TRANSFORM_H__
 #define __ED_TRANSFORM_H__
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* ******************* Registration Function ********************** */
 
 struct Object;
@@ -153,7 +157,6 @@ int BIF_countTransformOrientation(const struct bContext *C);
 #define P_GPENCIL_EDIT (1 << 13)
 #define P_CURSOR_EDIT (1 << 14)
 #define P_CLNOR_INVALIDATE (1 << 15)
-#define P_MOUSE (1 << 16)
 
 void Transform_Properties(struct wmOperatorType *ot, int flags);
 
@@ -206,5 +209,9 @@ struct TransformCalcParams {
 int ED_transform_calc_gizmo_stats(const struct bContext *C,
                                   const struct TransformCalcParams *params,
                                   struct TransformBounds *tbounds);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __ED_TRANSFORM_H__ */

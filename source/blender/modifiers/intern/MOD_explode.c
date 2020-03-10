@@ -130,8 +130,8 @@ static void createFacepa(ExplodeModifierData *emd, ParticleSystemModifierData *p
       for (i = 0; i < totvert; i++, dvert++) {
         float val = BLI_rng_get_float(rng);
         val = (1.0f - emd->protect) * val + emd->protect * 0.5f;
-        const float weight = invert_vgroup ? 1.0f - defvert_find_weight(dvert, defgrp_index) :
-                                             defvert_find_weight(dvert, defgrp_index);
+        const float weight = invert_vgroup ? 1.0f - BKE_defvert_find_weight(dvert, defgrp_index) :
+                                             BKE_defvert_find_weight(dvert, defgrp_index);
         if (val < weight) {
           vertpa[i] = -1;
         }
@@ -977,7 +977,6 @@ static Mesh *explodeMesh(ExplodeModifierData *emd,
   explode = BKE_mesh_new_nomain_from_template(mesh, totdup, 0, totface - delface, 0, 0);
 
   mtface = CustomData_get_layer_named(&explode->fdata, CD_MTFACE, emd->uvname);
-  /*dupvert = CDDM_get_verts(explode);*/
 
   /* getting back to object space */
   invert_m4_m4(imat, ctx->object->obmat);

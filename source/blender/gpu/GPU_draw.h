@@ -34,6 +34,7 @@ struct Image;
 struct ImageUser;
 struct Main;
 
+#include "BLI_utildefines.h"
 #include "DNA_object_enums.h"
 
 /* OpenGL drawing functions related to shading. */
@@ -71,6 +72,7 @@ void GPU_create_gl_tex(unsigned int *bind,
                        int recth,
                        int textarget,
                        bool mipmap,
+                       bool half_float,
                        bool use_srgb,
                        struct Image *ima);
 void GPU_create_gl_tex_compressed(unsigned int *bind,

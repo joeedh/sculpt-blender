@@ -372,7 +372,7 @@ static int actkeys_viewall(bContext *C, const bool only_sel)
   if (ANIM_animdata_get_context(C, &ac) == 0) {
     return OPERATOR_CANCELLED;
   }
-  v2d = &ac.ar->v2d;
+  v2d = &ac.region->v2d;
 
   /* set the horizontal range, with an extra offset so that the extreme keys will be in view */
   found = get_keyframe_extents(&ac, &min, &max, only_sel);
@@ -463,7 +463,7 @@ void ACTION_OT_view_all(wmOperatorType *ot)
 void ACTION_OT_view_selected(wmOperatorType *ot)
 {
   /* identifiers */
-  ot->name = "View Selected";
+  ot->name = "Frame Selected";
   ot->idname = "ACTION_OT_view_selected";
   ot->description = "Reset viewable area to show selected keyframes range";
 
@@ -707,7 +707,7 @@ static void insert_action_keys(bAnimContext *ac, short mode)
   ReportList *reports = ac->reports;
   Scene *scene = ac->scene;
   ToolSettings *ts = scene->toolsettings;
-  short flag = 0;
+  eInsertKeyFlags flag;
 
   /* filter data */
   filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_LIST_VISIBLE |
@@ -721,8 +721,8 @@ static void insert_action_keys(bAnimContext *ac, short mode)
 
   ANIM_animdata_filter(ac, &anim_data, filter, ac->data, ac->datatype);
 
-  /* init keyframing flag */
-  flag = ANIM_get_keyframing_flags(scene, 1);
+  /* Init keyframing flag. */
+  flag = ANIM_get_keyframing_flags(scene, true);
 
   /* insert keyframes */
   for (ale = anim_data.first; ale; ale = ale->next) {
@@ -803,7 +803,7 @@ static void insert_gpencil_keys(bAnimContext *ac, short mode)
   /* insert gp frames */
   for (ale = anim_data.first; ale; ale = ale->next) {
     bGPDlayer *gpl = (bGPDlayer *)ale->data;
-    BKE_gpencil_layer_getframe(gpl, CFRA, add_frame_mode);
+    BKE_gpencil_layer_frame_get(gpl, CFRA, add_frame_mode);
   }
 
   ANIM_animdata_update(ac, &anim_data);

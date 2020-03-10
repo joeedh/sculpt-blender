@@ -94,7 +94,8 @@ typedef struct bNodeSocket {
   void *storage;
 
   short type, flag;
-  /** Max. number of links. */
+  /** Max. number of links. Read via nodeSocketLinkLimit, because the limit might be defined on the
+   * socket type. */
   short limit;
   /** Input/output type. */
   short in_out;
@@ -1212,11 +1213,6 @@ enum {
   NODE_VECTOR_ROTATE_TYPE_AXIS_Y = 2,
   NODE_VECTOR_ROTATE_TYPE_AXIS_Z = 3,
   NODE_VECTOR_ROTATE_TYPE_EULER_XYZ = 4,
-  NODE_VECTOR_ROTATE_TYPE_EULER_XZY = 5,
-  NODE_VECTOR_ROTATE_TYPE_EULER_YXZ = 6,
-  NODE_VECTOR_ROTATE_TYPE_EULER_YZX = 7,
-  NODE_VECTOR_ROTATE_TYPE_EULER_ZXY = 8,
-  NODE_VECTOR_ROTATE_TYPE_EULER_ZYX = 9,
 };
 
 /* math node clamp */

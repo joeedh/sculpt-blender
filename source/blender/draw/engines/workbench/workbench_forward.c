@@ -56,7 +56,6 @@ static struct {
   WORKBENCH_FORWARD_Shaders sh_data[GPU_SHADER_CFG_LEN];
 
   struct GPUShader *composite_sh_cache[2];
-  struct GPUShader *checker_depth_sh;
 
   struct GPUTexture *object_id_tx;             /* ref only, not alloced */
   struct GPUTexture *transparent_accum_tx;     /* ref only, not alloced */
@@ -72,7 +71,6 @@ extern char datatoc_workbench_forward_composite_frag_glsl[];
 extern char datatoc_workbench_forward_depth_frag_glsl[];
 extern char datatoc_workbench_forward_transparent_accum_frag_glsl[];
 extern char datatoc_workbench_data_lib_glsl[];
-extern char datatoc_workbench_checkerboard_depth_frag_glsl[];
 extern char datatoc_workbench_object_outline_lib_glsl[];
 extern char datatoc_workbench_curvature_lib_glsl[];
 extern char datatoc_workbench_prepass_vert_glsl[];
@@ -136,13 +134,14 @@ static char *workbench_build_forward_composite_frag(void)
   return str;
 }
 
-WORKBENCH_MaterialData *workbench_forward_get_or_create_material_data(WORKBENCH_Data *vedata,
-                                                                      Object *ob,
-                                                                      Material *mat,
-                                                                      Image *ima,
-                                                                      ImageUser *iuser,
-                                                                      int color_type,
-                                                                      int interp)
+WORKBENCH_MaterialData *workbench_forward_get_or_create_material_data(
+    WORKBENCH_Data *vedata,
+    Object *ob,
+    Material *mat,
+    Image *ima,
+    ImageUser *iuser,
+    eV3DShadingColorType color_type,
+    int interp)
 {
   const DRWContextState *draw_ctx = DRW_context_state_get();
   WORKBENCH_FORWARD_Shaders *sh_data = &e_data.sh_data[draw_ctx->sh_cfg];
@@ -349,11 +348,6 @@ void workbench_forward_engine_init(WORKBENCH_Data *vedata)
   WORKBENCH_PrivateData *wpd = stl->g_data;
   workbench_private_data_init(wpd);
 
-  if (!e_data.checker_depth_sh) {
-    e_data.checker_depth_sh = DRW_shader_create_fullscreen(
-        datatoc_workbench_checkerboard_depth_frag_glsl, NULL);
-  }
-
   workbench_forward_outline_shaders_ensure(wpd, draw_ctx->sh_cfg);
 
   workbench_volume_engine_init();
@@ -438,31 +432,9 @@ void workbench_forward_engine_init(WORKBENCH_Data *vedata)
     workbench_aa_create_pass(vedata, &e_data.transparent_accum_tx);
   }
 
-  /* Checker Depth */
-  {
-    static float noise_offset = 0.0f;
-    float blend_threshold = 0.0f;
-
-    if (DRW_state_is_image_render()) {
-      /* TODO: Should be based on the number of samples used for render. */
-      noise_offset = fmodf(noise_offset + 1.0f / 8.0f, 1.0f);
-    }
-
-    if (XRAY_ENABLED(wpd)) {
-      blend_threshold = 1.0f - XRAY_ALPHA(wpd) * 0.9f;
-    }
-
-    if (wpd->shading.type == OB_WIRE) {
-      wpd->shading.xray_alpha = 0.0f;
-      wpd->shading.xray_alpha_wire = 0.0f;
-    }
-
-    int state = DRW_STATE_WRITE_DEPTH | DRW_STATE_DEPTH_ALWAYS;
-    psl->checker_depth_pass = DRW_pass_create("Checker Depth", state);
-    grp = DRW_shgroup_create(e_data.checker_depth_sh, psl->checker_depth_pass);
-    DRW_shgroup_call(grp, DRW_cache_fullscreen_quad_get(), NULL);
-    DRW_shgroup_uniform_float_copy(grp, "threshold", blend_threshold);
-    DRW_shgroup_uniform_float_copy(grp, "offset", noise_offset);
+  if (wpd->shading.type == OB_WIRE) {
+    wpd->shading.xray_alpha = 0.0f;
+    wpd->shading.xray_alpha_wire = 0.0f;
   }
 }
 
@@ -481,7 +453,6 @@ void workbench_forward_engine_free()
   for (int index = 0; index < 2; index++) {
     DRW_SHADER_FREE_SAFE(e_data.composite_sh_cache[index]);
   }
-  DRW_SHADER_FREE_SAFE(e_data.checker_depth_sh);
 
   workbench_volume_engine_free();
   workbench_fxaa_engine_free();
@@ -517,7 +488,8 @@ static void workbench_forward_cache_populate_particles(WORKBENCH_Data *vedata, O
       ImageUser *iuser;
       int interp;
       workbench_material_get_image_and_mat(ob, part->omat, &image, &iuser, &interp, &mat);
-      int color_type = workbench_material_determine_color_type(wpd, image, ob, false);
+      eV3DShadingColorType color_type = workbench_material_determine_color_type(
+          wpd, image, ob, false);
       WORKBENCH_MaterialData *material = workbench_forward_get_or_create_material_data(
           vedata, ob, mat, image, iuser, color_type, interp);
 
@@ -573,7 +545,8 @@ static void workbench_forward_cache_populate_texture_paint_mode(WORKBENCH_Data *
     Image *image = imapaint->canvas;
     int interp = (imapaint->interp == IMAGEPAINT_INTERP_LINEAR) ? SHD_INTERP_LINEAR :
                                                                   SHD_INTERP_CLOSEST;
-    int color_type = workbench_material_determine_color_type(wpd, image, ob, use_sculpt_pbvh);
+    eV3DShadingColorType color_type = workbench_material_determine_color_type(
+        wpd, image, ob, use_sculpt_pbvh);
     struct GPUBatch *geom = DRW_cache_mesh_surface_texpaint_single_get(ob);
     material = workbench_forward_get_or_create_material_data(
         vedata, ob, NULL, image, NULL, color_type, interp);
@@ -592,7 +565,8 @@ static void workbench_forward_cache_populate_texture_paint_mode(WORKBENCH_Data *
         ImageUser *iuser;
         int interp;
         workbench_material_get_image_and_mat(ob, i + 1, &image, &iuser, &interp, &mat);
-        int color_type = workbench_material_determine_color_type(wpd, image, ob, use_sculpt_pbvh);
+        eV3DShadingColorType color_type = workbench_material_determine_color_type(
+            wpd, image, ob, use_sculpt_pbvh);
         material = workbench_forward_get_or_create_material_data(
             vedata, ob, mat, image, iuser, color_type, interp);
 
@@ -612,7 +586,8 @@ static void workbench_forward_cache_populate_vertex_paint_mode(WORKBENCH_Data *v
                                !DRW_state_is_image_render();
   WORKBENCH_MaterialData *material;
 
-  int color_type = workbench_material_determine_color_type(wpd, NULL, ob, use_sculpt_pbvh);
+  eV3DShadingColorType color_type = workbench_material_determine_color_type(
+      wpd, NULL, ob, use_sculpt_pbvh);
   struct GPUBatch *geom = DRW_cache_mesh_surface_vertpaint_get(ob);
   material = workbench_forward_get_or_create_material_data(
       vedata, ob, NULL, NULL, NULL, color_type, false);
@@ -683,7 +658,8 @@ void workbench_forward_cache_populate(WORKBENCH_Data *vedata, Object *ob)
         ImageUser *iuser;
         int interp;
         workbench_material_get_image_and_mat(ob, i + 1, &image, &iuser, &interp, &mat);
-        int color_type = workbench_material_determine_color_type(wpd, image, ob, use_sculpt_pbvh);
+        eV3DShadingColorType color_type = workbench_material_determine_color_type(
+            wpd, image, ob, use_sculpt_pbvh);
         material = workbench_forward_get_or_create_material_data(
             vedata, ob, mat, image, iuser, color_type, interp);
         DRW_shgroup_call(material->shgrp_object_outline, geom_array[i], ob);
@@ -696,7 +672,8 @@ void workbench_forward_cache_populate(WORKBENCH_Data *vedata, Object *ob)
                   V3D_SHADING_RANDOM_COLOR,
                   V3D_SHADING_VERTEX_COLOR)) {
       /* No material split needed */
-      int color_type = workbench_material_determine_color_type(wpd, NULL, ob, use_sculpt_pbvh);
+      eV3DShadingColorType color_type = workbench_material_determine_color_type(
+          wpd, NULL, ob, use_sculpt_pbvh);
 
       if (use_sculpt_pbvh) {
         material = workbench_forward_get_or_create_material_data(
@@ -828,10 +805,6 @@ void workbench_forward_draw_scene(WORKBENCH_Data *vedata)
 
   /* Color correct and Anti aliasing */
   workbench_aa_draw_pass(vedata, e_data.composite_buffer_tx);
-
-  /* Apply checker pattern */
-  GPU_framebuffer_bind(dfbl->depth_only_fb);
-  DRW_draw_pass(psl->checker_depth_pass);
 }
 
 void workbench_forward_draw_finish(WORKBENCH_Data *vedata)

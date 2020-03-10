@@ -29,7 +29,9 @@ ccl_device_inline void kernel_write_denoising_shadow(KernelGlobals *kg,
   if (kernel_data.film.pass_denoising_data == 0)
     return;
 
-  buffer += (sample & 1) ? DENOISING_PASS_SHADOW_B : DENOISING_PASS_SHADOW_A;
+  buffer += sample_is_even(kernel_data.integrator.sampling_pattern, sample) ?
+                DENOISING_PASS_SHADOW_B :
+                DENOISING_PASS_SHADOW_A;
 
   path_total = ensure_finite(path_total);
   path_total_shaded = ensure_finite(path_total_shaded);
@@ -249,8 +251,6 @@ ccl_device_inline void kernel_write_data_passes(KernelGlobals *kg,
     L->color_glossy += shader_bsdf_glossy(kg, sd) * throughput;
   if (light_flag & PASSMASK_COMPONENT(TRANSMISSION))
     L->color_transmission += shader_bsdf_transmission(kg, sd) * throughput;
-  if (light_flag & PASSMASK_COMPONENT(SUBSURFACE))
-    L->color_subsurface += shader_bsdf_subsurface(kg, sd) * throughput;
 
   if (light_flag & PASSMASK(MIST)) {
     /* bring depth into 0..1 range */
@@ -296,11 +296,8 @@ ccl_device_inline void kernel_write_light_passes(KernelGlobals *kg,
   if (light_flag & PASSMASK(TRANSMISSION_INDIRECT))
     kernel_write_pass_float3(buffer + kernel_data.film.pass_transmission_indirect,
                              L->indirect_transmission);
-  if (light_flag & PASSMASK(SUBSURFACE_INDIRECT))
-    kernel_write_pass_float3(buffer + kernel_data.film.pass_subsurface_indirect,
-                             L->indirect_subsurface);
   if (light_flag & PASSMASK(VOLUME_INDIRECT))
-    kernel_write_pass_float3(buffer + kernel_data.film.pass_volume_indirect, L->indirect_scatter);
+    kernel_write_pass_float3(buffer + kernel_data.film.pass_volume_indirect, L->indirect_volume);
   if (light_flag & PASSMASK(DIFFUSE_DIRECT))
     kernel_write_pass_float3(buffer + kernel_data.film.pass_diffuse_direct, L->direct_diffuse);
   if (light_flag & PASSMASK(GLOSSY_DIRECT))
@@ -308,11 +305,8 @@ ccl_device_inline void kernel_write_light_passes(KernelGlobals *kg,
   if (light_flag & PASSMASK(TRANSMISSION_DIRECT))
     kernel_write_pass_float3(buffer + kernel_data.film.pass_transmission_direct,
                              L->direct_transmission);
-  if (light_flag & PASSMASK(SUBSURFACE_DIRECT))
-    kernel_write_pass_float3(buffer + kernel_data.film.pass_subsurface_direct,
-                             L->direct_subsurface);
   if (light_flag & PASSMASK(VOLUME_DIRECT))
-    kernel_write_pass_float3(buffer + kernel_data.film.pass_volume_direct, L->direct_scatter);
+    kernel_write_pass_float3(buffer + kernel_data.film.pass_volume_direct, L->direct_volume);
 
   if (light_flag & PASSMASK(EMISSION))
     kernel_write_pass_float3(buffer + kernel_data.film.pass_emission, L->emission);
@@ -328,8 +322,6 @@ ccl_device_inline void kernel_write_light_passes(KernelGlobals *kg,
   if (light_flag & PASSMASK(TRANSMISSION_COLOR))
     kernel_write_pass_float3(buffer + kernel_data.film.pass_transmission_color,
                              L->color_transmission);
-  if (light_flag & PASSMASK(SUBSURFACE_COLOR))
-    kernel_write_pass_float3(buffer + kernel_data.film.pass_subsurface_color, L->color_subsurface);
   if (light_flag & PASSMASK(SHADOW)) {
     float4 shadow = L->shadow;
     shadow.w = kernel_data.film.pass_shadow_scale;
@@ -396,6 +388,41 @@ ccl_device_inline void kernel_write_result(KernelGlobals *kg,
 #ifdef __KERNEL_DEBUG__
   kernel_write_debug_passes(kg, buffer, L);
 #endif
+
+  /* Adaptive Sampling. Fill the additional buffer with the odd samples and calculate our stopping
+     criteria. This is the heuristic from "A hierarchical automatic stopping condition for Monte
+     Carlo global illumination" except that here it is applied per pixel and not in hierarchical
+     tiles. */
+  if (kernel_data.film.pass_adaptive_aux_buffer &&
+      kernel_data.integrator.adaptive_threshold > 0.0f) {
+    if (sample_is_even(kernel_data.integrator.sampling_pattern, sample)) {
+      kernel_write_pass_float4(buffer + kernel_data.film.pass_adaptive_aux_buffer,
+                               make_float4(L_sum.x * 2.0f, L_sum.y * 2.0f, L_sum.z * 2.0f, 0.0f));
+    }
+#ifdef __KERNEL_CPU__
+    if (sample > kernel_data.integrator.adaptive_min_samples &&
+        (sample & (ADAPTIVE_SAMPLE_STEP - 1)) == (ADAPTIVE_SAMPLE_STEP - 1)) {
+      kernel_do_adaptive_stopping(kg, buffer, sample);
+    }
+#endif
+  }
+
+  /* Write the sample count as negative numbers initially to mark the samples as in progress.
+   * Once the tile has finished rendering, the sign gets flipped and all the pixel values
+   * are scaled as if they were taken at a uniform sample count. */
+  if (kernel_data.film.pass_sample_count) {
+    /* Make sure it's a negative number. In progressive refine mode, this bit gets flipped between
+     * passes. */
+#ifdef __ATOMIC_PASS_WRITE__
+    atomic_fetch_and_or_uint32((ccl_global uint *)(buffer + kernel_data.film.pass_sample_count),
+                               0x80000000);
+#else
+    if (buffer[kernel_data.film.pass_sample_count] > 0) {
+      buffer[kernel_data.film.pass_sample_count] *= -1.0f;
+    }
+#endif
+    kernel_write_pass_float(buffer + kernel_data.film.pass_sample_count, -1.0f);
+  }
 }
 
 CCL_NAMESPACE_END

@@ -369,10 +369,10 @@ static void recalcData_actedit(TransInfo *t)
   ac.view_layer = t->view_layer;
   ac.obact = OBACT(view_layer);
   ac.sa = t->sa;
-  ac.ar = t->ar;
+  ac.region = t->region;
   ac.sl = (t->sa) ? t->sa->spacedata.first : NULL;
   ac.spacetype = (t->sa) ? t->sa->spacetype : 0;
-  ac.regiontype = (t->ar) ? t->ar->regiontype : 0;
+  ac.regiontype = (t->region) ? t->region->regiontype : 0;
 
   ANIM_animdata_context_getdata(&ac);
 
@@ -422,10 +422,10 @@ static void recalcData_graphedit(TransInfo *t)
   ac.view_layer = t->view_layer;
   ac.obact = OBACT(view_layer);
   ac.sa = t->sa;
-  ac.ar = t->ar;
+  ac.region = t->region;
   ac.sl = (t->sa) ? t->sa->spacedata.first : NULL;
   ac.spacetype = (t->sa) ? t->sa->spacetype : 0;
-  ac.regiontype = (t->ar) ? t->ar->regiontype : 0;
+  ac.regiontype = (t->region) ? t->region->regiontype : 0;
 
   ANIM_animdata_context_getdata(&ac);
 
@@ -1149,12 +1149,15 @@ static void recalcData_sequencer(TransInfo *t)
 static void recalcData_gpencil_strokes(TransInfo *t)
 {
   TransDataContainer *tc = TRANS_DATA_CONTAINER_FIRST_SINGLE(t);
+  bGPDstroke *gps_prev = NULL;
 
   TransData *td = tc->data;
   for (int i = 0; i < tc->data_len; i++, td++) {
     bGPDstroke *gps = td->extra;
-    if (gps != NULL) {
-      gps->flag |= GP_STROKE_RECALC_GEOMETRY;
+    if ((gps != NULL) && (gps != gps_prev)) {
+      /* Calc geometry data. */
+      BKE_gpencil_stroke_geometry_update(gps);
+      gps_prev = gps;
     }
   }
 }
@@ -1368,28 +1371,17 @@ void initTransInfo(bContext *C, TransInfo *t, wmOperator *op, const wmEvent *eve
   Object *obact = OBACT(view_layer);
   const eObjectMode object_mode = obact ? obact->mode : OB_MODE_OBJECT;
   ToolSettings *ts = CTX_data_tool_settings(C);
-  ARegion *ar = CTX_wm_region(C);
+  ARegion *region = CTX_wm_region(C);
   ScrArea *sa = CTX_wm_area(C);
 
   bGPdata *gpd = CTX_data_gpencil_data(C);
   PropertyRNA *prop;
 
-  if (op && (prop = RNA_struct_find_property(op->ptr, "mouse_coordinate_override")) &&
-      RNA_property_is_set(op->ptr, prop)) {
-    RNA_property_int_get_array(op->ptr, prop, t->mval);
-  }
-  else if (event) {
-    copy_v2_v2_int(t->mval, event->mval);
-  }
-  else {
-    zero_v2_int(t->mval);
-  }
-
   t->depsgraph = CTX_data_depsgraph_pointer(C);
   t->scene = sce;
   t->view_layer = view_layer;
   t->sa = sa;
-  t->ar = ar;
+  t->region = region;
   t->settings = ts;
   t->reports = op ? op->reports : NULL;
 
@@ -1413,11 +1405,16 @@ void initTransInfo(bContext *C, TransInfo *t, wmOperator *op, const wmEvent *eve
 
   t->redraw = TREDRAW_HARD; /* redraw first time */
 
-  t->mouse.imval[0] = t->mval[0];
-  t->mouse.imval[1] = t->mval[1];
-
-  t->con.imval[0] = t->mouse.imval[0];
-  t->con.imval[1] = t->mouse.imval[1];
+  int mval[2];
+  if (event) {
+    copy_v2_v2_int(mval, event->mval);
+  }
+  else {
+    zero_v2_int(mval);
+  }
+  copy_v2_v2_int(t->mval, mval);
+  copy_v2_v2_int(t->mouse.imval, mval);
+  copy_v2_v2_int(t->con.imval, mval);
 
   t->transform = NULL;
   t->handleEvent = NULL;
@@ -1469,7 +1466,7 @@ void initTransInfo(bContext *C, TransInfo *t, wmOperator *op, const wmEvent *eve
     /* background mode */
     t->spacetype = SPACE_EMPTY;
   }
-  else if ((ar == NULL) && (sa->spacetype == SPACE_VIEW3D)) {
+  else if ((region == NULL) && (sa->spacetype == SPACE_VIEW3D)) {
     /* running in the text editor */
     t->spacetype = SPACE_EMPTY;
   }
@@ -1566,7 +1563,7 @@ void initTransInfo(bContext *C, TransInfo *t, wmOperator *op, const wmEvent *eve
   else if (t->spacetype == SPACE_IMAGE) {
     SpaceImage *sima = sa->spacedata.first;
     // XXX for now, get View2D from the active region
-    t->view = &ar->v2d;
+    t->view = &region->v2d;
     t->around = sima->around;
 
     if (ED_space_image_show_uvedit(sima, OBACT(t->view_layer))) {
@@ -1585,17 +1582,17 @@ void initTransInfo(bContext *C, TransInfo *t, wmOperator *op, const wmEvent *eve
   }
   else if (t->spacetype == SPACE_NODE) {
     // XXX for now, get View2D from the active region
-    t->view = &ar->v2d;
+    t->view = &region->v2d;
     t->around = V3D_AROUND_CENTER_BOUNDS;
   }
   else if (t->spacetype == SPACE_GRAPH) {
     SpaceGraph *sipo = sa->spacedata.first;
-    t->view = &ar->v2d;
+    t->view = &region->v2d;
     t->around = sipo->around;
   }
   else if (t->spacetype == SPACE_CLIP) {
     SpaceClip *sclip = sa->spacedata.first;
-    t->view = &ar->v2d;
+    t->view = &region->v2d;
     t->around = sclip->around;
 
     if (ED_space_clip_check_show_trackedit(sclip)) {
@@ -1606,9 +1603,9 @@ void initTransInfo(bContext *C, TransInfo *t, wmOperator *op, const wmEvent *eve
     }
   }
   else {
-    if (ar) {
+    if (region) {
       // XXX for now, get View2D  from the active region
-      t->view = &ar->v2d;
+      t->view = &region->v2d;
       // XXX for now, the center point is the midpoint of the data
     }
     else {
@@ -1824,13 +1821,13 @@ void freeTransCustomDataForMode(TransInfo *t)
 void postTrans(bContext *C, TransInfo *t)
 {
   if (t->draw_handle_view) {
-    ED_region_draw_cb_exit(t->ar->type, t->draw_handle_view);
+    ED_region_draw_cb_exit(t->region->type, t->draw_handle_view);
   }
   if (t->draw_handle_apply) {
-    ED_region_draw_cb_exit(t->ar->type, t->draw_handle_apply);
+    ED_region_draw_cb_exit(t->region->type, t->draw_handle_apply);
   }
   if (t->draw_handle_pixel) {
-    ED_region_draw_cb_exit(t->ar->type, t->draw_handle_pixel);
+    ED_region_draw_cb_exit(t->region->type, t->draw_handle_pixel);
   }
   if (t->draw_handle_cursor) {
     WM_paint_cursor_end(CTX_wm_manager(C), t->draw_handle_cursor);
@@ -2009,10 +2006,10 @@ void calculateCenterCursor(TransInfo *t, float r_center[3])
 
   /* If edit or pose mode, move cursor in local space */
   if (t->options & CTX_PAINT_CURVE) {
-    if (ED_view3d_project_float_global(t->ar, cursor, r_center, V3D_PROJ_TEST_NOP) !=
+    if (ED_view3d_project_float_global(t->region, cursor, r_center, V3D_PROJ_TEST_NOP) !=
         V3D_PROJ_RET_OK) {
-      r_center[0] = t->ar->winx / 2.0f;
-      r_center[1] = t->ar->winy / 2.0f;
+      r_center[0] = t->region->winx / 2.0f;
+      r_center[1] = t->region->winy / 2.0f;
     }
     r_center[2] = 0.0f;
   }
@@ -2052,8 +2049,8 @@ void calculateCenterCursor2D(TransInfo *t, float r_center[2])
     }
     else if (t->options & CTX_PAINT_CURVE) {
       if (t->spacetype == SPACE_IMAGE) {
-        r_center[0] = UI_view2d_view_to_region_x(&t->ar->v2d, cursor[0]);
-        r_center[1] = UI_view2d_view_to_region_y(&t->ar->v2d, cursor[1]);
+        r_center[0] = UI_view2d_view_to_region_x(&t->region->v2d, cursor[0]);
+        r_center[1] = UI_view2d_view_to_region_y(&t->region->v2d, cursor[1]);
       }
     }
     else {
@@ -2235,7 +2232,7 @@ void calculateCenter(TransInfo *t)
 
   /* for panning from cameraview */
   if ((t->flag & T_OBJECT) && (t->flag & T_OVERRIDE_CENTER) == 0) {
-    if (t->spacetype == SPACE_VIEW3D && t->ar && t->ar->regiontype == RGN_TYPE_WINDOW) {
+    if (t->spacetype == SPACE_VIEW3D && t->region && t->region->regiontype == RGN_TYPE_WINDOW) {
 
       if (t->flag & T_CAMERA) {
         float axis[3];
@@ -2268,8 +2265,8 @@ void calculateCenter(TransInfo *t)
      * We need special case here as well, since ED_view3d_calc_zfac will crash when called
      * for a region different from RGN_TYPE_WINDOW.
      */
-    if (t->ar->regiontype == RGN_TYPE_WINDOW) {
-      t->zfac = ED_view3d_calc_zfac(t->ar->regiondata, t->center_global, NULL);
+    if (t->region->regiontype == RGN_TYPE_WINDOW) {
+      t->zfac = ED_view3d_calc_zfac(t->region->regiondata, t->center_global, NULL);
     }
     else {
       t->zfac = 0.0f;

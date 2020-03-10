@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <ctype.h>
+#include <math.h>
 #include <inttypes.h>
 
 #include "MEM_guardedalloc.h"
@@ -818,7 +819,7 @@ void BLI_str_toupper_ascii(char *str, const size_t len)
  */
 void BLI_str_rstrip(char *str)
 {
-  for (int i = (int)strlen(str) - 1; i > 0; i--) {
+  for (int i = (int)strlen(str) - 1; i >= 0; i--) {
     if (isspace(str[i])) {
       str[i] = '\0';
     }
@@ -1119,7 +1120,7 @@ void BLI_str_format_byte_unit(char dst[15], long long int bytes, const bool base
 
   BLI_STATIC_ASSERT(ARRAY_SIZE(units_base_2) == ARRAY_SIZE(units_base_10), "array size mismatch");
 
-  while ((ABS(bytes_converted) >= base) && ((order + 1) < tot_units)) {
+  while ((fabs(bytes_converted) >= base) && ((order + 1) < tot_units)) {
     bytes_converted /= base;
     order++;
   }

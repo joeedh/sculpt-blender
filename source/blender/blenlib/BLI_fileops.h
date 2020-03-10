@@ -25,9 +25,9 @@
 #ifndef __BLI_FILEOPS_H__
 #define __BLI_FILEOPS_H__
 
+#include <stdint.h>
 #include <stdio.h>
 #include <sys/stat.h>
-#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,6 +39,7 @@ extern "C" {
 #include <limits.h> /* for PATH_MAX */
 
 #include "BLI_compiler_attrs.h"
+#include "BLI_utildefines.h"
 
 #ifndef PATH_MAX
 #  define PATH_MAX 4096
@@ -158,6 +159,10 @@ bool BLI_file_older(const char *file1, const char *file2) ATTR_WARN_UNUSED_RESUL
 /* read ascii file as lines, empty list if reading fails */
 struct LinkNode *BLI_file_read_as_lines(const char *file) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
 void *BLI_file_read_text_as_mem(const char *filepath, size_t pad_bytes, size_t *r_size);
+void *BLI_file_read_text_as_mem_with_newline_as_nil(const char *filepath,
+                                                    bool trim_trailing_space,
+                                                    size_t pad_bytes,
+                                                    size_t *r_size);
 void *BLI_file_read_binary_as_mem(const char *filepath, size_t pad_bytes, size_t *r_size);
 void BLI_file_free_lines(struct LinkNode *lines);
 

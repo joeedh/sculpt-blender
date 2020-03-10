@@ -64,7 +64,6 @@ void BKE_object_free_particlesystems(struct Object *ob);
 void BKE_object_free_softbody(struct Object *ob);
 void BKE_object_free_curve_cache(struct Object *ob);
 
-void BKE_object_free(struct Object *ob);
 void BKE_object_free_derived_caches(struct Object *ob);
 void BKE_object_free_caches(struct Object *object);
 
@@ -111,7 +110,6 @@ typedef enum eObjectVisibilityResult {
 
 int BKE_object_visibility(const struct Object *ob, const int dag_eval_mode);
 
-void BKE_object_init(struct Object *ob, const short ob_type);
 struct Object *BKE_object_add_only_object(struct Main *bmain, int type, const char *name)
     ATTR_NONNULL(1) ATTR_RETURNS_NONNULL;
 struct Object *BKE_object_add(struct Main *bmain,
@@ -135,16 +133,7 @@ struct Object *BKE_object_add_for_data(struct Main *bmain,
 void *BKE_object_obdata_add_from_type(struct Main *bmain, int type, const char *name)
     ATTR_NONNULL(1);
 
-void BKE_object_copy_data(struct Main *bmain,
-                          struct Object *ob_dst,
-                          const struct Object *ob_src,
-                          const int flag);
 struct Object *BKE_object_copy(struct Main *bmain, const struct Object *ob);
-void BKE_object_make_local(struct Main *bmain, struct Object *ob, const bool lib_local);
-void BKE_object_make_local_ex(struct Main *bmain,
-                              struct Object *ob,
-                              const bool lib_local,
-                              const bool clear_proxy);
 bool BKE_object_is_libdata(const struct Object *ob);
 bool BKE_object_obdata_is_libdata(const struct Object *ob);
 
@@ -287,6 +276,7 @@ void BKE_object_eval_uber_transform(struct Depsgraph *depsgraph, struct Object *
 void BKE_object_eval_uber_data(struct Depsgraph *depsgraph,
                                struct Scene *scene,
                                struct Object *ob);
+void BKE_object_eval_assign_data(struct Object *object, struct ID *data, bool is_owned);
 
 void BKE_object_eval_boundbox(struct Depsgraph *depsgraph, struct Object *object);
 void BKE_object_synchronize_to_original(struct Depsgraph *depsgraph, struct Object *object);
@@ -326,8 +316,7 @@ int BKE_object_obdata_texspace_get(struct Object *ob,
                                    float **r_loc,
                                    float **r_size);
 
-struct Mesh *BKE_object_get_evaluated_mesh(const struct Depsgraph *depsgraph, struct Object *ob);
-struct Mesh *BKE_object_get_final_mesh(struct Object *object);
+struct Mesh *BKE_object_get_evaluated_mesh(struct Object *object);
 struct Mesh *BKE_object_get_pre_modified_mesh(struct Object *object);
 struct Mesh *BKE_object_get_original_mesh(struct Object *object);
 

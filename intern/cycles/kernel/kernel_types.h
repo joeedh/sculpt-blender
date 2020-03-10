@@ -63,6 +63,11 @@ CCL_NAMESPACE_BEGIN
 
 #define VOLUME_STACK_SIZE 32
 
+/* Adaptive sampling constants */
+#define ADAPTIVE_SAMPLE_STEP 4
+static_assert((ADAPTIVE_SAMPLE_STEP & (ADAPTIVE_SAMPLE_STEP - 1)) == 0,
+              "ADAPTIVE_SAMPLE_STEP must be power of two for bitwise operations to work");
+
 /* Split kernel constants */
 #define WORK_POOL_SIZE_GPU 64
 #define WORK_POOL_SIZE_CPU 1
@@ -220,7 +225,6 @@ typedef enum ShaderEvalType {
   SHADER_EVAL_DIFFUSE_COLOR,
   SHADER_EVAL_GLOSSY_COLOR,
   SHADER_EVAL_TRANSMISSION_COLOR,
-  SHADER_EVAL_SUBSURFACE_COLOR,
   SHADER_EVAL_EMISSION,
   SHADER_EVAL_AOV_COLOR,
   SHADER_EVAL_AOV_VALUE,
@@ -232,7 +236,6 @@ typedef enum ShaderEvalType {
   SHADER_EVAL_DIFFUSE,
   SHADER_EVAL_GLOSSY,
   SHADER_EVAL_TRANSMISSION,
-  SHADER_EVAL_SUBSURFACE,
 
   /* extra */
   SHADER_EVAL_ENVIRONMENT,
@@ -269,6 +272,7 @@ enum PathTraceDimension {
 enum SamplingPattern {
   SAMPLING_PATTERN_SOBOL = 0,
   SAMPLING_PATTERN_CMJ = 1,
+  SAMPLING_PATTERN_PMJ = 2,
 
   SAMPLING_NUM_PATTERNS,
 };
@@ -375,6 +379,8 @@ typedef enum PassType {
   PASS_CRYPTOMATTE,
   PASS_AOV_COLOR,
   PASS_AOV_VALUE,
+  PASS_ADAPTIVE_AUX_BUFFER,
+  PASS_SAMPLE_COUNT,
   PASS_CATEGORY_MAIN_END = 31,
 
   PASS_MIST = 32,
@@ -392,10 +398,7 @@ typedef enum PassType {
   PASS_TRANSMISSION_DIRECT,
   PASS_TRANSMISSION_INDIRECT,
   PASS_TRANSMISSION_COLOR,
-  PASS_SUBSURFACE_DIRECT,
-  PASS_SUBSURFACE_INDIRECT,
-  PASS_SUBSURFACE_COLOR,
-  PASS_VOLUME_DIRECT,
+  PASS_VOLUME_DIRECT = 50,
   PASS_VOLUME_INDIRECT,
   /* No Scatter color since it's tricky to define what it would even mean. */
   PASS_CATEGORY_LIGHT_END = 63,
@@ -445,23 +448,20 @@ typedef enum eBakePassFilter {
   BAKE_FILTER_DIFFUSE = (1 << 3),
   BAKE_FILTER_GLOSSY = (1 << 4),
   BAKE_FILTER_TRANSMISSION = (1 << 5),
-  BAKE_FILTER_SUBSURFACE = (1 << 6),
-  BAKE_FILTER_EMISSION = (1 << 7),
-  BAKE_FILTER_AO = (1 << 8),
+  BAKE_FILTER_EMISSION = (1 << 6),
+  BAKE_FILTER_AO = (1 << 7),
 } eBakePassFilter;
 
 typedef enum BakePassFilterCombos {
   BAKE_FILTER_COMBINED = (BAKE_FILTER_DIRECT | BAKE_FILTER_INDIRECT | BAKE_FILTER_DIFFUSE |
-                          BAKE_FILTER_GLOSSY | BAKE_FILTER_TRANSMISSION | BAKE_FILTER_SUBSURFACE |
-                          BAKE_FILTER_EMISSION | BAKE_FILTER_AO),
+                          BAKE_FILTER_GLOSSY | BAKE_FILTER_TRANSMISSION | BAKE_FILTER_EMISSION |
+                          BAKE_FILTER_AO),
   BAKE_FILTER_DIFFUSE_DIRECT = (BAKE_FILTER_DIRECT | BAKE_FILTER_DIFFUSE),
   BAKE_FILTER_GLOSSY_DIRECT = (BAKE_FILTER_DIRECT | BAKE_FILTER_GLOSSY),
   BAKE_FILTER_TRANSMISSION_DIRECT = (BAKE_FILTER_DIRECT | BAKE_FILTER_TRANSMISSION),
-  BAKE_FILTER_SUBSURFACE_DIRECT = (BAKE_FILTER_DIRECT | BAKE_FILTER_SUBSURFACE),
   BAKE_FILTER_DIFFUSE_INDIRECT = (BAKE_FILTER_INDIRECT | BAKE_FILTER_DIFFUSE),
   BAKE_FILTER_GLOSSY_INDIRECT = (BAKE_FILTER_INDIRECT | BAKE_FILTER_GLOSSY),
   BAKE_FILTER_TRANSMISSION_INDIRECT = (BAKE_FILTER_INDIRECT | BAKE_FILTER_TRANSMISSION),
-  BAKE_FILTER_SUBSURFACE_INDIRECT = (BAKE_FILTER_INDIRECT | BAKE_FILTER_SUBSURFACE),
 } BakePassFilterCombos;
 
 typedef enum DenoiseFlag {
@@ -471,9 +471,7 @@ typedef enum DenoiseFlag {
   DENOISING_CLEAN_GLOSSY_IND = (1 << 3),
   DENOISING_CLEAN_TRANSMISSION_DIR = (1 << 4),
   DENOISING_CLEAN_TRANSMISSION_IND = (1 << 5),
-  DENOISING_CLEAN_SUBSURFACE_DIR = (1 << 6),
-  DENOISING_CLEAN_SUBSURFACE_IND = (1 << 7),
-  DENOISING_CLEAN_ALL_PASSES = (1 << 8) - 1,
+  DENOISING_CLEAN_ALL_PASSES = (1 << 6) - 1,
 } DenoiseFlag;
 
 #ifdef __KERNEL_DEBUG__
@@ -493,8 +491,7 @@ typedef ccl_addr_space struct PathRadianceState {
   float3 diffuse;
   float3 glossy;
   float3 transmission;
-  float3 subsurface;
-  float3 scatter;
+  float3 volume;
 
   float3 direct;
 #endif
@@ -517,19 +514,16 @@ typedef ccl_addr_space struct PathRadiance {
   float3 color_diffuse;
   float3 color_glossy;
   float3 color_transmission;
-  float3 color_subsurface;
 
   float3 direct_diffuse;
   float3 direct_glossy;
   float3 direct_transmission;
-  float3 direct_subsurface;
-  float3 direct_scatter;
+  float3 direct_volume;
 
   float3 indirect_diffuse;
   float3 indirect_glossy;
   float3 indirect_transmission;
-  float3 indirect_subsurface;
-  float3 indirect_scatter;
+  float3 indirect_volume;
 
   float4 shadow;
   float mist;
@@ -583,8 +577,7 @@ typedef struct BsdfEval {
   float3 glossy;
   float3 transmission;
   float3 transparent;
-  float3 subsurface;
-  float3 scatter;
+  float3 volume;
 #endif
 #ifdef __SHADOW_TRICKS__
   float3 sum_no_mis;
@@ -1214,18 +1207,15 @@ typedef struct KernelFilm {
   int pass_diffuse_color;
   int pass_glossy_color;
   int pass_transmission_color;
-  int pass_subsurface_color;
 
   int pass_diffuse_indirect;
   int pass_glossy_indirect;
   int pass_transmission_indirect;
-  int pass_subsurface_indirect;
   int pass_volume_indirect;
 
   int pass_diffuse_direct;
   int pass_glossy_direct;
   int pass_transmission_direct;
-  int pass_subsurface_direct;
   int pass_volume_direct;
 
   int pass_emission;
@@ -1240,6 +1230,9 @@ typedef struct KernelFilm {
   int cryptomatte_depth;
   int pass_cryptomatte;
 
+  int pass_adaptive_aux_buffer;
+  int pass_sample_count;
+
   int pass_mist;
   float mist_start;
   float mist_inv_depth;
@@ -1252,7 +1245,6 @@ typedef struct KernelFilm {
   int pass_aov_color;
   int pass_aov_value;
   int pad1;
-  int pad2;
 
   /* XYZ to rendering color space transform. float4 instead of float3 to
    * ensure consistent padding/alignment across devices. */
@@ -1274,6 +1266,8 @@ typedef struct KernelFilm {
   int display_divide_pass_stride;
   int use_display_exposure;
   int use_display_pass_alpha;
+
+  int pad3, pad4, pad5;
 } KernelFilm;
 static_assert_align(KernelFilm, 16);
 
@@ -1355,6 +1349,8 @@ typedef struct KernelIntegrator {
   /* sampler */
   int sampling_pattern;
   int aa_samples;
+  int adaptive_min_samples;
+  float adaptive_threshold;
 
   /* volume render */
   int use_volumes;
@@ -1366,7 +1362,7 @@ typedef struct KernelIntegrator {
 
   int max_closures;
 
-  int use_light_bounce;
+  int pad1, pad2, pad3;
 } KernelIntegrator;
 static_assert_align(KernelIntegrator, 16);
 
@@ -1680,11 +1676,15 @@ typedef struct WorkTile {
   uint start_sample;
   uint num_samples;
 
-  uint offset;
+  int offset;
   uint stride;
 
   ccl_global float *buffer;
 } WorkTile;
+
+/* Precoumputed sample table sizes for PMJ02 sampler. */
+#define NUM_PMJ_SAMPLES 64 * 64
+#define NUM_PMJ_PATTERNS 48
 
 CCL_NAMESPACE_END
 

@@ -56,7 +56,11 @@ static const string SPLIT_BUNDLE_KERNELS =
     "enqueue_inactive "
     "next_iteration_setup "
     "indirect_subsurface "
-    "buffer_update";
+    "buffer_update "
+    "adaptive_stopping "
+    "adaptive_filter_x "
+    "adaptive_filter_y "
+    "adaptive_adjust_samples";
 
 const string OpenCLDevice::get_opencl_program_name(const string &kernel_name)
 {
@@ -283,6 +287,10 @@ void OpenCLDevice::OpenCLSplitPrograms::load_kernels(
     ADD_SPLIT_KERNEL_BUNDLE_PROGRAM(next_iteration_setup);
     ADD_SPLIT_KERNEL_BUNDLE_PROGRAM(indirect_subsurface);
     ADD_SPLIT_KERNEL_BUNDLE_PROGRAM(buffer_update);
+    ADD_SPLIT_KERNEL_BUNDLE_PROGRAM(adaptive_stopping);
+    ADD_SPLIT_KERNEL_BUNDLE_PROGRAM(adaptive_filter_x);
+    ADD_SPLIT_KERNEL_BUNDLE_PROGRAM(adaptive_filter_y);
+    ADD_SPLIT_KERNEL_BUNDLE_PROGRAM(adaptive_adjust_samples);
     programs.push_back(&program_split);
 
 #  undef ADD_SPLIT_KERNEL_PROGRAM
@@ -1308,7 +1316,7 @@ void OpenCLDevice::thread_run(DeviceTask *task)
 {
   flush_texture_buffers();
 
-  if (task->type == DeviceTask::RENDER || task->type == DeviceTask::DENOISE) {
+  if (task->type == DeviceTask::RENDER) {
     RenderTile tile;
     DenoisingTask denoising(this, *task);
 
@@ -1317,7 +1325,7 @@ void OpenCLDevice::thread_run(DeviceTask *task)
     kgbuffer.alloc_to_device(1);
 
     /* Keep rendering tiles until done. */
-    while (task->acquire_tile(this, tile)) {
+    while (task->acquire_tile(this, tile, task->tile_types)) {
       if (tile.task == RenderTile::PATH_TRACE) {
         assert(tile.task == RenderTile::PATH_TRACE);
         scoped_timer timer(&tile.buffers->render_time);

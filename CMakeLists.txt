@@ -180,6 +180,15 @@ option(WITH_BULLET        "Enable Bullet (Physics Engine)" ON)
 option(WITH_SYSTEM_BULLET "Use the systems bullet library (currently unsupported due to missing features in upstream!)" )
 mark_as_advanced(WITH_SYSTEM_BULLET)
 option(WITH_OPENCOLORIO   "Enable OpenColorIO color management" ON)
+if(APPLE)
+  # There's no OpenXR runtime in sight for macOS, neither is code well
+  # tested there -> disable it by default.
+  option(WITH_XR_OPENXR   "Enable VR features through the OpenXR specification" OFF)
+  mark_as_advanced(WITH_XR_OPENXR)
+else()
+  # Disabled until there's more than just the build system stuff. Should be enabled soon.
+  option(WITH_XR_OPENXR   "Enable VR features through the OpenXR specification" OFF)
+endif()
 
 # Compositor
 option(WITH_COMPOSITOR         "Enable the tile based nodal compositor" ON)
@@ -633,6 +642,9 @@ set_and_warn_dependency(WITH_TBB WITH_OPENIMAGEDENOISE  OFF)
 set_and_warn_dependency(WITH_TBB WITH_OPENVDB           OFF)
 set_and_warn_dependency(WITH_TBB WITH_MOD_FLUID         OFF)
 
+# OpenVDB uses 'half' type from OpenEXR & fails to link without OpenEXR enabled.
+set_and_warn_dependency(WITH_IMAGE_OPENEXR WITH_OPENVDB OFF)
+
 # auto enable openimageio for cycles
 if(WITH_CYCLES)
   set(WITH_OPENIMAGEIO ON)
@@ -897,6 +909,28 @@ endif()
 
 if(NOT WITH_SYSTEM_EIGEN3)
   set(EIGEN3_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/extern/Eigen3)
+endif()
+
+if(WITH_OPENVDB)
+  list(APPEND OPENVDB_DEFINITIONS -DWITH_OPENVDB)
+
+  if(WITH_OPENVDB_3_ABI_COMPATIBLE)
+    list(APPEND OPENVDB_DEFINITIONS -DOPENVDB_3_ABI_COMPATIBLE)
+  endif()
+
+  list(APPEND OPENVDB_INCLUDE_DIRS
+    ${BOOST_INCLUDE_DIR}
+    ${TBB_INCLUDE_DIRS}
+    ${OPENEXR_INCLUDE_DIRS})
+
+  list(APPEND OPENVDB_LIBRARIES ${OPENEXR_LIBRARIES} ${ZLIB_LIBRARIES})
+
+  if(WITH_OPENVDB_BLOSC)
+    list(APPEND OPENVDB_DEFINITIONS -DWITH_OPENVDB_BLOSC)
+    list(APPEND OPENVDB_LIBRARIES ${BLOSC_LIBRARIES} ${ZLIB_LIBRARIES})
+  endif()
+
+  list(APPEND OPENVDB_LIBRARIES ${BOOST_LIBRARIES} ${TBB_LIBRARIES})
 endif()
 
 #-----------------------------------------------------------------------------
@@ -1673,6 +1707,7 @@ if(FIRST_RUN)
   info_cfg_option(WITH_CYCLES)
   info_cfg_option(WITH_FREESTYLE)
   info_cfg_option(WITH_OPENCOLORIO)
+  info_cfg_option(WITH_XR_OPENXR)
   info_cfg_option(WITH_OPENIMAGEDENOISE)
   info_cfg_option(WITH_OPENVDB)
   info_cfg_option(WITH_ALEMBIC)

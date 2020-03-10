@@ -103,7 +103,7 @@ MANTA::MANTA(int *res, FluidModifierData *mmd) : mCurrentID(++solverID)
   mColorR = nullptr;
   mColorG = nullptr;
   mColorB = nullptr;
-  mObstacle = nullptr;
+  mFlags = nullptr;
   mDensityIn = nullptr;
   mHeatIn = nullptr;
   mColorRIn = nullptr;
@@ -130,6 +130,7 @@ MANTA::MANTA(int *res, FluidModifierData *mmd) : mCurrentID(++solverID)
 
   // Fluid low res grids
   mPhiIn = nullptr;
+  mPhiStaticIn = nullptr;
   mPhiOutIn = nullptr;
   mPhi = nullptr;
 
@@ -140,6 +141,7 @@ MANTA::MANTA(int *res, FluidModifierData *mmd) : mCurrentID(++solverID)
 
   // Fluid obstacle
   mPhiObsIn = nullptr;
+  mPhiObsStaticIn = nullptr;
   mNumObstacle = nullptr;
   mObVelocityX = nullptr;
   mObVelocityY = nullptr;
@@ -977,6 +979,10 @@ std::string MANTA::getRealValue(const std::string &varName, FluidModifierData *m
     ss << (mmd->domain->flags & FLUID_DOMAIN_USE_SPEED_VECTORS ? "True" : "False");
   else if (varName == "USING_FRACTIONS")
     ss << (mmd->domain->flags & FLUID_DOMAIN_USE_FRACTIONS ? "True" : "False");
+  else if (varName == "DELETE_IN_OBSTACLE")
+    ss << (mmd->domain->flags & FLUID_DOMAIN_DELETE_IN_OBSTACLE ? "True" : "False");
+  else if (varName == "USING_DIFFUSION")
+    ss << (mmd->domain->flags & FLUID_DOMAIN_USE_DIFFUSION ? "True" : "False");
   else
     std::cout << "ERROR: Unknown option: " << varName << std::endl;
   return ss.str();
@@ -2291,18 +2297,24 @@ static PyObject *callPythonFunction(std::string varName,
 
   // Get pyobject that holds result value
   main = PyImport_ImportModule("__main__");
-  if (!main)
+  if (!main) {
+    PyGILState_Release(gilstate);
     return nullptr;
+  }
 
   var = PyObject_GetAttrString(main, varName.c_str());
-  if (!var)
+  if (!var) {
+    PyGILState_Release(gilstate);
     return nullptr;
+  }
 
   func = PyObject_GetAttrString(var, functionName.c_str());
 
   Py_DECREF(var);
-  if (!func)
+  if (!func) {
+    PyGILState_Release(gilstate);
     return nullptr;
+  }
 
   if (!isAttribute) {
     returnedValue = PyObject_CallObject(func, nullptr);
@@ -3003,8 +3015,9 @@ void MANTA::updatePointers()
   std::string mesh_ext2 = "_" + mesh2;
   std::string noise_ext = "_" + noise;
 
-  mObstacle = (int *)pyObjectToPointer(callPythonFunction("flags" + solver_ext, func));
+  mFlags = (int *)pyObjectToPointer(callPythonFunction("flags" + solver_ext, func));
   mPhiIn = (float *)pyObjectToPointer(callPythonFunction("phiIn" + solver_ext, func));
+  mPhiStaticIn = (float *)pyObjectToPointer(callPythonFunction("phiSIn" + solver_ext, func));
   mVelocityX = (float *)pyObjectToPointer(callPythonFunction("x_vel" + solver_ext, func));
   mVelocityY = (float *)pyObjectToPointer(callPythonFunction("y_vel" + solver_ext, func));
   mVelocityZ = (float *)pyObjectToPointer(callPythonFunction("z_vel" + solver_ext, func));
@@ -3017,6 +3030,8 @@ void MANTA::updatePointers()
   }
   if (mUsingObstacle) {
     mPhiObsIn = (float *)pyObjectToPointer(callPythonFunction("phiObsIn" + solver_ext, func));
+    mPhiObsStaticIn = (float *)pyObjectToPointer(
+        callPythonFunction("phiObsSIn" + solver_ext, func));
     mObVelocityX = (float *)pyObjectToPointer(callPythonFunction("x_obvel" + solver_ext, func));
     mObVelocityY = (float *)pyObjectToPointer(callPythonFunction("y_obvel" + solver_ext, func));
     mObVelocityZ = (float *)pyObjectToPointer(callPythonFunction("z_obvel" + solver_ext, func));

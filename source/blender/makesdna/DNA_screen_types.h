@@ -178,7 +178,7 @@ typedef struct Panel {
  * - #ARegion.panels_category_active (#PanelCategoryStack)
  *   is basically a list of strings (category id's).
  *
- * Clicking on a tab moves it to the front of ar->panels_category_active,
+ * Clicking on a tab moves it to the front of region->panels_category_active,
  * If the context changes so this tab is no longer displayed,
  * then the first-most tab in #ARegion.panels_category_active is used.
  *
@@ -417,7 +417,7 @@ typedef struct ARegion {
   short flag;
 
   /** Current split size in unscaled pixels (if zero it uses regiontype).
-   * To convert to pixels use: `UI_DPI_FAC * ar->sizex + 0.5f`.
+   * To convert to pixels use: `UI_DPI_FAC * region->sizex + 0.5f`.
    * However to get the current region size, you should usually use winx/winy from above, not this!
    */
   short sizex, sizey;
@@ -474,7 +474,7 @@ enum {
   /** Update size of regions within the area. */
   AREA_FLAG_REGION_SIZE_UPDATE = (1 << 3),
   AREA_FLAG_ACTIVE_TOOL_UPDATE = (1 << 4),
-  AREA_FLAG_CURSOR_UPDATE = (1 << 5),
+  // AREA_FLAG_UNUSED_5 = (1 << 5),
 
   AREA_FLAG_UNUSED_6 = (1 << 6), /* cleared */
 

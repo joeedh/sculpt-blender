@@ -410,45 +410,54 @@ bool ED_object_add_generic_get_opts(bContext *C,
       rot = _rot;
     }
 
-    prop = RNA_struct_find_property(op->ptr, "align");
-    int alignment = RNA_property_enum_get(op->ptr, prop);
-    bool alignment_set = RNA_property_is_set(op->ptr, prop);
-
     if (RNA_struct_property_is_set(op->ptr, "rotation")) {
+      /* If rotation is set, always use it. Alignment (and corresponding user preference)
+       * can be ignored since this is in world space anyways.
+       * To not confuse (e.g. on redo), dont set it to ALIGN_WORLD in the op UI though. */
       *is_view_aligned = false;
-      RNA_property_enum_set(op->ptr, prop, ALIGN_WORLD);
-      alignment = ALIGN_WORLD;
-    }
-    else if (alignment_set) {
-      *is_view_aligned = alignment == ALIGN_VIEW;
+      RNA_float_get_array(op->ptr, "rotation", rot);
     }
     else {
-      *is_view_aligned = (U.flag & USER_ADD_VIEWALIGNED) != 0;
-      if (*is_view_aligned) {
-        RNA_property_enum_set(op->ptr, prop, ALIGN_VIEW);
-        alignment = ALIGN_VIEW;
-      }
-      else if (U.flag & USER_ADD_CURSORALIGNED) {
-        RNA_property_enum_set(op->ptr, prop, ALIGN_CURSOR);
-        alignment = ALIGN_CURSOR;
-      }
-    }
+      int alignment = ALIGN_WORLD;
+      prop = RNA_struct_find_property(op->ptr, "align");
 
-    switch (alignment) {
-      case ALIGN_WORLD:
-        RNA_float_get_array(op->ptr, "rotation", rot);
-        break;
-      case ALIGN_VIEW:
-        ED_object_rotation_from_view(C, rot, view_align_axis);
-        RNA_float_set_array(op->ptr, "rotation", rot);
-        break;
-      case ALIGN_CURSOR: {
-        const Scene *scene = CTX_data_scene(C);
-        float tmat[3][3];
-        BKE_scene_cursor_rot_to_mat3(&scene->cursor, tmat);
-        mat3_normalized_to_eul(rot, tmat);
-        RNA_float_set_array(op->ptr, "rotation", rot);
-        break;
+      if (RNA_property_is_set(op->ptr, prop)) {
+        /* If alignment is set, always use it. */
+        *is_view_aligned = alignment == ALIGN_VIEW;
+        alignment = RNA_property_enum_get(op->ptr, prop);
+      }
+      else {
+        /* If alignment is not set, use User Preferences. */
+        *is_view_aligned = (U.flag & USER_ADD_VIEWALIGNED) != 0;
+        if (*is_view_aligned) {
+          RNA_property_enum_set(op->ptr, prop, ALIGN_VIEW);
+          alignment = ALIGN_VIEW;
+        }
+        else if ((U.flag & USER_ADD_CURSORALIGNED) != 0) {
+          RNA_property_enum_set(op->ptr, prop, ALIGN_CURSOR);
+          alignment = ALIGN_CURSOR;
+        }
+        else {
+          RNA_property_enum_set(op->ptr, prop, ALIGN_WORLD);
+          alignment = ALIGN_WORLD;
+        }
+      }
+      switch (alignment) {
+        case ALIGN_WORLD:
+          RNA_float_get_array(op->ptr, "rotation", rot);
+          break;
+        case ALIGN_VIEW:
+          ED_object_rotation_from_view(C, rot, view_align_axis);
+          RNA_float_set_array(op->ptr, "rotation", rot);
+          break;
+        case ALIGN_CURSOR: {
+          const Scene *scene = CTX_data_scene(C);
+          float tmat[3][3];
+          BKE_scene_cursor_rot_to_mat3(&scene->cursor, tmat);
+          mat3_normalized_to_eul(rot, tmat);
+          RNA_float_set_array(op->ptr, "rotation", rot);
+          break;
+        }
       }
     }
   }
@@ -1318,8 +1327,8 @@ static int collection_instance_add_exec(bContext *C, wmOperator *op)
 
     if (0 == RNA_struct_property_is_set(op->ptr, "location")) {
       const wmEvent *event = CTX_wm_window(C)->eventstate;
-      ARegion *ar = CTX_wm_region(C);
-      const int mval[2] = {event->x - ar->winrct.xmin, event->y - ar->winrct.ymin};
+      ARegion *region = CTX_wm_region(C);
+      const int mval[2] = {event->x - region->winrct.xmin, event->y - region->winrct.ymin};
       ED_object_location_from_view(C, loc);
       ED_view3d_cursor3d_position(C, mval, false, loc);
       RNA_float_set_array(op->ptr, "location", loc);
@@ -1528,7 +1537,7 @@ static int object_delete_exec(bContext *C, wmOperator *op)
      *     Will also remove parent from grease pencil from other scenes,
      *     even when use_global is false... */
     for (bGPdata *gpd = bmain->gpencils.first; gpd; gpd = gpd->id.next) {
-      for (bGPDlayer *gpl = gpd->layers.first; gpl; gpl = gpl->next) {
+      LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
         if (gpl->parent != NULL) {
           if (gpl->parent == ob) {
             gpl->parent = NULL;
@@ -2385,7 +2394,7 @@ static int convert_exec(bContext *C, wmOperator *op)
            * Nurbs Surface are not supported.
            */
           ushort local_view_bits = (v3d && v3d->localvd) ? v3d->local_view_uuid : 0;
-          gpencil_ob = ED_gpencil_add_object(C, scene, ob->loc, local_view_bits);
+          gpencil_ob = ED_gpencil_add_object(C, ob->loc, local_view_bits);
           copy_v3_v3(gpencil_ob->rot, ob->rot);
           copy_v3_v3(gpencil_ob->scale, ob->scale);
           BKE_gpencil_convert_curve(bmain, scene, gpencil_ob, ob, false, false, true);
@@ -2753,8 +2762,8 @@ static int add_named_exec(bContext *C, wmOperator *op)
   basen->object->restrictflag &= ~OB_RESTRICT_VIEWPORT;
 
   if (event) {
-    ARegion *ar = CTX_wm_region(C);
-    const int mval[2] = {event->x - ar->winrct.xmin, event->y - ar->winrct.ymin};
+    ARegion *region = CTX_wm_region(C);
+    const int mval[2] = {event->x - region->winrct.xmin, event->y - region->winrct.ymin};
     ED_object_location_from_view(C, basen->object->loc);
     ED_view3d_cursor3d_position(C, mval, false, basen->object->loc);
   }

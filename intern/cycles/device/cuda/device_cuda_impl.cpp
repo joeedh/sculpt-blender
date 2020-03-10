@@ -208,6 +208,8 @@ CUDADevice::CUDADevice(DeviceInfo &info, Stats &stats, Profiler &profiler, bool 
   map_host_used = 0;
   can_map_host = 0;
 
+  functions.loaded = false;
+
   /* Intialize CUDA. */
   if (cuda_error(cuInit(0)))
     return;
@@ -531,7 +533,40 @@ bool CUDADevice::load_kernels(const DeviceRequestedFeatures &requested_features)
     reserve_local_memory(requested_features);
   }
 
+  load_functions();
+
   return (result == CUDA_SUCCESS);
+}
+
+void CUDADevice::load_functions()
+{
+  /* TODO: load all functions here. */
+  if (functions.loaded) {
+    return;
+  }
+  functions.loaded = true;
+
+  cuda_assert(cuModuleGetFunction(
+      &functions.adaptive_stopping, cuModule, "kernel_cuda_adaptive_stopping"));
+  cuda_assert(cuModuleGetFunction(
+      &functions.adaptive_filter_x, cuModule, "kernel_cuda_adaptive_filter_x"));
+  cuda_assert(cuModuleGetFunction(
+      &functions.adaptive_filter_y, cuModule, "kernel_cuda_adaptive_filter_y"));
+  cuda_assert(cuModuleGetFunction(
+      &functions.adaptive_scale_samples, cuModule, "kernel_cuda_adaptive_scale_samples"));
+
+  cuda_assert(cuFuncSetCacheConfig(functions.adaptive_stopping, CU_FUNC_CACHE_PREFER_L1));
+  cuda_assert(cuFuncSetCacheConfig(functions.adaptive_filter_x, CU_FUNC_CACHE_PREFER_L1));
+  cuda_assert(cuFuncSetCacheConfig(functions.adaptive_filter_y, CU_FUNC_CACHE_PREFER_L1));
+  cuda_assert(cuFuncSetCacheConfig(functions.adaptive_scale_samples, CU_FUNC_CACHE_PREFER_L1));
+
+  int unused_min_blocks;
+  cuda_assert(cuOccupancyMaxPotentialBlockSize(&unused_min_blocks,
+                                               &functions.adaptive_num_threads_per_block,
+                                               functions.adaptive_scale_samples,
+                                               NULL,
+                                               0,
+                                               0));
 }
 
 void CUDADevice::reserve_local_memory(const DeviceRequestedFeatures &requested_features)
@@ -829,18 +864,17 @@ CUDADevice::CUDAMem *CUDADevice::generic_alloc(device_memory &mem, size_t pitch_
 
 void CUDADevice::generic_copy_to(device_memory &mem)
 {
-  if (mem.host_pointer && mem.device_pointer) {
-    CUDAContextScope scope(this);
+  if (!mem.host_pointer || !mem.device_pointer) {
+    return;
+  }
 
-    /* If use_mapped_host of mem is false, the current device only
-     * uses device memory allocated by cuMemAlloc regardless of
-     * mem.host_pointer and mem.shared_pointer, and should copy
-     * data from mem.host_pointer. */
-
-    if (cuda_mem_map[&mem].use_mapped_host == false || mem.host_pointer != mem.shared_pointer) {
-      cuda_assert(
-          cuMemcpyHtoD(cuda_device_ptr(mem.device_pointer), mem.host_pointer, mem.memory_size()));
-    }
+  /* If use_mapped_host of mem is false, the current device only uses device memory allocated by
+   * cuMemAlloc regardless of mem.host_pointer and mem.shared_pointer, and should copy data from
+   * mem.host_pointer. */
+  if (!cuda_mem_map[&mem].use_mapped_host || mem.host_pointer != mem.shared_pointer) {
+    const CUDAContextScope scope(this);
+    cuda_assert(
+        cuMemcpyHtoD((CUdeviceptr)mem.device_pointer, mem.host_pointer, mem.memory_size()));
   }
 }
 
@@ -947,7 +981,7 @@ void CUDADevice::mem_zero(device_memory &mem)
    * regardless of mem.host_pointer and mem.shared_pointer. */
   if (!cuda_mem_map[&mem].use_mapped_host || mem.host_pointer != mem.shared_pointer) {
     const CUDAContextScope scope(this);
-    cuda_assert(cuMemsetD8(cuda_device_ptr(mem.device_pointer), 0, mem.memory_size()));
+    cuda_assert(cuMemsetD8((CUdeviceptr)mem.device_pointer, 0, mem.memory_size()));
   }
   else if (mem.host_pointer) {
     memset(mem.host_pointer, 0, mem.memory_size());
@@ -1273,7 +1307,7 @@ bool CUDADevice::denoising_non_local_means(device_ptr image_ptr,
   if (have_error())
     return false;
 
-  CUdeviceptr difference = cuda_device_ptr(task->buffer.temporary_mem.device_pointer);
+  CUdeviceptr difference = (CUdeviceptr)task->buffer.temporary_mem.device_pointer;
   CUdeviceptr blurDifference = difference + sizeof(float) * pass_stride * num_shifts;
   CUdeviceptr weightAccum = difference + 2 * sizeof(float) * pass_stride * num_shifts;
   CUdeviceptr scale_ptr = 0;
@@ -1405,7 +1439,7 @@ bool CUDADevice::denoising_accumulate(device_ptr color_ptr,
   if (have_error())
     return false;
 
-  CUdeviceptr difference = cuda_device_ptr(task->buffer.temporary_mem.device_pointer);
+  CUdeviceptr difference = (CUdeviceptr)task->buffer.temporary_mem.device_pointer;
   CUdeviceptr blurDifference = difference + sizeof(float) * pass_stride * num_shifts;
 
   CUfunction cuNLMCalcDifference, cuNLMBlur, cuNLMCalcWeight, cuNLMConstructGramian;
@@ -1667,6 +1701,80 @@ void CUDADevice::denoise(RenderTile &rtile, DenoisingTask &denoising)
   denoising.run_denoising(&rtile);
 }
 
+void CUDADevice::adaptive_sampling_filter(uint filter_sample,
+                                          WorkTile *wtile,
+                                          CUdeviceptr d_wtile,
+                                          CUstream stream)
+{
+  const int num_threads_per_block = functions.adaptive_num_threads_per_block;
+
+  /* These are a series of tiny kernels because there is no grid synchronization
+   * from within a kernel, so multiple kernel launches it is. */
+  uint total_work_size = wtile->h * wtile->w;
+  void *args2[] = {&d_wtile, &filter_sample, &total_work_size};
+  uint num_blocks = divide_up(total_work_size, num_threads_per_block);
+  cuda_assert(cuLaunchKernel(functions.adaptive_stopping,
+                             num_blocks,
+                             1,
+                             1,
+                             num_threads_per_block,
+                             1,
+                             1,
+                             0,
+                             stream,
+                             args2,
+                             0));
+  total_work_size = wtile->h;
+  num_blocks = divide_up(total_work_size, num_threads_per_block);
+  cuda_assert(cuLaunchKernel(functions.adaptive_filter_x,
+                             num_blocks,
+                             1,
+                             1,
+                             num_threads_per_block,
+                             1,
+                             1,
+                             0,
+                             stream,
+                             args2,
+                             0));
+  total_work_size = wtile->w;
+  num_blocks = divide_up(total_work_size, num_threads_per_block);
+  cuda_assert(cuLaunchKernel(functions.adaptive_filter_y,
+                             num_blocks,
+                             1,
+                             1,
+                             num_threads_per_block,
+                             1,
+                             1,
+                             0,
+                             stream,
+                             args2,
+                             0));
+}
+
+void CUDADevice::adaptive_sampling_post(RenderTile &rtile,
+                                        WorkTile *wtile,
+                                        CUdeviceptr d_wtile,
+                                        CUstream stream)
+{
+  const int num_threads_per_block = functions.adaptive_num_threads_per_block;
+  uint total_work_size = wtile->h * wtile->w;
+
+  void *args[] = {&d_wtile, &rtile.start_sample, &rtile.sample, &total_work_size};
+  uint num_blocks = divide_up(total_work_size, num_threads_per_block);
+  cuda_assert(cuLaunchKernel(functions.adaptive_scale_samples,
+                             num_blocks,
+                             1,
+                             1,
+                             num_threads_per_block,
+                             1,
+                             1,
+                             0,
+                             stream,
+                             args,
+                             0));
+}
+
 void CUDADevice::path_trace(DeviceTask &task,
                             RenderTile &rtile,
                             device_vector<WorkTile> &work_tiles)
@@ -1703,7 +1811,7 @@ void CUDADevice::path_trace(DeviceTask &task,
   wtile->h = rtile.h;
   wtile->offset = rtile.offset;
   wtile->stride = rtile.stride;
-  wtile->buffer = (float *)cuda_device_ptr(rtile.buffer);
+  wtile->buffer = (float *)(CUdeviceptr)rtile.buffer;
 
   /* Prepare work size. More step samples render faster, but for now we
    * remain conservative for GPUs connected to a display to avoid driver
@@ -1716,6 +1824,9 @@ void CUDADevice::path_trace(DeviceTask &task,
   }
 
   uint step_samples = divide_up(min_blocks * num_threads_per_block, wtile->w * wtile->h);
+  if (task.adaptive_sampling.use) {
+    step_samples = task.adaptive_sampling.align_static_samples(step_samples);
+  }
 
   /* Render all samples. */
   int start_sample = rtile.start_sample;
@@ -1727,7 +1838,7 @@ void CUDADevice::path_trace(DeviceTask &task,
     wtile->num_samples = min(step_samples, end_sample - sample);
     work_tiles.copy_to_device();
 
-    CUdeviceptr d_work_tiles = cuda_device_ptr(work_tiles.device_pointer);
+    CUdeviceptr d_work_tiles = (CUdeviceptr)work_tiles.device_pointer;
     uint total_work_size = wtile->w * wtile->h * wtile->num_samples;
     uint num_blocks = divide_up(total_work_size, num_threads_per_block);
 
@@ -1736,6 +1847,12 @@ void CUDADevice::path_trace(DeviceTask &task,
 
     cuda_assert(
         cuLaunchKernel(cuPathTrace, num_blocks, 1, 1, num_threads_per_block, 1, 1, 0, 0, args, 0));
+
+    /* Run the adaptive sampling kernels at selected samples aligned to step samples. */
+    uint filter_sample = sample + wtile->num_samples - 1;
+    if (task.adaptive_sampling.use && task.adaptive_sampling.need_filter(filter_sample)) {
+      adaptive_sampling_filter(filter_sample, wtile, d_work_tiles);
+    }
 
     cuda_assert(cuCtxSynchronize());
 
@@ -1747,6 +1864,14 @@ void CUDADevice::path_trace(DeviceTask &task,
       if (task.need_finish_queue == false)
         break;
     }
+  }
+
+  /* Finalize adaptive sampling. */
+  if (task.adaptive_sampling.use) {
+    CUdeviceptr d_work_tiles = (CUdeviceptr)work_tiles.device_pointer;
+    adaptive_sampling_post(rtile, wtile, d_work_tiles);
+    cuda_assert(cuCtxSynchronize());
+    task.update_progress(&rtile, rtile.w * rtile.h * wtile->num_samples);
   }
 }
 
@@ -1762,7 +1887,7 @@ void CUDADevice::film_convert(DeviceTask &task,
 
   CUfunction cuFilmConvert;
   CUdeviceptr d_rgba = map_pixels((rgba_byte) ? rgba_byte : rgba_half);
-  CUdeviceptr d_buffer = cuda_device_ptr(buffer);
+  CUdeviceptr d_buffer = (CUdeviceptr)buffer;
 
   /* get kernel function */
   if (rgba_half) {
@@ -1823,8 +1948,8 @@ void CUDADevice::shader(DeviceTask &task)
   CUDAContextScope scope(this);
 
   CUfunction cuShader;
-  CUdeviceptr d_input = cuda_device_ptr(task.shader_input);
-  CUdeviceptr d_output = cuda_device_ptr(task.shader_output);
+  CUdeviceptr d_input = (CUdeviceptr)task.shader_input;
+  CUdeviceptr d_output = (CUdeviceptr)task.shader_output;
 
   /* get kernel function */
   if (task.shader_eval_type >= SHADER_EVAL_BAKE) {
@@ -1907,7 +2032,7 @@ CUdeviceptr CUDADevice::map_pixels(device_ptr mem)
     return buffer;
   }
 
-  return cuda_device_ptr(mem);
+  return (CUdeviceptr)mem;
 }
 
 void CUDADevice::unmap_pixels(device_ptr mem)
@@ -2145,7 +2270,7 @@ void CUDADevice::thread_run(DeviceTask *task)
 {
   CUDAContextScope scope(this);
 
-  if (task->type == DeviceTask::RENDER || task->type == DeviceTask::DENOISE) {
+  if (task->type == DeviceTask::RENDER) {
     DeviceRequestedFeatures requested_features;
     if (use_split_kernel()) {
       if (split_kernel == NULL) {
@@ -2160,7 +2285,7 @@ void CUDADevice::thread_run(DeviceTask *task)
     RenderTile tile;
     DenoisingTask denoising(this, *task);
 
-    while (task->acquire_tile(this, tile)) {
+    while (task->acquire_tile(this, tile, task->tile_types)) {
       if (tile.task == RenderTile::PATH_TRACE) {
         if (use_split_kernel()) {
           device_only_memory<uchar> void_buffer(this, "void_buffer");
@@ -2347,7 +2472,7 @@ uint64_t CUDASplitKernel::state_buffer_size(device_memory & /*kg*/,
   size_buffer.zero_to_device();
 
   uint threads = num_threads;
-  CUdeviceptr d_size = device->cuda_device_ptr(size_buffer.device_pointer);
+  CUdeviceptr d_size = (CUdeviceptr)size_buffer.device_pointer;
 
   struct args_t {
     uint *num_threads;
@@ -2382,13 +2507,13 @@ bool CUDASplitKernel::enqueue_split_kernel_data_init(const KernelDimensions &dim
 {
   CUDAContextScope scope(device);
 
-  CUdeviceptr d_split_data = device->cuda_device_ptr(split_data.device_pointer);
-  CUdeviceptr d_ray_state = device->cuda_device_ptr(ray_state.device_pointer);
-  CUdeviceptr d_queue_index = device->cuda_device_ptr(queue_index.device_pointer);
-  CUdeviceptr d_use_queues_flag = device->cuda_device_ptr(use_queues_flag.device_pointer);
-  CUdeviceptr d_work_pool_wgs = device->cuda_device_ptr(work_pool_wgs.device_pointer);
+  CUdeviceptr d_split_data = (CUdeviceptr)split_data.device_pointer;
+  CUdeviceptr d_ray_state = (CUdeviceptr)ray_state.device_pointer;
+  CUdeviceptr d_queue_index = (CUdeviceptr)queue_index.device_pointer;
+  CUdeviceptr d_use_queues_flag = (CUdeviceptr)use_queues_flag.device_pointer;
+  CUdeviceptr d_work_pool_wgs = (CUdeviceptr)work_pool_wgs.device_pointer;
 
-  CUdeviceptr d_buffer = device->cuda_device_ptr(rtile.buffer);
+  CUdeviceptr d_buffer = (CUdeviceptr)rtile.buffer;
 
   int end_sample = rtile.start_sample + rtile.num_samples;
   int queue_size = dim.global_size[0] * dim.global_size[1];

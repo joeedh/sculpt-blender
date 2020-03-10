@@ -497,7 +497,7 @@ typedef struct bPivotConstraint {
   float offset[3];
 
   /* Rotation-driven activation:
-   * This option provides easier one-stop setups for footrolls
+   * This option provides easier one-stop setups for foot-rolls.
    */
   /** Rotation axes to consider for this (#ePivotConstraint_Axis). */
   short rotAxis;
@@ -715,8 +715,10 @@ typedef enum eBConstraint_Flags {
 typedef enum eBConstraint_SpaceTypes {
   /** Default for all - worldspace. */
   CONSTRAINT_SPACE_WORLD = 0,
-  /** For objects (relative to parent/without parent influence),
-   * for bones (along normals of bone, without parent/restpositions). */
+  /**
+   * For objects (relative to parent/without parent influence),
+   * for bones (along normals of bone, without parent/rest-positions).
+   */
   CONSTRAINT_SPACE_LOCAL = 1,
   /** For posechannels - pose space. */
   CONSTRAINT_SPACE_POSE = 2,
@@ -1096,6 +1098,8 @@ typedef enum eChildOf_Flags {
   CHILDOF_SIZEY = (1 << 7),
   CHILDOF_SIZEZ = (1 << 8),
   CHILDOF_ALL = 511,
+  /* Temporary flag used by the Set Inverse operator. */
+  CHILDOF_SET_INVERSE = (1 << 9),
 } eChildOf_Flags;
 
 /* Pivot Constraint */
@@ -1147,6 +1151,8 @@ typedef enum eCameraSolver_Flags {
 /* ObjectSolver Constraint -> flag */
 typedef enum eObjectSolver_Flags {
   OBJECTSOLVER_ACTIVECLIP = (1 << 0),
+  /* Temporary flag used by the Set Inverse operator. */
+  OBJECTSOLVER_SET_INVERSE = (1 << 1),
 } eObjectSolver_Flags;
 
 /* ObjectSolver Constraint -> flag */

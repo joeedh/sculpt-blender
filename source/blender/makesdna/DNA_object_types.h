@@ -124,7 +124,7 @@ struct CustomData_MeshMasks;
 typedef struct Object_Runtime {
   /**
    * The custom data layer mask that was last used
-   * to calculate mesh_eval and mesh_deform_eval.
+   * to calculate data_eval and mesh_deform_eval.
    */
   CustomData_MeshMasks last_data_mask;
 
@@ -141,30 +141,42 @@ typedef struct Object_Runtime {
   char _pad1[3];
 
   /**
-   * Denotes whether the evaluated mesh is owned by this object or is referenced and owned by
+   * Denotes whether the evaluated data is owned by this object or is referenced and owned by
    * somebody else.
    */
-  char is_mesh_eval_owned;
+  char is_data_eval_owned;
 
   /** Axis aligned boundbox (in localspace). */
   struct BoundBox *bb;
 
   /**
-   * Original mesh pointer, before object->data was changed to point
-   * to mesh_eval.
+   * Original data pointer, before object->data was changed to point
+   * to data_eval.
    * Is assigned by dependency graph's copy-on-write evaluation.
    */
-  struct Mesh *mesh_orig;
+  struct ID *data_orig;
   /**
-   * Mesh structure created during object evaluation.
+   * Object data structure created during object evaluation.
    * It has all modifiers applied.
    */
-  struct Mesh *mesh_eval;
+  struct ID *data_eval;
   /**
    * Mesh structure created during object evaluation.
    * It has deformation only modifiers applied on it.
    */
   struct Mesh *mesh_deform_eval;
+
+  /**
+   * Original grease pencil bGPdata pointer, before object->data was changed to point
+   * to gpd_eval.
+   * Is assigned by dependency graph's copy-on-write evaluation.
+   */
+  struct bGPdata *gpd_orig;
+  /**
+   * bGPdata structure created during object evaluation.
+   * It has all modifiers applied.
+   */
+  struct bGPdata *gpd_eval;
 
   /**
    * This is a mesh representation of corresponding object.
@@ -174,14 +186,6 @@ typedef struct Object_Runtime {
 
   /** Runtime evaluated curve-specific data, not stored in the file. */
   struct CurveCache *curve_cache;
-
-  /** Runtime grease pencil drawing data */
-  struct GpencilBatchCache *gpencil_cache;
-  /** Runtime grease pencil total layers used for evaluated data created by modifiers */
-  int gpencil_tot_layers;
-  char _pad4[4];
-  /** Runtime grease pencil evaluated data created by modifiers */
-  struct bGPDframe *gpencil_evaluated_frames;
 
   unsigned short local_collections_bits;
   short _pad2[3];
@@ -527,16 +531,6 @@ enum {
   OB_NEGZ = 5,
 };
 
-/* dt: no flags */
-enum {
-  OB_BOUNDBOX = 1,
-  OB_WIRE = 2,
-  OB_SOLID = 3,
-  OB_MATERIAL = 4,
-  OB_TEXTURE = 5,
-  OB_RENDER = 6,
-};
-
 /* dtx: flags (short) */
 enum {
   OB_DRAWBOUNDOX = 1 << 0,
@@ -552,6 +546,8 @@ enum {
   OB_DRAWTRANSP = 1 << 7,
   OB_DRAW_ALL_EDGES = 1 << 8, /* only for meshes currently */
   OB_DRAW_NO_SHADOW_CAST = 1 << 9,
+  /* Enable lights for grease pencil. */
+  OB_USE_GPENCIL_LIGHTS = 1 << 10,
 };
 
 /* empty_drawtype: no flags */

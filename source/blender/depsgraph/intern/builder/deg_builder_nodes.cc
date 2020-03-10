@@ -624,7 +624,9 @@ void DepsgraphNodeBuilder::build_object(int base_index,
     is_parent_collection_visible_ = is_visible;
     build_collection(nullptr, object->instance_collection);
     is_parent_collection_visible_ = is_current_parent_collection_visible;
-    add_operation_node(&object->id, NodeType::DUPLI, OperationCode::DUPLI);
+    OperationNode *op_node = add_operation_node(
+        &object->id, NodeType::DUPLI, OperationCode::DUPLI);
+    op_node->flag |= OperationFlag::DEPSOP_FLAG_PINNED;
   }
   /* Synchronization back to original object. */
   add_operation_node(&object->id,
@@ -717,9 +719,9 @@ void DepsgraphNodeBuilder::build_object_data(Object *object, bool is_object_visi
     }
   }
   /* Materials. */
-  Material ***materials_ptr = BKE_object_material_array(object);
+  Material ***materials_ptr = BKE_object_material_array_p(object);
   if (materials_ptr != nullptr) {
-    short *num_materials_ptr = BKE_object_material_num(object);
+    short *num_materials_ptr = BKE_object_material_len_p(object);
     build_materials(*materials_ptr, *num_materials_ptr);
   }
 }
@@ -991,6 +993,12 @@ void DepsgraphNodeBuilder::build_parameters(ID *id)
   op_node->set_as_exit();
 }
 
+void DepsgraphNodeBuilder::build_dimensions(Object *object)
+{
+  /* Object dimensions (bounding box) node. Will depend on both geometry and transform. */
+  add_operation_node(&object->id, NodeType::PARAMETERS, OperationCode::DIMENSIONS);
+}
+
 /* Recursively build graph for world */
 void DepsgraphNodeBuilder::build_world(World *world)
 {
@@ -1224,6 +1232,7 @@ void DepsgraphNodeBuilder::build_object_data_geometry(Object *object, bool is_ob
   build_object_pointcache(object);
   /* Geometry. */
   build_object_data_geometry_datablock((ID *)object->data, is_object_visible);
+  build_dimensions(object);
   /* Batch cache. */
   add_operation_node(&object->id,
                      NodeType::BATCH_CACHE,
@@ -1301,7 +1310,7 @@ void DepsgraphNodeBuilder::build_object_data_geometry_datablock(ID *obdata, bool
           obdata,
           NodeType::GEOMETRY,
           OperationCode::GEOMETRY_EVAL,
-          function_bind(BKE_gpencil_eval_geometry, _1, (bGPdata *)obdata_cow));
+          function_bind(BKE_gpencil_frame_active_set, _1, (bGPdata *)obdata_cow));
       op_node->set_as_entry();
       break;
     }

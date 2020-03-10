@@ -37,18 +37,13 @@ class USERPREF_HT_header(Header):
     def draw_buttons(layout, context):
         prefs = context.preferences
 
-        layout.scale_x = 1.0
-        layout.scale_y = 1.0
         layout.operator_context = 'EXEC_AREA'
-
-        row = layout.row()
-        row.menu("USERPREF_MT_save_load", text="", icon='COLLAPSEMENU')
 
         if prefs.use_preferences_save and (not bpy.app.use_userpref_skip_save_on_exit):
             pass
         else:
             # Show '*' to let users know the preferences have been modified.
-            row.operator(
+            layout.operator(
                 "wm.save_userpref",
                 text="Save Preferences{:s}".format(" *" if prefs.is_dirty else ""),
             )
@@ -59,7 +54,10 @@ class USERPREF_HT_header(Header):
 
         layout.template_header()
 
+        USERPREF_MT_editor_menus.draw_collapsible(context, layout)
+
         layout.separator_spacer()
+
         self.draw_buttons(layout, context)
 
 
@@ -82,6 +80,25 @@ class USERPREF_PT_navigation_bar(Panel):
         col.scale_x = 1.3
         col.scale_y = 1.3
         col.prop(prefs, "active_section", expand=True)
+
+
+class USERPREF_MT_editor_menus(Menu):
+    bl_idname = "USERPREF_MT_editor_menus"
+    bl_label = ""
+
+    def draw(self, _context):
+        layout = self.layout
+        layout.menu("USERPREF_MT_view")
+        layout.menu("USERPREF_MT_save_load", text="Preferences")
+
+
+class USERPREF_MT_view(Menu):
+    bl_label = "View"
+
+    def draw(self, context):
+        layout = self.layout
+
+        layout.menu("INFO_MT_area")
 
 
 class USERPREF_MT_save_load(Menu):
@@ -125,11 +142,10 @@ class USERPREF_PT_save_preferences(Panel):
         return False
 
     def draw(self, context):
-        layout = self.layout
+        layout = self.layout.row()
         layout.operator_context = 'EXEC_AREA'
 
-        layout.scale_x = 1.3
-        layout.scale_y = 1.3
+        layout.menu("USERPREF_MT_save_load", text="", icon='COLLAPSEMENU')
 
         USERPREF_HT_header.draw_buttons(layout, context)
 
@@ -197,7 +213,6 @@ class USERPREF_PT_interface_display(InterfacePanel, CenterAlignMixIn, Panel):
         flow.prop(view, "show_tooltips")
         flow.prop(view, "show_tooltips_python")
         flow.prop(view, "show_developer_ui")
-        flow.prop(view, "show_large_cursors")
 
 
 class USERPREF_PT_interface_text(InterfacePanel, CenterAlignMixIn, Panel):
@@ -669,7 +684,6 @@ class USERPREF_PT_viewport_quality(ViewportPanel, CenterAlignMixIn, Panel):
         flow = layout.grid_flow(row_major=False, columns=0, even_columns=True, even_rows=False, align=False)
 
         flow.prop(system, "viewport_aa")
-        flow.prop(system, "gpencil_multi_sample", text="Grease Pencil Multisampling")
         flow.prop(system, "use_overlay_smooth_wire")
         flow.prop(system, "use_edit_mode_smooth_wire")
 
@@ -861,11 +875,11 @@ class USERPREF_PT_theme_interface_styles(ThemePanel, CenterAlignMixIn, Panel):
         flow = layout.grid_flow(row_major=False, columns=0, even_columns=True, even_rows=False, align=False)
 
         flow.prop(ui, "menu_shadow_fac")
+        flow.prop(ui, "menu_shadow_width")
         flow.prop(ui, "icon_alpha")
         flow.prop(ui, "icon_saturation")
         flow.prop(ui, "editor_outline")
         flow.prop(ui, "widget_text_cursor")
-        flow.prop(ui, "menu_shadow_width")
         flow.prop(ui, "widget_emboss")
 
 
@@ -1472,9 +1486,9 @@ class USERPREF_PT_navigation_zoom(NavigationPanel, CenterAlignMixIn, Panel):
 
         flow = layout.grid_flow(row_major=False, columns=0, even_columns=True, even_rows=False, align=False)
 
-        flow.row().prop(inputs, "view_zoom_method", text="Zoom Method", expand=True)
+        flow.row().prop(inputs, "view_zoom_method", text="Zoom Method")
         if inputs.view_zoom_method in {'DOLLY', 'CONTINUE'}:
-            flow.row().prop(inputs, "view_zoom_axis", expand=True)
+            flow.row().prop(inputs, "view_zoom_axis")
             flow.prop(inputs, "invert_mouse_zoom", text="Invert Mouse Zoom Direction")
 
         flow.prop(inputs, "invert_zoom_wheel", text="Invert Wheel Zoom Direction")
@@ -1874,16 +1888,16 @@ class USERPREF_PT_addons(AddOnPanel, Panel):
                         split.label(text="  " + info["warning"], icon='ERROR')
 
                     user_addon = USERPREF_PT_addons.is_user_addon(mod, user_addon_paths)
-                    tot_row = bool(info["wiki_url"]) + bool(user_addon)
+                    tot_row = bool(info["doc_url"]) + bool(user_addon)
 
                     if tot_row:
                         split = colsub.row().split(factor=0.15)
                         split.label(text="Internet:")
                         sub = split.row()
-                        if info["wiki_url"]:
+                        if info["doc_url"]:
                             sub.operator(
                                 "wm.url_open", text="Documentation", icon='HELP',
-                            ).url = info["wiki_url"]
+                            ).url = info["doc_url"]
                         # Only add "Report a Bug" button if tracker_url is set
                         # or the add-on is bundled (use official tracker then).
                         if info.get("tracker_url"):
@@ -2130,6 +2144,8 @@ classes = (
     USERPREF_HT_header,
     USERPREF_PT_navigation_bar,
     USERPREF_PT_save_preferences,
+    USERPREF_MT_editor_menus,
+    USERPREF_MT_view,
     USERPREF_MT_save_load,
 
     USERPREF_PT_interface_display,

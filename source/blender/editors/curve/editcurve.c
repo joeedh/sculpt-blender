@@ -1405,12 +1405,11 @@ static int separate_exec(bContext *C, wmOperator *op)
     }
 
     /* 2. Duplicate the object and data. */
-    newbase = ED_object_add_duplicate(bmain,
-                                      scene,
-                                      view_layer,
-                                      oldbase,
-                                      /* 0 = fully linked. */
-                                      0);
+
+    /* Take into account user preferences for duplicating actions. */
+    short dupflag = (U.dupflag & USER_DUP_ACT);
+
+    newbase = ED_object_add_duplicate(bmain, scene, view_layer, oldbase, dupflag);
     DEG_relations_tag_update(bmain);
 
     newob = newbase->object;
@@ -5672,16 +5671,17 @@ static int add_vertex_invoke(bContext *C, wmOperator *op, const wmEvent *event)
       copy_v3_v3(location, vc.scene->cursor.location);
     }
 
-    ED_view3d_win_to_3d_int(vc.v3d, vc.ar, location, event->mval, location);
+    ED_view3d_win_to_3d_int(vc.v3d, vc.region, location, event->mval, location);
 
     if (use_proj) {
       const float mval[2] = {UNPACK2(event->mval)};
 
       struct SnapObjectContext *snap_context = ED_transform_snap_object_context_create_view3d(
-          vc.bmain, vc.scene, vc.depsgraph, 0, vc.ar, vc.v3d);
+          vc.bmain, vc.scene, 0, vc.region, vc.v3d);
 
       ED_transform_snap_object_project_view3d(
           snap_context,
+          vc.depsgraph,
           SCE_SNAP_MODE_FACE,
           &(const struct SnapObjectParams){
               .snap_select = (vc.obedit != NULL) ? SNAP_NOT_ACTIVE : SNAP_ALL,

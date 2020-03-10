@@ -238,15 +238,12 @@ bool ED_editors_flush_edits_for_object_ex(Main *bmain,
     /* Don't allow flushing while in the middle of a stroke (frees data in use).
      * Auto-save prevents this from happening but scripts
      * may cause a flush on saving: T53986. */
-    if ((ob->sculpt && ob->sculpt->cache) == 0) {
-
-      {
-        char *needs_flush_ptr = &ob->sculpt->needs_flush_to_id;
-        if (check_needs_flush && (*needs_flush_ptr == 0)) {
-          return false;
-        }
-        *needs_flush_ptr = 0;
+    if (!ELEM(NULL, ob->sculpt, ob->sculpt->cache)) {
+      char *needs_flush_ptr = &ob->sculpt->needs_flush_to_id;
+      if (check_needs_flush && (*needs_flush_ptr == 0)) {
+        return false;
       }
+      *needs_flush_ptr = 0;
 
       /* flush multires changes (for sculpt) */
       multires_flush_sculpt_updates(ob);
@@ -437,13 +434,13 @@ void unpack_menu(bContext *C,
 /**
  * Callback that draws a line between the mouse and a position given as the initial argument.
  */
-void ED_region_draw_mouse_line_cb(const bContext *C, ARegion *ar, void *arg_info)
+void ED_region_draw_mouse_line_cb(const bContext *C, ARegion *region, void *arg_info)
 {
   wmWindow *win = CTX_wm_window(C);
   const float *mval_src = (float *)arg_info;
   const float mval_dst[2] = {
-      win->eventstate->x - ar->winrct.xmin,
-      win->eventstate->y - ar->winrct.ymin,
+      win->eventstate->x - region->winrct.xmin,
+      win->eventstate->y - region->winrct.ymin,
   };
 
   const uint shdr_pos = GPU_vertformat_attr_add(
