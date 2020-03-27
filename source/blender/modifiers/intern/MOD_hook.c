@@ -30,13 +30,13 @@
 #include "DNA_object_types.h"
 
 #include "BKE_action.h"
+#include "BKE_colortools.h"
+#include "BKE_deform.h"
 #include "BKE_editmesh.h"
 #include "BKE_lib_id.h"
 #include "BKE_lib_query.h"
 #include "BKE_mesh.h"
 #include "BKE_modifier.h"
-#include "BKE_deform.h"
-#include "BKE_colortools.h"
 
 #include "DEG_depsgraph_query.h"
 
@@ -316,7 +316,7 @@ static void deformVerts_do(HookModifierData *hmd,
    * This should always be true and I don't generally like
    * "paranoid" style code like this, but old files can have
    * indices that are out of range because old blender did
-   * not correct them on exit editmode. - zr
+   * not correct them on exit edit-mode. - zr
    */
 
   if (hmd->force == 0.0f) {

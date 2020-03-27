@@ -25,8 +25,8 @@
 #define __DNA_BRUSH_TYPES_H__
 
 #include "DNA_ID.h"
-#include "DNA_texture_types.h" /* for MTex */
 #include "DNA_curve_types.h"
+#include "DNA_texture_types.h" /* for MTex */
 
 //#ifndef MAX_MTEX // XXX Not used?
 //#define MAX_MTEX  18
@@ -281,6 +281,11 @@ typedef enum eBrushClothDeformType {
   BRUSH_CLOTH_DEFORM_EXPAND = 6,
 } eBrushClothDeformType;
 
+typedef enum eBrushSmoothDeformType {
+  BRUSH_SMOOTH_DEFORM_LAPLACIAN = 0,
+  BRUSH_SMOOTH_DEFORM_SURFACE = 1,
+} eBrushSmoothDeformType;
+
 typedef enum eBrushClothForceFalloffType {
   BRUSH_CLOTH_FORCE_FALLOFF_RADIAL = 0,
   BRUSH_CLOTH_FORCE_FALLOFF_PLANE = 1,
@@ -472,6 +477,12 @@ typedef struct Brush {
 
   float cloth_sim_limit;
   float cloth_sim_falloff;
+
+  /* smooth */
+  int smooth_deform_type;
+  float surface_smooth_shape_preservation;
+  float surface_smooth_current_vertex;
+  int surface_smooth_iterations;
 
   /* multiplane scrape */
   float multiplane_scrape_angle;

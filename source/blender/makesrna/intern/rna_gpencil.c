@@ -22,11 +22,11 @@
 
 #include "BLI_math.h"
 
-#include "DNA_meshdata_types.h"
-#include "DNA_gpencil_types.h"
-#include "DNA_scene_types.h"
 #include "DNA_brush_types.h"
+#include "DNA_gpencil_types.h"
+#include "DNA_meshdata_types.h"
 #include "DNA_object_types.h"
+#include "DNA_scene_types.h"
 
 #include "MEM_guardedalloc.h"
 
@@ -138,6 +138,7 @@ static EnumPropertyItem rna_enum_gpencil_caps_modes_items[] = {
 #  include "BKE_action.h"
 #  include "BKE_animsys.h"
 #  include "BKE_gpencil.h"
+#  include "BKE_gpencil_geom.h"
 #  include "BKE_icons.h"
 
 #  include "DEG_depsgraph.h"
@@ -978,7 +979,7 @@ static void rna_def_gpencil_stroke_point(BlenderRNA *brna)
 
   prop = RNA_def_property(srna, "uv_rotation", PROP_FLOAT, PROP_ANGLE);
   RNA_def_property_float_sdna(prop, NULL, "uv_rot");
-  RNA_def_property_range(prop, 0.0f, M_PI * 2);
+  RNA_def_property_range(prop, -M_PI_2, M_PI_2);
   RNA_def_property_ui_text(prop, "UV Rotation", "Internal UV factor for dot mode");
   RNA_def_property_update(prop, NC_GPENCIL | ND_DATA, "rna_GPencil_update");
 

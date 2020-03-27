@@ -33,17 +33,17 @@
 extern "C" {
 #endif
 
+#include "DNA_ID.h"
+#include "DNA_collection_types.h"
 #include "DNA_color_types.h" /* color management */
 #include "DNA_curveprofile_types.h"
 #include "DNA_customdata_types.h" /* Scene's runtime cddata masks. */
-#include "DNA_vec_types.h"
-#include "DNA_listBase.h"
-#include "DNA_ID.h"
 #include "DNA_freestyle_types.h"
-#include "DNA_collection_types.h"
 #include "DNA_layer_types.h"
+#include "DNA_listBase.h"
 #include "DNA_material_types.h"
 #include "DNA_userdef_types.h"
+#include "DNA_vec_types.h"
 #include "DNA_view3d_types.h"
 
 struct AnimData;
@@ -242,6 +242,7 @@ typedef struct SceneRenderLayer {
 #define SCE_LAY_STRAND (1 << 5)
 #define SCE_LAY_FRS (1 << 6)
 #define SCE_LAY_AO (1 << 7)
+#define SCE_LAY_VOLUMES (1 << 8)
 /* flags between (1 << 8) and (1 << 15) are set to 1 already, for future options */
 
 #define SCE_LAY_ALL_Z (1 << 15)
@@ -730,13 +731,12 @@ typedef struct RenderData {
   char seq_rend_type;
   /** Flag use for sequence render/draw. */
   char seq_flag;
-  char _pad5[5];
+  char _pad5[7];
 
   /* render simplify */
   short simplify_subsurf;
   short simplify_subsurf_render;
   short simplify_gpencil;
-  short simplify_smoke_ignore_highres;
   float simplify_particles;
   float simplify_particles_render;
 
@@ -1469,6 +1469,9 @@ typedef struct ToolSettings {
 
   /** Auto normalizing mode in wpaint. */
   char auto_normalize;
+  /** Present weights as if all locked vertex groups were
+   *  deleted, and the remaining deform groups normalized. */
+  char wpaint_lock_relative;
   /** Paint multiple bones in wpaint. */
   char multipaint;
   char weightuser;
@@ -1479,7 +1482,7 @@ typedef struct ToolSettings {
   char gpencil_selectmode_vertex;
 
   /* UV painting */
-  char _pad2[2];
+  char _pad2[1];
   char uv_sculpt_settings;
   char uv_relax_method;
   /* XXX: these sculpt_paint_* fields are deprecated, use the
@@ -1632,7 +1635,8 @@ typedef struct SceneEEVEE {
   int shadow_cube_size;
   int shadow_cascade_size;
 
-  struct LightCache *light_cache;
+  struct LightCache *light_cache DNA_DEPRECATED;
+  struct LightCache *light_cache_data;
   char light_cache_info[64];
 
   float overscan;

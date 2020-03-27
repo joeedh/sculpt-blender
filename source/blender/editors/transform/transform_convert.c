@@ -23,51 +23,51 @@
 
 #include "DNA_anim_types.h"
 #include "DNA_armature_types.h"
-#include "DNA_space_types.h"
 #include "DNA_constraint_types.h"
 #include "DNA_gpencil_types.h"
 #include "DNA_mask_types.h"
+#include "DNA_space_types.h"
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_math.h"
-#include "BLI_listbase.h"
-#include "BLI_string.h"
 #include "BLI_kdtree.h"
+#include "BLI_listbase.h"
+#include "BLI_math.h"
+#include "BLI_string.h"
 
 #include "BKE_animsys.h"
 #include "BKE_armature.h"
 #include "BKE_context.h"
+#include "BKE_editmesh.h"
 #include "BKE_fcurve.h"
 #include "BKE_global.h"
 #include "BKE_gpencil.h"
-#include "BKE_layer.h"
 #include "BKE_key.h"
+#include "BKE_layer.h"
 #include "BKE_main.h"
+#include "BKE_mask.h"
 #include "BKE_modifier.h"
 #include "BKE_nla.h"
 #include "BKE_node.h"
 #include "BKE_pointcache.h"
 #include "BKE_rigidbody.h"
 #include "BKE_scene.h"
-#include "BKE_editmesh.h"
 #include "BKE_tracking.h"
-#include "BKE_mask.h"
 
 #include "BIK_api.h"
 
 #include "ED_anim_api.h"
 #include "ED_armature.h"
-#include "ED_particle.h"
+#include "ED_clip.h"
 #include "ED_image.h"
-#include "ED_keyframing.h"
 #include "ED_keyframes_edit.h"
-#include "ED_object.h"
+#include "ED_keyframing.h"
 #include "ED_markers.h"
+#include "ED_mask.h"
 #include "ED_mesh.h"
 #include "ED_node.h"
-#include "ED_clip.h"
-#include "ED_mask.h"
+#include "ED_object.h"
+#include "ED_particle.h"
 
 #include "UI_view2d.h"
 
@@ -96,7 +96,9 @@ void transform_around_single_fallback(TransInfo *t)
   }
 }
 
-/* ************************** Functions *************************** */
+/* -------------------------------------------------------------------- */
+/** \name Proportional Editing
+ * \{ */
 
 static int trans_data_compare_dist(const void *a, const void *b)
 {
@@ -333,7 +335,11 @@ static void set_prop_dist(TransInfo *t, const bool with_dist)
   MEM_freeN(td_table);
 }
 
-/* ********************* pose mode ************* */
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Pose Mode
+ * \{ */
 
 static short apply_targetless_ik(Object *ob)
 {
@@ -506,7 +512,11 @@ int count_set_pose_transflags(Object *ob,
   return total;
 }
 
-/* -------- Auto-IK ---------- */
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Pose Mode (Auto-IK)
+ * \{ */
 
 /* adjust pose-channel's auto-ik chainlen */
 static bool pchan_autoik_adjust(bPoseChannel *pchan, short chainlen)
@@ -631,7 +641,11 @@ static void pose_grab_with_ik_clear(Main *bmain, Object *ob)
   }
 }
 
-/* ********************* curve/surface ********* */
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Curve Surface
+ * \{ */
 
 void calc_distanceCurveVerts(TransData *head, TransData *tail)
 {
@@ -701,7 +715,11 @@ TransDataCurveHandleFlags *initTransDataCurveHandles(TransData *td, struct BezTr
   return hdata;
 }
 
-/* ********************* UV ****************** */
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name UV Coordinates
+ * \{ */
 
 bool clipUVTransform(TransInfo *t, float vec[2], const bool resize)
 {
@@ -787,7 +805,11 @@ void clipUVData(TransInfo *t)
   }
 }
 
-/* ********************* ANIMATION EDITORS (GENERAL) ************************* */
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Animation Editors (General)
+ * \{ */
 
 /**
  * For modal operation: `t->center_global` may not have been set yet.
@@ -828,26 +850,11 @@ bool FrameOnMouseSide(char side, float frame, float cframe)
   }
 }
 
-/* ********************* ACTION EDITOR ****************** */
+/** \} */
 
-static int gpf_cmp_frame(void *thunk, const void *a, const void *b)
-{
-  const bGPDframe *frame_a = a;
-  const bGPDframe *frame_b = b;
-
-  if (frame_a->framenum < frame_b->framenum) {
-    return -1;
-  }
-  if (frame_a->framenum > frame_b->framenum) {
-    return 1;
-  }
-  *((bool *)thunk) = true;
-  /* selected last */
-  if ((frame_a->flag & GP_FRAME_SELECT) && ((frame_b->flag & GP_FRAME_SELECT) == 0)) {
-    return 1;
-  }
-  return 0;
-}
+/* -------------------------------------------------------------------- */
+/** \name Animation Editor
+ * \{ */
 
 static int masklay_shape_cmp_frame(void *thunk, const void *a, const void *b)
 {
@@ -881,7 +888,7 @@ static void posttrans_gpd_clean(bGPdata *gpd)
     bGPDframe *gpf, *gpfn;
     bool is_double = false;
 
-    BLI_listbase_sort_r(&gpl->frames, gpf_cmp_frame, &is_double);
+    BKE_gpencil_layer_frames_sort(gpl, &is_double);
 
     if (is_double) {
       for (gpf = gpl->frames.first; gpf; gpf = gpfn) {
@@ -1107,7 +1114,11 @@ static void posttrans_action_clean(bAnimContext *ac, bAction *act)
   ANIM_animdata_freelist(&anim_data);
 }
 
-/* ********************* GRAPH EDITOR ************************* */
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Graph Editor
+ * \{ */
 
 /* struct for use in re-sorting BezTriples during Graph Editor transform */
 typedef struct BeztMap {
@@ -1278,6 +1289,12 @@ static void beztmap_to_data(TransInfo *t, FCurve *fcu, BeztMap *bezms, int totve
   MEM_freeN(adjusted);
 }
 
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Transform Utilities
+ * \{ */
+
 /* This function is called by recalcData during the Transform loop to recalculate
  * the handles of curves and sort the keyframes so that the curves draw correctly.
  * It is only called if some keyframes have moved out of order.
@@ -1315,8 +1332,6 @@ void remake_graph_transdata(TransInfo *t, ListBase *anim_data)
     }
   }
 }
-
-/* *********************** Transform data ******************* */
 
 /* Little helper function for ObjectToTransData used to give certain
  * constraints (ChildOf, FollowPath, and others that may be added)
@@ -1402,6 +1417,12 @@ bool constraints_list_needinv(TransInfo *t, ListBase *list)
   /* no appropriate candidates found */
   return false;
 }
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Transform (Auto-Keyframing)
+ * \{ */
 
 /**
  * Auto-keyframing feature - for objects
@@ -1700,6 +1721,12 @@ void autokeyframe_pose(bContext *C, Scene *scene, Object *ob, int tmode, short t
     }
   }
 }
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Transform (After-Transform Update)
+ * \{ */
 
 /* Return if we need to update motion paths, only if they already exist,
  * and we will insert a keyframe at the end of transform. */
@@ -2402,6 +2429,10 @@ int special_transform_moving(TransInfo *t)
 
 /** \} */
 
+/* -------------------------------------------------------------------- */
+/** \name Transform Data Create
+ * \{ */
+
 static int countAndCleanTransDataContainer(TransInfo *t)
 {
   BLI_assert(ELEM(t->data_len_all, 0, -1));
@@ -2779,7 +2810,7 @@ void createTransData(bContext *C, TransInfo *t)
           t->flag |= T_CAMERA;
         }
       }
-      else if (v3d->ob_centre && v3d->ob_centre->id.tag & LIB_TAG_DOIT) {
+      else if (v3d->ob_center && v3d->ob_center->id.tag & LIB_TAG_DOIT) {
         t->flag |= T_CAMERA;
       }
     }
@@ -2796,3 +2827,5 @@ void createTransData(bContext *C, TransInfo *t)
 
   BLI_assert((!(t->flag & T_EDIT)) == (!(t->obedit_type != -1)));
 }
+
+/** \} */

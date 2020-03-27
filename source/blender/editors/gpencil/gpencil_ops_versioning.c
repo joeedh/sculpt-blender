@@ -37,13 +37,13 @@
 #include "DNA_object_types.h"
 #include "DNA_scene_types.h"
 
-#include "BKE_main.h"
 #include "BKE_brush.h"
 #include "BKE_context.h"
 #include "BKE_deform.h"
 #include "BKE_gpencil.h"
-#include "BKE_object.h"
+#include "BKE_main.h"
 #include "BKE_material.h"
+#include "BKE_object.h"
 
 #include "WM_api.h"
 #include "WM_types.h"
@@ -51,8 +51,8 @@
 #include "RNA_access.h"
 #include "RNA_define.h"
 
-#include "ED_object.h"
 #include "ED_gpencil.h"
+#include "ED_object.h"
 
 #include "DEG_depsgraph.h"
 #include "DEG_depsgraph_query.h"
@@ -134,7 +134,6 @@ static int gpencil_convert_old_files_exec(bContext *C, wmOperator *op)
         ARRAY_SET_ITEMS(gp_style->mix_rgba, 1.0f, 1.0f, 1.0f, 0.2f);
         ARRAY_SET_ITEMS(gp_style->gradient_scale, 1.0f, 1.0f);
         ARRAY_SET_ITEMS(gp_style->texture_scale, 1.0f, 1.0f);
-        gp_style->texture_opacity = 1.0f;
         gp_style->texture_pixsize = 100.0f;
 
         gp_style->flag |= GP_MATERIAL_STROKE_SHOW;

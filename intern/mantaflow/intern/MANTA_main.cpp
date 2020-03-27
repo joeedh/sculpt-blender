@@ -171,9 +171,8 @@ MANTA::MANTA(int *res, FluidModifierData *mmd) : mCurrentID(++solverID)
   mMeshFromFile = false;
   mParticlesFromFile = false;
 
-  // Only start Mantaflow once. No need to start whenever new FLUID objected is allocated
-  if (!mantaInitialized)
-    initializeMantaflow();
+  // Setup Mantaflow in Python
+  initializeMantaflow();
 
   // Initialize Mantaflow variables in Python
   // Liquid
@@ -838,6 +837,8 @@ std::string MANTA::getRealValue(const std::string &varName, FluidModifierData *m
     ss << mmd->domain->flame_smoke_color[2];
   else if (varName == "CURRENT_FRAME")
     ss << mmd->time;
+  else if (varName == "START_FRAME")
+    ss << mmd->domain->cache_frame_start;
   else if (varName == "END_FRAME")
     ss << mmd->domain->cache_frame_end;
   else if (varName == "CACHE_DATA_FORMAT")

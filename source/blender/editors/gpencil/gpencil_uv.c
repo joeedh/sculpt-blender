@@ -23,17 +23,18 @@
 #include "DNA_gpencil_types.h"
 
 #include "BLI_blenlib.h"
-#include "BLI_string.h"
 #include "BLI_math.h"
+#include "BLI_string.h"
 
 #include "BLT_translation.h"
 
 #include "BKE_context.h"
 #include "BKE_gpencil.h"
+#include "BKE_gpencil_geom.h"
 #include "BKE_unit.h"
 
-#include "RNA_define.h"
 #include "RNA_access.h"
+#include "RNA_define.h"
 
 #include "WM_api.h"
 #include "WM_types.h"
@@ -175,8 +176,7 @@ static bool gpencil_uv_transform_init(bContext *C, wmOperator *op, const bool is
   float center[3] = {0.0f};
   int i = 0;
   /* Need use evaluated to get the viewport final position. */
-  GP_EVALUATED_STROKES_BEGIN(gpstroke_iter, C, gpl, gps)
-  {
+  GP_EVALUATED_STROKES_BEGIN (gpstroke_iter, C, gpl, gps) {
     if (gps->flag & GP_STROKE_SELECT) {
       float r_center[3];
       gpencil_stroke_center(gps, r_center);
@@ -436,7 +436,7 @@ static int gpencil_transform_fill_modal(bContext *C, wmOperator *op, const wmEve
   GpUvData *opdata = op->customdata;
 
   switch (event->type) {
-    case ESCKEY:
+    case EVT_ESCKEY:
     case RIGHTMOUSE: {
       gpencil_transform_fill_cancel(C, op);
       return OPERATOR_CANCELLED;
@@ -455,8 +455,8 @@ static int gpencil_transform_fill_modal(bContext *C, wmOperator *op, const wmEve
       break;
     }
     case LEFTMOUSE:
-    case PADENTER:
-    case RETKEY: {
+    case EVT_PADENTER:
+    case EVT_RETKEY: {
       if ((event->val == KM_PRESS) ||
           ((event->val == KM_RELEASE) && RNA_boolean_get(op->ptr, "release_confirm"))) {
         gpencil_uv_transform_calc(C, op);

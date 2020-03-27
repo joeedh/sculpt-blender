@@ -27,21 +27,21 @@ from bl_ui.properties_grease_pencil_common import (
 )
 
 
-class GPENCIL_MT_color_context_menu(Menu):
+class GPENCIL_MT_material_context_menu(Menu):
     bl_label = "Material Specials"
 
     def draw(self, _context):
         layout = self.layout
 
-        layout.operator("gpencil.color_reveal", icon='RESTRICT_VIEW_OFF', text="Show All")
-        layout.operator("gpencil.color_hide", icon='RESTRICT_VIEW_ON', text="Hide Others").unselected = True
+        layout.operator("gpencil.material_reveal", icon='RESTRICT_VIEW_OFF', text="Show All")
+        layout.operator("gpencil.material_hide", icon='RESTRICT_VIEW_ON', text="Hide Others").unselected = True
 
         layout.separator()
 
-        layout.operator("gpencil.color_lock_all", icon='LOCKED', text="Lock All")
-        layout.operator("gpencil.color_unlock_all", icon='UNLOCKED', text="UnLock All")
+        layout.operator("gpencil.material_lock_all", icon='LOCKED', text="Lock All")
+        layout.operator("gpencil.material_unlock_all", icon='UNLOCKED', text="UnLock All")
 
-        layout.operator("gpencil.stroke_lock_color", text="Lock Unselected")
+        layout.operator("gpencil.material_lock_unused", text="Lock Unselected")
         layout.operator("gpencil.lock_layer", text="Lock Unused")
 
         layout.separator()
@@ -212,7 +212,6 @@ class MATERIAL_PT_gpencil_fillcolor(GPMaterialButtonsPanel, Panel):
             col.template_ID(gpcolor, "fill_image", open="image.open")
 
             col.prop(gpcolor, "fill_color", text="Base Color")
-            col.prop(gpcolor, "texture_opacity", slider=True)
             col.prop(gpcolor, "mix_factor", text="Blend in Fill Texture", slider=True)
 
             col.prop(gpcolor, "texture_offset", text="Location")
@@ -261,7 +260,7 @@ class MATERIAL_PT_gpencil_material_presets(PresetPanel, Panel):
 
 classes = (
     GPENCIL_UL_matslots,
-    GPENCIL_MT_color_context_menu,
+    GPENCIL_MT_material_context_menu,
     MATERIAL_PT_gpencil_slots,
     MATERIAL_PT_gpencil_preview,
     MATERIAL_PT_gpencil_material_presets,

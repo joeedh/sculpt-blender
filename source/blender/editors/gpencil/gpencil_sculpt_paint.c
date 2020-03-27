@@ -22,11 +22,11 @@
  * \ingroup edgpencil
  */
 
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <stddef.h>
 #include <math.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "MEM_guardedalloc.h"
 
@@ -40,19 +40,20 @@
 
 #include "BLT_translation.h"
 
+#include "DNA_gpencil_types.h"
 #include "DNA_meshdata_types.h"
+#include "DNA_object_types.h"
 #include "DNA_scene_types.h"
 #include "DNA_screen_types.h"
 #include "DNA_space_types.h"
 #include "DNA_view3d_types.h"
-#include "DNA_gpencil_types.h"
-#include "DNA_object_types.h"
 
 #include "BKE_brush.h"
 #include "BKE_colortools.h"
 #include "BKE_context.h"
 #include "BKE_deform.h"
 #include "BKE_gpencil.h"
+#include "BKE_gpencil_geom.h"
 #include "BKE_gpencil_modifier.h"
 #include "BKE_main.h"
 #include "BKE_material.h"
@@ -231,8 +232,8 @@ static GP_Sculpt_Settings *gpsculpt_get_settings(Scene *scene)
 static bool gp_brush_invert_check(tGP_BrushEditData *gso)
 {
   /* The basic setting is the brush's setting (from the panel) */
-  bool invert = ((gso->brush->gpencil_settings->sculpt_flag & GP_SCULPT_FLAG_INVERT) != 0);
-
+  bool invert = ((gso->brush->gpencil_settings->sculpt_flag & GP_SCULPT_FLAG_INVERT) != 0) ||
+                (gso->brush->gpencil_settings->sculpt_flag & BRUSH_DIR_IN);
   /* During runtime, the user can hold down the Ctrl key to invert the basic behavior */
   if (gso->flag & GP_SCULPT_FLAG_INVERT) {
     invert ^= true;
@@ -405,27 +406,15 @@ static bool gp_brush_strength_apply(tGP_BrushEditData *gso,
   bGPDspoint *pt = gps->points + pt_index;
   float inf;
 
-  /* Compute strength of effect
-   * - We divide the strength, so that users can set "sane" values.
-   *   Otherwise, good default values are in the range of 0.093
-   */
-  inf = gp_brush_influence_calc(gso, radius, co) / 2.0f;
-  CLAMP_MIN(inf, 0.01f);
+  /* Compute strength of effect */
+  inf = gp_brush_influence_calc(gso, radius, co) * 0.125f;
 
-  /* apply */
+  /* Invert effect. */
   if (gp_brush_invert_check(gso)) {
-    /* make line more transparent - reduce alpha factor */
-    pt->strength -= inf;
+    inf *= -1.0f;
   }
-  else {
-    /* make line more opaque - increase stroke strength */
-    pt->strength += inf;
-  }
-  /* Strength should stay within [0.0, 1.0] */
-  CLAMP(pt->strength, 0.0f, 1.0f);
 
-  /* smooth the strength */
-  BKE_gpencil_stroke_smooth_strength(gps, pt_index, inf);
+  pt->strength = clamp_f(pt->strength + inf, 0.0f, 1.0f);
 
   return true;
 }
@@ -1506,8 +1495,7 @@ static bool gpsculpt_brush_do_stroke(tGP_BrushEditData *gso,
          * brush region  (either within stroke painted, or on its lines)
          * - this assumes that linewidth is irrelevant
          */
-        if (gp_stroke_inside_circle(
-                gso->mval, gso->mval_prev, radius, pc1[0], pc1[1], pc2[0], pc2[1])) {
+        if (gp_stroke_inside_circle(gso->mval, radius, pc1[0], pc1[1], pc2[0], pc2[1])) {
           /* Apply operation to these points */
           bool ok = false;
 
@@ -1756,7 +1744,8 @@ static bool gpsculpt_brush_apply_standard(bContext *C, tGP_BrushEditData *gso)
         if ((gpf == gpl->actframe) || (gpf->flag & GP_FRAME_SELECT)) {
           /* compute multiframe falloff factor */
           if (gso->use_multiframe_falloff) {
-            /* Faloff depends on distance to active frame (relative to the overall frame range) */
+            /* Falloff depends on distance to active frame
+             * (relative to the overall frame range). */
             gso->mf_falloff = BKE_gpencil_multiframe_falloff_calc(
                 gpf, gpl->actframe->framenum, f_init, f_end, ts->gp_sculpt.cur_falloff);
           }
@@ -2039,7 +2028,7 @@ static int gpsculpt_brush_modal(bContext *C, wmOperator *op, const wmEvent *even
       /* Abort painting if any of the usual things are tried */
       case MIDDLEMOUSE:
       case RIGHTMOUSE:
-      case ESCKEY:
+      case EVT_ESCKEY:
         gpsculpt_brush_exit(C, op);
         return OPERATOR_FINISHED;
     }
@@ -2061,7 +2050,7 @@ static int gpsculpt_brush_modal(bContext *C, wmOperator *op, const wmEvent *even
 
       /* Exit modal operator, based on the "standard" ops */
       case RIGHTMOUSE:
-      case ESCKEY:
+      case EVT_ESCKEY:
         gpsculpt_brush_exit(C, op);
         return OPERATOR_FINISHED;
 
@@ -2076,24 +2065,24 @@ static int gpsculpt_brush_modal(bContext *C, wmOperator *op, const wmEvent *even
         break;
 
         /* Change Frame - Allowed */
-      case LEFTARROWKEY:
-      case RIGHTARROWKEY:
-      case UPARROWKEY:
-      case DOWNARROWKEY:
+      case EVT_LEFTARROWKEY:
+      case EVT_RIGHTARROWKEY:
+      case EVT_UPARROWKEY:
+      case EVT_DOWNARROWKEY:
         return OPERATOR_PASS_THROUGH;
 
       /* Camera/View Gizmo's - Allowed */
       /* (See rationale in gpencil_paint.c -> gpencil_draw_modal()) */
-      case PAD0:
-      case PAD1:
-      case PAD2:
-      case PAD3:
-      case PAD4:
-      case PAD5:
-      case PAD6:
-      case PAD7:
-      case PAD8:
-      case PAD9:
+      case EVT_PAD0:
+      case EVT_PAD1:
+      case EVT_PAD2:
+      case EVT_PAD3:
+      case EVT_PAD4:
+      case EVT_PAD5:
+      case EVT_PAD6:
+      case EVT_PAD7:
+      case EVT_PAD8:
+      case EVT_PAD9:
         return OPERATOR_PASS_THROUGH;
 
       /* Unhandled event */

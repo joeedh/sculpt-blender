@@ -25,10 +25,10 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_utildefines.h"
 #include "BLI_blenlib.h"
 #include "BLI_math.h"
 #include "BLI_stack.h"
+#include "BLI_utildefines.h"
 
 #include "BLT_translation.h"
 
@@ -39,16 +39,17 @@
 #include "DNA_object_types.h"
 #include "DNA_windowmanager_types.h"
 
-#include "BKE_main.h"
 #include "BKE_brush.h"
-#include "BKE_deform.h"
-#include "BKE_image.h"
-#include "BKE_gpencil.h"
-#include "BKE_material.h"
 #include "BKE_context.h"
-#include "BKE_screen.h"
+#include "BKE_deform.h"
+#include "BKE_gpencil.h"
+#include "BKE_gpencil_geom.h"
+#include "BKE_image.h"
+#include "BKE_main.h"
+#include "BKE_material.h"
 #include "BKE_paint.h"
 #include "BKE_report.h"
+#include "BKE_screen.h"
 
 #include "ED_gpencil.h"
 #include "ED_screen.h"
@@ -61,9 +62,9 @@
 #include "IMB_imbuf.h"
 #include "IMB_imbuf_types.h"
 
+#include "GPU_framebuffer.h"
 #include "GPU_immediate.h"
 #include "GPU_matrix.h"
-#include "GPU_framebuffer.h"
 #include "GPU_state.h"
 
 #include "UI_interface.h"
@@ -1142,7 +1143,6 @@ static void gpencil_stroke_from_buffer(tGPDfill *tgpf)
     gp_stroke_convertcoords_tpoint(tgpf->scene,
                                    tgpf->region,
                                    tgpf->ob,
-                                   tgpf->gpl,
                                    point2D,
                                    tgpf->depth_arr ? tgpf->depth_arr + i : NULL,
                                    &pt->x);
@@ -1185,8 +1185,7 @@ static void gpencil_stroke_from_buffer(tGPDfill *tgpf)
   if ((tgpf->lock_axis > GP_LOCKAXIS_VIEW) &&
       ((ts->gpencil_v3d_align & GP_PROJECT_DEPTH_VIEW) == 0)) {
     float origin[3];
-    ED_gpencil_drawing_reference_get(
-        tgpf->scene, tgpf->ob, tgpf->gpl, ts->gpencil_v3d_align, origin);
+    ED_gpencil_drawing_reference_get(tgpf->scene, tgpf->ob, ts->gpencil_v3d_align, origin);
     ED_gp_project_stroke_to_plane(
         tgpf->scene, tgpf->ob, tgpf->rv3d, gps, origin, tgpf->lock_axis - 1);
   }
@@ -1487,7 +1486,7 @@ static int gpencil_fill_modal(bContext *C, wmOperator *op, const wmEvent *event)
   int estate = OPERATOR_PASS_THROUGH; /* default exit state - pass through */
 
   switch (event->type) {
-    case ESCKEY:
+    case EVT_ESCKEY:
     case RIGHTMOUSE:
       estate = OPERATOR_CANCELLED;
       break;

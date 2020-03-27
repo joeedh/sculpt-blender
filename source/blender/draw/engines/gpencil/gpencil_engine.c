@@ -47,8 +47,8 @@
 
 #include "DEG_depsgraph_query.h"
 
-#include "ED_view3d.h"
 #include "ED_screen.h"
+#include "ED_view3d.h"
 
 #include "UI_resources.h"
 
@@ -91,6 +91,7 @@ void GPENCIL_engine_init(void *ved)
   stl->pd->gp_layer_pool = vldata->gp_layer_pool;
   stl->pd->gp_vfx_pool = vldata->gp_vfx_pool;
   stl->pd->scene = ctx->scene;
+  stl->pd->v3d = ctx->v3d;
   stl->pd->last_light_pool = NULL;
   stl->pd->last_material_pool = NULL;
   stl->pd->tobjects.first = NULL;
@@ -200,7 +201,8 @@ void GPENCIL_cache_init(void *ved)
   pd->use_layer_fb = false;
   pd->use_object_fb = false;
   pd->use_mask_fb = false;
-  pd->use_signed_fb = false;
+  /* Always use high precision for render. */
+  pd->use_signed_fb = !pd->is_viewport;
 
   if (draw_ctx->v3d) {
     const bool hide_overlay = ((draw_ctx->v3d->flag2 & V3D_HIDE_OVERLAYS) != 0);
@@ -691,7 +693,7 @@ void GPENCIL_cache_finish(void *ved)
                                         GPU_ATTACHMENT_TEXTURE(pd->color_layer_tx),
                                         GPU_ATTACHMENT_TEXTURE(pd->reveal_layer_tx),
                                     });
-    };
+    }
 
     if (pd->use_object_fb) {
       pd->color_object_tx = DRW_texture_pool_query_2d(
@@ -709,7 +711,7 @@ void GPENCIL_cache_finish(void *ved)
 
     if (pd->use_mask_fb) {
       /* We need an extra depth to not disturb the normal drawing.
-       * The color_tx is needed for framebuffer cmpleteness. */
+       * The color_tx is needed for frame-buffer completeness. */
       GPUTexture *color_tx, *depth_tx;
       depth_tx = DRW_texture_pool_query_2d(
           size[0], size[1], GPU_DEPTH24_STENCIL8, &draw_engine_gpencil_type);
@@ -903,7 +905,13 @@ void GPENCIL_draw_scene(void *ved)
   float clear_cols[2][4] = {{0.0f, 0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f}};
 
   /* Fade 3D objects. */
-  if ((!pd->is_render) && (pd->fade_3d_object_opacity > -1.0f)) {
+  if ((!pd->is_render) && (pd->fade_3d_object_opacity > -1.0f) && (pd->obact != NULL) &&
+      (pd->obact->type == OB_GPENCIL)) {
+    float background_color[3];
+    ED_view3d_background_color_get(pd->scene, pd->v3d, background_color);
+    /* Blend color. */
+    interp_v3_v3v3(clear_cols[0], background_color, clear_cols[0], pd->fade_3d_object_opacity);
+
     mul_v4_fl(clear_cols[1], pd->fade_3d_object_opacity);
   }
 

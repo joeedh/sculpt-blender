@@ -24,13 +24,13 @@
 #ifndef __SCULPT_INTERN_H__
 #define __SCULPT_INTERN_H__
 
+#include "DNA_key_types.h"
 #include "DNA_listBase.h"
 #include "DNA_vec_types.h"
-#include "DNA_key_types.h"
 
 #include "BLI_bitmap.h"
-#include "BLI_threads.h"
 #include "BLI_gsqueue.h"
+#include "BLI_threads.h"
 
 #include "BKE_paint.h"
 #include "BKE_pbvh.h"
@@ -102,7 +102,7 @@ void SCULPT_vertex_neighbors_get(struct SculptSession *ss,
                                  SculptVertexNeighborIter *iter);
 
 /* Iterator over neighboring vertices. */
-#define sculpt_vertex_neighbors_iter_begin(ss, v_index, neighbor_iterator) \
+#define SCULPT_VERTEX_NEIGHBORS_ITER_BEGIN(ss, v_index, neighbor_iterator) \
   SCULPT_vertex_neighbors_get(ss, v_index, false, &neighbor_iterator); \
   for (neighbor_iterator.i = 0; neighbor_iterator.i < neighbor_iterator.size; \
        neighbor_iterator.i++) { \
@@ -110,7 +110,7 @@ void SCULPT_vertex_neighbors_get(struct SculptSession *ss,
 
 /* Iterate over neighboring and duplicate vertices (for PBVH_GRIDS). Duplicates come
  * first since they are nearest for floodfill. */
-#define sculpt_vertex_duplicates_and_neighbors_iter_begin(ss, v_index, neighbor_iterator) \
+#define SCULPT_VERTEX_DUPLICATES_AND_NEIGHBORS_ITER_BEGIN(ss, v_index, neighbor_iterator) \
   SCULPT_vertex_neighbors_get(ss, v_index, true, &neighbor_iterator); \
   for (neighbor_iterator.i = neighbor_iterator.size - 1; neighbor_iterator.i >= 0; \
        neighbor_iterator.i--) { \
@@ -118,7 +118,7 @@ void SCULPT_vertex_neighbors_get(struct SculptSession *ss,
     neighbor_iterator.is_duplicate = (ni.i >= \
                                       neighbor_iterator.size - neighbor_iterator.num_duplicates);
 
-#define sculpt_vertex_neighbors_iter_end(neighbor_iterator) \
+#define SCULPT_VERTEX_NEIGHBORS_ITER_END(neighbor_iterator) \
   } \
   if (neighbor_iterator.neighbors != neighbor_iterator.neighbors_fixed) { \
     MEM_freeN(neighbor_iterator.neighbors); \
@@ -517,7 +517,7 @@ bool SCULPT_pbvh_calc_area_normal(const struct Brush *brush,
  * For descriptions of these settings, check the operator properties.
  */
 
-#define CLAY_STABILIZER_LEN 10
+#define SCULPT_CLAY_STABILIZER_LEN 10
 
 typedef struct StrokeCache {
   /* Invariants */
@@ -608,7 +608,7 @@ typedef struct StrokeCache {
   /* Angle of the front tilting plane of the brush to simulate clay accumulation. */
   float clay_thumb_front_angle;
   /* Stores pressure samples to get an stabilized strength and radius variation. */
-  float clay_pressure_stabilizer[CLAY_STABILIZER_LEN];
+  float clay_pressure_stabilizer[SCULPT_CLAY_STABILIZER_LEN];
   int clay_pressure_stabilizer_index;
 
   /* Cloth brush */
@@ -617,6 +617,10 @@ typedef struct StrokeCache {
   float true_initial_location[3];
   float initial_normal[3];
   float true_initial_normal[3];
+
+  /* Surface Smooth Brush */
+  /* Stores the displacement produced by the laplacian step of HC smooth. */
+  float (*surface_smooth_laplacian_disp)[3];
 
   float vertex_rotation; /* amount to rotate the vertices when using rotate brush */
   struct Dial *dial;
@@ -650,6 +654,11 @@ typedef struct FilterCache {
    * achieve certain effects. */
   int iteration_count;
 
+  /* Stores the displacement produced by the laplacian step of HC smooth. */
+  float (*surface_smooth_laplacian_disp)[3];
+  float surface_smooth_shape_preservation;
+  float surface_smooth_current_vertex;
+
   /* unmasked nodes */
   PBVHNode **nodes;
   int totnode;
@@ -662,6 +671,9 @@ typedef struct FilterCache {
   float *edge_factor;
   float *prev_mask;
   float mask_expand_initial_co[3];
+
+  /* Used to prevent undesired results on certain mesh filters. */
+  float *automask;
 
   int new_face_set;
   int *prev_face_set;

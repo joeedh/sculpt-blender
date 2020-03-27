@@ -37,8 +37,8 @@
 #include "DNA_view3d_types.h"
 #include "DNA_workspace_types.h"
 
-#include "BLI_math.h"
 #include "BLI_blenlib.h"
+#include "BLI_math.h"
 
 #include "BKE_context.h"
 #include "BKE_deform.h"
@@ -943,7 +943,7 @@ BMVert *editbmesh_get_x_mirror_vert(Object *ob,
 }
 
 /**
- * Wrapper for objectmode/editmode.
+ * Wrapper for object-mode/edit-mode.
  *
  * call #BM_mesh_elem_table_ensure first for editmesh.
  */

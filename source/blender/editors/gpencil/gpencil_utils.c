@@ -20,24 +20,24 @@
  * \ingroup edgpencil
  */
 
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <stddef.h>
 #include <math.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_math.h"
 #include "BLI_blenlib.h"
 #include "BLI_ghash.h"
+#include "BLI_math.h"
+#include "BLI_rand.h"
 #include "BLI_utildefines.h"
 #include "BLT_translation.h"
-#include "BLI_rand.h"
 
-#include "DNA_meshdata_types.h"
-#include "DNA_gpencil_types.h"
 #include "DNA_brush_types.h"
+#include "DNA_gpencil_types.h"
+#include "DNA_meshdata_types.h"
 #include "DNA_object_types.h"
 #include "DNA_scene_types.h"
 #include "DNA_screen_types.h"
@@ -45,21 +45,22 @@
 #include "DNA_view3d_types.h"
 
 #include "BKE_action.h"
-#include "BKE_colortools.h"
-#include "BKE_collection.h"
-#include "BKE_deform.h"
-#include "BKE_main.h"
 #include "BKE_brush.h"
+#include "BKE_collection.h"
+#include "BKE_colortools.h"
 #include "BKE_context.h"
+#include "BKE_deform.h"
 #include "BKE_gpencil.h"
+#include "BKE_gpencil_geom.h"
+#include "BKE_main.h"
+#include "BKE_material.h"
 #include "BKE_object.h"
 #include "BKE_paint.h"
-#include "BKE_material.h"
 #include "BKE_tracking.h"
 
 #include "WM_api.h"
-#include "WM_types.h"
 #include "WM_toolsystem.h"
+#include "WM_types.h"
 
 #include "RNA_access.h"
 #include "RNA_define.h"
@@ -68,12 +69,12 @@
 #include "UI_resources.h"
 #include "UI_view2d.h"
 
-#include "ED_gpencil.h"
 #include "ED_clip.h"
-#include "ED_view3d.h"
+#include "ED_gpencil.h"
 #include "ED_object.h"
 #include "ED_screen.h"
 #include "ED_select_utils.h"
+#include "ED_view3d.h"
 
 #include "GPU_immediate.h"
 #include "GPU_immediate_util.h"
@@ -493,8 +494,7 @@ const EnumPropertyItem *ED_gpencil_layers_with_new_enum_itemf(bContext *C,
  * \param x0, y0: The screen-space x and y coordinates of the start of the stroke segment
  * \param x1, y1: The screen-space x and y coordinates of the end of the stroke segment
  */
-bool gp_stroke_inside_circle(
-    const float mval[2], const float UNUSED(mvalo[2]), int rad, int x0, int y0, int x1, int y1)
+bool gp_stroke_inside_circle(const float mval[2], int rad, int x0, int y0, int x1, int y1)
 {
   /* simple within-radius check for now */
   const float screen_co_a[2] = {x0, y0};
@@ -868,8 +868,7 @@ bool gp_point_xy_to_3d(const GP_SpaceConversion *gsc,
   const RegionView3D *rv3d = gsc->region->regiondata;
   float rvec[3];
 
-  ED_gpencil_drawing_reference_get(
-      scene, gsc->ob, gsc->gpl, scene->toolsettings->gpencil_v3d_align, rvec);
+  ED_gpencil_drawing_reference_get(scene, gsc->ob, scene->toolsettings->gpencil_v3d_align, rvec);
 
   float zfac = ED_view3d_calc_zfac(rv3d, rvec, NULL);
 
@@ -904,7 +903,6 @@ bool gp_point_xy_to_3d(const GP_SpaceConversion *gsc,
 void gp_stroke_convertcoords_tpoint(Scene *scene,
                                     ARegion *region,
                                     Object *ob,
-                                    bGPDlayer *gpl,
                                     const tGPspoint *point2D,
                                     float *depth,
                                     float r_out[3])
@@ -928,7 +926,7 @@ void gp_stroke_convertcoords_tpoint(Scene *scene,
     /* Current method just converts each point in screen-coordinates to
      * 3D-coordinates using the 3D-cursor as reference.
      */
-    ED_gpencil_drawing_reference_get(scene, ob, gpl, ts->gpencil_v3d_align, rvec);
+    ED_gpencil_drawing_reference_get(scene, ob, ts->gpencil_v3d_align, rvec);
     zfac = ED_view3d_calc_zfac(region->regiondata, rvec, NULL);
 
     if (ED_view3d_project_float_global(region, rvec, mval_prj, V3D_PROJ_TEST_NOP) ==
@@ -947,8 +945,10 @@ void gp_stroke_convertcoords_tpoint(Scene *scene,
  * Get drawing reference point for conversion or projection of the stroke
  * \param[out] r_vec : Reference point found
  */
-void ED_gpencil_drawing_reference_get(
-    const Scene *scene, const Object *ob, bGPDlayer *UNUSED(gpl), char align_flag, float r_vec[3])
+void ED_gpencil_drawing_reference_get(const Scene *scene,
+                                      const Object *ob,
+                                      char align_flag,
+                                      float r_vec[3])
 {
   const float *fp = scene->cursor.location;
 
@@ -2583,10 +2583,9 @@ bool ED_gpencil_stroke_check_collision(GP_SpaceConversion *gsc,
   bGPDspoint pt_dummy, pt_dummy_ps;
   float boundbox_min[2] = {0.0f};
   float boundbox_max[2] = {0.0f};
-  float zerov3[3];
 
   /* Check we have something to use (only for old files). */
-  if (equals_v3v3(zerov3, gps->boundbox_min)) {
+  if (is_zero_v3(gps->boundbox_min)) {
     BKE_gpencil_stroke_boundingbox_calc(gps);
   }
 

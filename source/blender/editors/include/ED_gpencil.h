@@ -33,13 +33,13 @@ struct ListBase;
 struct PointerRNA;
 
 struct Brush;
+struct GP_SpaceConversion;
 struct bGPDframe;
 struct bGPDlayer;
 struct bGPDspoint;
 struct bGPDstroke;
 struct bGPdata;
 struct tGPspoint;
-struct GP_SpaceConversion;
 
 struct ARegion;
 struct Depsgraph;
@@ -47,8 +47,8 @@ struct Main;
 struct RegionView3D;
 struct ReportList;
 struct Scene;
-struct ToolSettings;
 struct ScrArea;
+struct ToolSettings;
 struct View3D;
 struct ViewLayer;
 struct bContext;
@@ -233,7 +233,6 @@ void ED_gp_project_point_to_plane(const struct Scene *scene,
                                   struct bGPDspoint *pt);
 void ED_gpencil_drawing_reference_get(const struct Scene *scene,
                                       const struct Object *ob,
-                                      struct bGPDlayer *gpl,
                                       char align_flag,
                                       float vec[3]);
 void ED_gpencil_project_stroke_to_view(struct bContext *C,

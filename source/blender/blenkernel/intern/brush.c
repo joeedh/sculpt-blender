@@ -21,10 +21,10 @@
 #include "MEM_guardedalloc.h"
 
 #include "DNA_brush_types.h"
-#include "DNA_scene_types.h"
-#include "DNA_object_types.h"
-#include "DNA_gpencil_types.h"
 #include "DNA_defaults.h"
+#include "DNA_gpencil_types.h"
+#include "DNA_object_types.h"
+#include "DNA_scene_types.h"
 
 #include "BLI_listbase.h"
 #include "BLI_math.h"
@@ -35,6 +35,7 @@
 #include "BKE_brush.h"
 #include "BKE_colortools.h"
 #include "BKE_context.h"
+#include "BKE_icons.h"
 #include "BKE_idtype.h"
 #include "BKE_lib_id.h"
 #include "BKE_lib_query.h"
@@ -43,7 +44,6 @@
 #include "BKE_material.h"
 #include "BKE_paint.h"
 #include "BKE_texture.h"
-#include "BKE_icons.h"
 
 #include "IMB_colormanagement.h"
 #include "IMB_imbuf.h"
@@ -443,7 +443,7 @@ void BKE_gpencil_brush_preset_set(Main *bmain, Brush *brush, const short type)
       brush->gpencil_settings->active_smooth = ACTIVE_SMOOTH;
       brush->gpencil_settings->draw_angle = 0.0f;
       brush->gpencil_settings->draw_angle_factor = 0.0f;
-      brush->gpencil_settings->hardeness = 0.211f;
+      brush->gpencil_settings->hardeness = 0.9f;
       copy_v2_fl(brush->gpencil_settings->aspect_ratio, 1.0f);
 
       brush->gpencil_tool = GPAINT_TOOL_DRAW;
@@ -1348,6 +1348,9 @@ void BKE_brush_sculpt_reset(Brush *br)
       br->flag &= ~BRUSH_SPACE_ATTEN;
       br->spacing = 5;
       br->alpha = 0.7f;
+      br->surface_smooth_shape_preservation = 0.5f;
+      br->surface_smooth_current_vertex = 0.5f;
+      br->surface_smooth_iterations = 4;
       break;
     case SCULPT_TOOL_SNAKE_HOOK:
       br->alpha = 1.0f;

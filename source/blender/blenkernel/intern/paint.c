@@ -26,21 +26,21 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "DNA_object_types.h"
+#include "DNA_brush_types.h"
+#include "DNA_gpencil_types.h"
 #include "DNA_mesh_types.h"
 #include "DNA_meshdata_types.h"
 #include "DNA_modifier_types.h"
+#include "DNA_object_types.h"
 #include "DNA_scene_types.h"
-#include "DNA_brush_types.h"
 #include "DNA_space_types.h"
-#include "DNA_gpencil_types.h"
 #include "DNA_view3d_types.h"
 #include "DNA_workspace_types.h"
 
 #include "BLI_bitmap.h"
-#include "BLI_utildefines.h"
-#include "BLI_math_vector.h"
 #include "BLI_listbase.h"
+#include "BLI_math_vector.h"
+#include "BLI_utildefines.h"
 
 #include "BLT_translation.h"
 
@@ -48,15 +48,15 @@
 #include "BKE_brush.h"
 #include "BKE_ccg.h"
 #include "BKE_colortools.h"
-#include "BKE_deform.h"
-#include "BKE_main.h"
 #include "BKE_context.h"
 #include "BKE_crazyspace.h"
+#include "BKE_deform.h"
 #include "BKE_gpencil.h"
 #include "BKE_idtype.h"
 #include "BKE_image.h"
 #include "BKE_key.h"
 #include "BKE_lib_id.h"
+#include "BKE_main.h"
 #include "BKE_mesh.h"
 #include "BKE_mesh_mapping.h"
 #include "BKE_mesh_runtime.h"
@@ -1545,6 +1545,9 @@ static void sculpt_update_object(
       for (int i = 0; i < me->totpoly; i++) {
         ss->face_sets[i] = 1;
       }
+
+      /* Set the default face set color if the datalayer did not exist. */
+      me->face_sets_color_default = 1;
     }
     ss->face_sets = CustomData_get_layer(&me->pdata, CD_SCULPT_FACE_SETS);
   }
@@ -1554,6 +1557,8 @@ static void sculpt_update_object(
   PBVH *pbvh = BKE_sculpt_object_pbvh_ensure(depsgraph, ob);
   BLI_assert(pbvh == ss->pbvh);
   UNUSED_VARS_NDEBUG(pbvh);
+
+  BKE_pbvh_face_sets_color_set(ss->pbvh, me->face_sets_color_seed, me->face_sets_color_default);
 
   if (need_pmap && ob->type == OB_MESH && !ss->pmap) {
     BKE_mesh_vert_poly_map_create(

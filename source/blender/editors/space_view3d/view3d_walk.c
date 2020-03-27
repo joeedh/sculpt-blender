@@ -20,14 +20,14 @@
 
 /* defines VIEW3D_OT_navigate - walk modal operator */
 
-#include "DNA_scene_types.h"
 #include "DNA_object_types.h"
+#include "DNA_scene_types.h"
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_math.h"
 #include "BLI_blenlib.h"
 #include "BLI_kdopbvh.h"
+#include "BLI_math.h"
 #include "BLI_utildefines.h"
 
 #include "BKE_context.h"
@@ -160,14 +160,14 @@ void walk_modal_keymap(wmKeyConfig *keyconf)
       {0, NULL, 0, NULL, NULL},
   };
 
-  wmKeyMap *keymap = WM_modalkeymap_get(keyconf, "View3D Walk Modal");
+  wmKeyMap *keymap = WM_modalkeymap_find(keyconf, "View3D Walk Modal");
 
   /* this function is called for each spacetype, only needs to add map once */
   if (keymap && keymap->modal_items) {
     return;
   }
 
-  keymap = WM_modalkeymap_add(keyconf, "View3D Walk Modal", modal_items);
+  keymap = WM_modalkeymap_ensure(keyconf, "View3D Walk Modal", modal_items);
 
   /* assign map to operators */
   WM_modalkeymap_assign(keymap, "VIEW3D_OT_walk");
@@ -1347,7 +1347,7 @@ static int walk_invoke(bContext *C, wmOperator *op, const wmEvent *event)
   RegionView3D *rv3d = CTX_wm_region_view3d(C);
   WalkInfo *walk;
 
-  if (rv3d->viewlock & RV3D_LOCKED) {
+  if (RV3D_LOCK_FLAGS(rv3d) & RV3D_LOCK_ANY_TRANSFORM) {
     return OPERATOR_CANCELLED;
   }
 

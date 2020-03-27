@@ -390,18 +390,23 @@ class USERPREF_PT_edit_objects_duplicate_data(EditingPanel, CenterAlignMixIn, Pa
         col.prop(edit, "use_duplicate_armature", text="Armature")
         col.prop(edit, "use_duplicate_curve", text="Curve")
         # col.prop(edit, "use_duplicate_fcurve", text="F-Curve")  # Not implemented.
+        col.prop(edit, "use_duplicate_grease_pencil", text="Grease Pencil")
+        if hasattr(edit, "use_duplicate_hair"):
+            col.prop(edit, "use_duplicate_hair", text="Hair")
         col.prop(edit, "use_duplicate_light", text="Light")
-        col.prop(edit, "use_duplicate_lightprobe", text="Light Probe")
         col = flow.column()
+        col.prop(edit, "use_duplicate_lightprobe", text="Light Probe")
         col.prop(edit, "use_duplicate_material", text="Material")
         col.prop(edit, "use_duplicate_mesh", text="Mesh")
         col.prop(edit, "use_duplicate_metaball", text="Metaball")
         col.prop(edit, "use_duplicate_particle", text="Particle")
         col = flow.column()
+        if hasattr(edit, "use_duplicate_pointcloud"):
+            col.prop(edit, "use_duplicate_pointcloud", text="Point Cloud")
         col.prop(edit, "use_duplicate_surface", text="Surface")
         col.prop(edit, "use_duplicate_text", text="Text")
         # col.prop(edit, "use_duplicate_texture", text="Texture")  # Not implemented.
-        col.prop(edit, "use_duplicate_grease_pencil", text="Grease Pencil")
+        col.prop(edit, "use_duplicate_volume", text="Volume")
 
 
 class USERPREF_PT_edit_cursor(EditingPanel, CenterAlignMixIn, Panel):
@@ -618,6 +623,15 @@ class USERPREF_PT_system_memory(SystemPanel, CenterAlignMixIn, Panel):
 
         flow.prop(system, "memory_cache_limit", text="Sequencer Cache Limit")
         flow.prop(system, "scrollback", text="Console Scrollback Lines")
+
+        layout.separator()
+
+        flow = layout.grid_flow(row_major=False, columns=0, even_columns=True, even_rows=False, align=False)
+
+        flow.prop(system, "use_sequencer_disk_cache")
+        flow.prop(system, "sequencer_disk_cache_dir")
+        flow.prop(system, "sequencer_disk_cache_size_limit")
+        flow.prop(system, "sequencer_disk_cache_compression")
 
         layout.separator()
 
@@ -883,6 +897,23 @@ class USERPREF_PT_theme_interface_styles(ThemePanel, CenterAlignMixIn, Panel):
         flow.prop(ui, "widget_emboss")
 
 
+class USERPREF_PT_theme_interface_transparent_checker(ThemePanel, CenterAlignMixIn, Panel):
+    bl_label = "Transparent Checkerboard"
+    bl_options = {'DEFAULT_CLOSED'}
+    bl_parent_id = "USERPREF_PT_theme_user_interface"
+
+    def draw_centered(self, context, layout):
+        theme = context.preferences.themes[0]
+        ui = theme.user_interface
+
+        flow = layout.grid_flow(
+            row_major=False, columns=0, even_columns=True, even_rows=False, align=False)
+
+        flow.prop(ui, "transparent_checker_primary")
+        flow.prop(ui, "transparent_checker_secondary")
+        flow.prop(ui, "transparent_checker_size")
+
+
 class USERPREF_PT_theme_interface_gizmos(ThemePanel, CenterAlignMixIn, Panel):
     bl_label = "Axis & Gizmo Colors"
     bl_options = {'DEFAULT_CLOSED'}
@@ -902,6 +933,7 @@ class USERPREF_PT_theme_interface_gizmos(ThemePanel, CenterAlignMixIn, Panel):
         col = flow.column()
         col.prop(ui, "gizmo_primary")
         col.prop(ui, "gizmo_secondary")
+        col.prop(ui, "gizmo_view_align")
 
         col = flow.column()
         col.prop(ui, "gizmo_a")
@@ -2102,6 +2134,21 @@ class ExperimentalPanel:
 
     url_prefix = "https://developer.blender.org/"
 
+    def _draw_items(self, context, items):
+        prefs = context.preferences
+        experimental = prefs.experimental
+
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+
+        for prop_keywords, task in items:
+            split = layout.split(factor=0.66)
+            col = split.split()
+            col.prop(experimental, **prop_keywords)
+            col = split.split()
+            col.operator("wm.url_open", text=task, icon='URL').url = self.url_prefix + task
+
 """
 # Example panel, leave it here so we always have a template to follow even
 # after the features are gone from the experimental panel.
@@ -2110,27 +2157,34 @@ class USERPREF_PT_experimental_virtual_reality(ExperimentalPanel, Panel):
     bl_label = "Virtual Reality"
 
     def draw(self, context):
-        prefs = context.preferences
-        experimental = prefs.experimental
-
-        layout = self.layout
-        layout.use_property_split = True
-        layout.use_property_decorate = False
-
-        task = "T71347"
-        split = layout.split(factor=0.66)
-        col = split.split()
-        col.prop(experimental, "use_virtual_reality_scene_inspection", text="Scene Inspection")
-        col = split.split()
-        col.operator("wm.url_open", text=task, icon='URL').url = self.url_prefix + task
-
-        task = "T71348"
-        split = layout.split(factor=0.66)
-        col = split.column()
-        col.prop(experimental, "use_virtual_reality_immersive_drawing", text="Continuous Immersive Drawing")
-        col = split.column()
-        col.operator("wm.url_open", text=task, icon='URL').url = self.url_prefix + task
+        self._draw_items(
+            context, (
+                ({"property": "use_virtual_reality_scene_inspection"}, "T71347"),
+                ({"property": "use_virtual_reality_immersive_drawing"}, "T71348"),
+            )
+        )
 """
+
+class USERPREF_PT_experimental_ui(ExperimentalPanel, Panel):
+    bl_label = "UI"
+
+    def draw(self, context):
+        self._draw_items(
+            context, (
+                ({"property": "use_menu_search"}, "T74157"),
+            ),
+        )
+
+
+class USERPREF_PT_experimental_system(ExperimentalPanel, Panel):
+    bl_label = "System"
+
+    def draw(self, context):
+        self._draw_items(
+            context, (
+                ({"property": "use_undo_speedup"}, "T60695"),
+            ),
+        )
 
 
 # -----------------------------------------------------------------------------
@@ -2185,6 +2239,7 @@ classes = (
     USERPREF_PT_theme_interface_state,
     USERPREF_PT_theme_interface_styles,
     USERPREF_PT_theme_interface_gizmos,
+    USERPREF_PT_theme_interface_transparent_checker,
     USERPREF_PT_theme_interface_icons,
     USERPREF_PT_theme_text_style,
     USERPREF_PT_theme_bone_color_sets,
@@ -2221,6 +2276,9 @@ classes = (
 
     # Popovers.
     USERPREF_PT_ndof_settings,
+
+    USERPREF_PT_experimental_ui,
+    USERPREF_PT_experimental_system,
 
     # Add dynamically generated editor theme panels last,
     # so they show up last in the theme section.

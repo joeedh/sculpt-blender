@@ -257,8 +257,7 @@ typedef struct GP_SpaceConversion {
   float mat[4][4]; /* transform matrix on the strokes (introduced in [b770964]) */
 } GP_SpaceConversion;
 
-bool gp_stroke_inside_circle(
-    const float mval[2], const float UNUSED(mvalo[2]), int rad, int x0, int y0, int x1, int y1);
+bool gp_stroke_inside_circle(const float mval[2], int rad, int x0, int y0, int x1, int y1);
 
 void gp_point_conversion_init(struct bContext *C, GP_SpaceConversion *r_gsc);
 
@@ -304,7 +303,6 @@ bool gp_point_xy_to_3d(const GP_SpaceConversion *gsc,
 void gp_stroke_convertcoords_tpoint(struct Scene *scene,
                                     struct ARegion *region,
                                     struct Object *ob,
-                                    bGPDlayer *gpl,
                                     const struct tGPspoint *point2D,
                                     float *depth,
                                     float out[3]);
@@ -407,7 +405,7 @@ void GPENCIL_OT_select_less(struct wmOperatorType *ot);
 void GPENCIL_OT_select_first(struct wmOperatorType *ot);
 void GPENCIL_OT_select_last(struct wmOperatorType *ot);
 void GPENCIL_OT_select_alternate(struct wmOperatorType *ot);
-void GPENCIL_OT_select_color(struct wmOperatorType *ot);
+void GPENCIL_OT_select_vertex_color(struct wmOperatorType *ot);
 
 void GPENCIL_OT_duplicate(struct wmOperatorType *ot);
 void GPENCIL_OT_delete(struct wmOperatorType *ot);
@@ -491,7 +489,6 @@ enum {
 
 void GPENCIL_OT_stroke_arrange(struct wmOperatorType *ot);
 void GPENCIL_OT_stroke_change_color(struct wmOperatorType *ot);
-void GPENCIL_OT_stroke_lock_color(struct wmOperatorType *ot);
 void GPENCIL_OT_stroke_apply_thickness(struct wmOperatorType *ot);
 void GPENCIL_OT_stroke_cyclical_set(struct wmOperatorType *ot);
 void GPENCIL_OT_stroke_caps_set(struct wmOperatorType *ot);
@@ -547,12 +544,13 @@ void GPENCIL_OT_vertex_group_normalize_all(struct wmOperatorType *ot);
 
 /* color handle */
 void GPENCIL_OT_lock_layer(struct wmOperatorType *ot);
-void GPENCIL_OT_color_isolate(struct wmOperatorType *ot);
-void GPENCIL_OT_color_hide(struct wmOperatorType *ot);
-void GPENCIL_OT_color_reveal(struct wmOperatorType *ot);
-void GPENCIL_OT_color_lock_all(struct wmOperatorType *ot);
-void GPENCIL_OT_color_unlock_all(struct wmOperatorType *ot);
-void GPENCIL_OT_color_select(struct wmOperatorType *ot);
+void GPENCIL_OT_material_isolate(struct wmOperatorType *ot);
+void GPENCIL_OT_material_hide(struct wmOperatorType *ot);
+void GPENCIL_OT_material_reveal(struct wmOperatorType *ot);
+void GPENCIL_OT_material_lock_all(struct wmOperatorType *ot);
+void GPENCIL_OT_material_unlock_all(struct wmOperatorType *ot);
+void GPENCIL_OT_material_lock_unused(struct wmOperatorType *ot);
+void GPENCIL_OT_select_material(struct wmOperatorType *ot);
 void GPENCIL_OT_set_active_material(struct wmOperatorType *ot);
 
 /* convert old 2.7 files to 2.8 */
@@ -562,7 +560,7 @@ void GPENCIL_OT_convert_old_files(struct wmOperatorType *ot);
 void GPENCIL_OT_generate_weights(struct wmOperatorType *ot);
 
 /* ****************************************************** */
-/* FILTERED ACTION DATA - TYPES  ---> XXX DEPRECEATED OLD ANIM SYSTEM CODE! */
+/* FILTERED ACTION DATA - TYPES  ---> XXX DEPRECATED OLD ANIM SYSTEM CODE! */
 
 /* XXX - TODO: replace this with the modern bAnimListElem... */
 /* This struct defines a structure used for quick access */

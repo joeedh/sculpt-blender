@@ -30,20 +30,21 @@
 #include "BLI_blenlib.h"
 #include "BLI_math.h"
 
-#include "DNA_meshdata_types.h"
-#include "DNA_scene_types.h"
-#include "DNA_object_types.h"
-#include "DNA_gpencil_types.h"
 #include "DNA_gpencil_modifier_types.h"
+#include "DNA_gpencil_types.h"
+#include "DNA_meshdata_types.h"
+#include "DNA_object_types.h"
+#include "DNA_scene_types.h"
 
 #include "BKE_gpencil.h"
+#include "BKE_gpencil_geom.h"
 #include "BKE_gpencil_modifier.h"
 
 #include "DEG_depsgraph.h"
 #include "DEG_depsgraph_query.h"
 
-#include "MOD_gpencil_util.h"
 #include "MOD_gpencil_modifiertypes.h"
+#include "MOD_gpencil_util.h"
 
 static void initData(GpencilModifierData *md)
 {
@@ -115,7 +116,7 @@ static void reduce_stroke_points(bGPDstroke *gps,
 {
   bGPDspoint *new_points = MEM_callocN(sizeof(bGPDspoint) * num_points, __func__);
   MDeformVert *new_dvert = NULL;
-  if (gps->dvert != NULL) {
+  if ((gps->dvert != NULL) && (num_points > 0)) {
     new_dvert = MEM_callocN(sizeof(MDeformVert) * num_points, __func__);
   }
 
@@ -129,7 +130,7 @@ static void reduce_stroke_points(bGPDstroke *gps,
     {
       /* copy over point data */
       memcpy(new_points, gps->points, sizeof(bGPDspoint) * num_points);
-      if (gps->dvert != NULL) {
+      if ((gps->dvert != NULL) && (num_points > 0)) {
         memcpy(new_dvert, gps->dvert, sizeof(MDeformVert) * num_points);
 
         /* free unused point weights */
@@ -150,7 +151,7 @@ static void reduce_stroke_points(bGPDstroke *gps,
 
       /* copy over point data */
       memcpy(new_points, gps->points + offset, sizeof(bGPDspoint) * num_points);
-      if (gps->dvert != NULL) {
+      if ((gps->dvert != NULL) && (num_points > 0)) {
         memcpy(new_dvert, gps->dvert + offset, sizeof(MDeformVert) * num_points);
 
         /* free unused weights */

@@ -71,22 +71,22 @@ const EnumPropertyItem rna_enum_ramp_blend_items[] = {
 
 #  include "BKE_colorband.h"
 #  include "BKE_context.h"
-#  include "BKE_main.h"
 #  include "BKE_gpencil.h"
+#  include "BKE_main.h"
 #  include "BKE_material.h"
-#  include "BKE_texture.h"
 #  include "BKE_node.h"
 #  include "BKE_paint.h"
 #  include "BKE_scene.h"
+#  include "BKE_texture.h"
 #  include "BKE_workspace.h"
 
 #  include "DEG_depsgraph.h"
 #  include "DEG_depsgraph_build.h"
 
-#  include "ED_node.h"
-#  include "ED_image.h"
-#  include "ED_screen.h"
 #  include "ED_gpencil.h"
+#  include "ED_image.h"
+#  include "ED_node.h"
+#  include "ED_screen.h"
 
 static void rna_Material_update(Main *UNUSED(bmain), Scene *UNUSED(scene), PointerRNA *ptr)
 {
@@ -518,13 +518,6 @@ static void rna_def_material_greasepencil(BlenderRNA *brna)
   RNA_def_property_float_sdna(prop, NULL, "texture_offset");
   RNA_def_property_array(prop, 2);
   RNA_def_property_ui_text(prop, "Offset", "Shift Texture in 2d Space");
-  RNA_def_property_update(prop, NC_GPENCIL | ND_SHADING, "rna_MaterialGpencil_update");
-
-  /* Texture opacity size */
-  prop = RNA_def_property(srna, "texture_opacity", PROP_FLOAT, PROP_NONE);
-  RNA_def_property_float_sdna(prop, NULL, "texture_opacity");
-  RNA_def_property_range(prop, 0.0f, 1.0f);
-  RNA_def_property_ui_text(prop, "Opacity", "Texture Opacity");
   RNA_def_property_update(prop, NC_GPENCIL | ND_SHADING, "rna_MaterialGpencil_update");
 
   /* texture pixsize factor (used for UV along the stroke) */

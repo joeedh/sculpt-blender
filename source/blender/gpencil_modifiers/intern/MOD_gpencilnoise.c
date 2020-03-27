@@ -26,36 +26,36 @@
 #include "BLI_listbase.h"
 #include "BLI_utildefines.h"
 
-#include "BLI_math_vector.h"
 #include "BLI_ghash.h"
 #include "BLI_hash.h"
+#include "BLI_math_vector.h"
 #include "BLI_rand.h"
 
 #include "MEM_guardedalloc.h"
 
-#include "DNA_meshdata_types.h"
-#include "DNA_scene_types.h"
-#include "DNA_object_types.h"
-#include "DNA_gpencil_types.h"
 #include "DNA_gpencil_modifier_types.h"
+#include "DNA_gpencil_types.h"
+#include "DNA_meshdata_types.h"
+#include "DNA_object_types.h"
+#include "DNA_scene_types.h"
 
 #include "BKE_colortools.h"
 #include "BKE_deform.h"
 #include "BKE_gpencil.h"
+#include "BKE_gpencil_geom.h"
 #include "BKE_gpencil_modifier.h"
 #include "BKE_object.h"
 
 #include "DEG_depsgraph.h"
 #include "DEG_depsgraph_query.h"
 
-#include "MOD_gpencil_util.h"
 #include "MOD_gpencil_modifiertypes.h"
+#include "MOD_gpencil_util.h"
 
 static void initData(GpencilModifierData *md)
 {
   NoiseGpencilModifierData *gpmd = (NoiseGpencilModifierData *)md;
   gpmd->pass_index = 0;
-  gpmd->flag |= GP_NOISE_MOD_LOCATION;
   gpmd->flag |= GP_NOISE_FULL_STROKE;
   gpmd->flag |= GP_NOISE_USE_RANDOM;
   gpmd->factor = 0.5f;
@@ -182,7 +182,7 @@ static void deformStroke(GpencilModifierData *md,
   for (int i = 0; i < gps->totpoints; i++) {
     bGPDspoint *pt = &gps->points[i];
     /* verify vertex group */
-    dvert = &gps->dvert[i];
+    dvert = gps->dvert != NULL ? &gps->dvert[i] : NULL;
     float weight = get_modifier_point_weight(dvert, invert_group, def_nr);
     if (weight < 0.0f) {
       continue;

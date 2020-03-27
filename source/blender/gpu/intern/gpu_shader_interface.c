@@ -23,16 +23,16 @@
  * GPU shader interface (C --> GLSL)
  */
 
-#include "MEM_guardedalloc.h"
 #include "BKE_global.h"
+#include "MEM_guardedalloc.h"
 
 #include "GPU_shader_interface.h"
 
 #include "gpu_batch_private.h"
 #include "gpu_context_private.h"
 
-#include <stdlib.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define DEBUG_SHADER_INTERFACE 0
@@ -236,6 +236,7 @@ GPUShaderInterface *GPU_shaderinterface_create(int32_t program)
   shaderface->name_buffer = MEM_mallocN(name_buffer_len, "name_buffer");
 
   /* Attributes */
+  shaderface->enabled_attrib_mask = 0;
   for (uint32_t i = 0; i < attr_len; i++) {
     GPUShaderInput *input = MEM_mallocN(sizeof(GPUShaderInput), "GPUShaderInput Attr");
     GLsizei remaining_buffer = name_buffer_len - shaderface->name_buffer_offset;
@@ -254,6 +255,8 @@ GPUShaderInterface *GPU_shaderinterface_create(int32_t program)
     /* TODO: reject DOUBLE gl_types */
 
     input->location = glGetAttribLocation(program, name);
+
+    shaderface->enabled_attrib_mask |= (1 << input->location);
 
     set_input_name(shaderface, input, name, name_len);
 

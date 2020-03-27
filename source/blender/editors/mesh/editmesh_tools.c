@@ -35,17 +35,17 @@
 
 #include "BLI_bitmap.h"
 #include "BLI_heap_simple.h"
-#include "BLI_listbase.h"
 #include "BLI_linklist.h"
 #include "BLI_linklist_stack.h"
+#include "BLI_listbase.h"
 #include "BLI_math.h"
 #include "BLI_rand.h"
 #include "BLI_sort_utils.h"
 #include "BLI_string.h"
 
-#include "BKE_editmesh.h"
 #include "BKE_context.h"
 #include "BKE_deform.h"
+#include "BKE_editmesh.h"
 #include "BKE_key.h"
 #include "BKE_layer.h"
 #include "BKE_lib_id.h"
@@ -60,8 +60,8 @@
 
 #include "BLT_translation.h"
 
-#include "RNA_define.h"
 #include "RNA_access.h"
+#include "RNA_define.h"
 #include "RNA_enum_types.h"
 
 #include "WM_api.h"
@@ -3382,11 +3382,9 @@ static int edbm_blend_from_shape_exec(bContext *C, wmOperator *op)
 
         if (use_add) {
           /* In add mode, we add relative shape key offset. */
-          if (kb) {
-            const float *rco = CustomData_bmesh_get_n(
-                &em->bm->vdata, eve->head.data, CD_SHAPEKEY, kb->relative);
-            sub_v3_v3v3(co, co, rco);
-          }
+          const float *rco = CustomData_bmesh_get_n(
+              &em->bm->vdata, eve->head.data, CD_SHAPEKEY, kb->relative);
+          sub_v3_v3v3(co, co, rco);
 
           madd_v3_v3fl(eve->co, co, blend);
         }
@@ -7696,14 +7694,14 @@ wmKeyMap *point_normals_modal_keymap(wmKeyConfig *keyconf)
   };
   static const char *keymap_name = "Custom Normals Modal Map";
 
-  wmKeyMap *keymap = WM_modalkeymap_get(keyconf, keymap_name);
+  wmKeyMap *keymap = WM_modalkeymap_find(keyconf, keymap_name);
 
   /* We only need to add map once */
   if (keymap && keymap->modal_items) {
     return NULL;
   }
 
-  keymap = WM_modalkeymap_add(keyconf, keymap_name, modal_items);
+  keymap = WM_modalkeymap_ensure(keyconf, keymap_name, modal_items);
 
   WM_modalkeymap_assign(keymap, "MESH_OT_point_normals");
 

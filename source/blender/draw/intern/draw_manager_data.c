@@ -38,8 +38,8 @@
 #include "BLI_alloca.h"
 #include "BLI_hash.h"
 #include "BLI_link_utils.h"
-#include "BLI_mempool.h"
 #include "BLI_memblock.h"
+#include "BLI_mempool.h"
 
 #ifdef DRW_DEBUG_CULLING
 #  include "BLI_math_bits.h"
@@ -562,6 +562,16 @@ static DRWResourceHandle drw_resource_handle_new(float (*obmat)[4], Object *ob)
   return handle;
 }
 
+uint32_t DRW_object_resource_id_get(Object *UNUSED(ob))
+{
+  DRWResourceHandle handle = DST.ob_handle;
+  if (handle == 0) {
+    /* Handle not yet allocated. Return next handle. */
+    handle = DST.resource_handle;
+  }
+  return handle;
+}
+
 static DRWResourceHandle drw_resource_handle(DRWShadingGroup *shgroup,
                                              float (*obmat)[4],
                                              Object *ob)
@@ -693,14 +703,14 @@ static void drw_command_set_select_id(DRWShadingGroup *shgroup, GPUVertBuf *buf,
 static void drw_command_set_stencil_mask(DRWShadingGroup *shgroup,
                                          uint write_mask,
                                          uint reference,
-                                         uint comp_mask)
+                                         uint compare_mask)
 {
   BLI_assert(write_mask <= 0xFF);
   BLI_assert(reference <= 0xFF);
-  BLI_assert(comp_mask <= 0xFF);
+  BLI_assert(compare_mask <= 0xFF);
   DRWCommandSetStencil *cmd = drw_command_create(shgroup, DRW_CMD_STENCIL);
   cmd->write_mask = write_mask;
-  cmd->comp_mask = comp_mask;
+  cmd->comp_mask = compare_mask;
   cmd->ref = reference;
 }
 
@@ -874,6 +884,11 @@ static float sculpt_debug_colors[9][4] = {
 
 static void sculpt_draw_cb(DRWSculptCallbackData *scd, GPU_PBVH_Buffers *buffers)
 {
+
+  if (scd->use_mask && !GPU_pbvh_buffers_has_overlays(buffers)) {
+    return;
+  }
+
   GPUBatch *geom = GPU_pbvh_buffers_batch_get(buffers, scd->fast_mode, scd->use_wire);
   short index = 0;
 
@@ -1341,9 +1356,9 @@ void DRW_shgroup_state_disable(DRWShadingGroup *shgroup, DRWState state)
 void DRW_shgroup_stencil_set(DRWShadingGroup *shgroup,
                              uint write_mask,
                              uint reference,
-                             uint comp_mask)
+                             uint compare_mask)
 {
-  drw_command_set_stencil_mask(shgroup, write_mask, reference, comp_mask);
+  drw_command_set_stencil_mask(shgroup, write_mask, reference, compare_mask);
 }
 
 /* TODO remove this function. */
