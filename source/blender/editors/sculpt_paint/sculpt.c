@@ -196,21 +196,15 @@ float SCULPT_vertex_mask_get(SculptSession *ss, int index)
   return 0.0f;
 }
 
-static int SCULPT_active_vertex_get(SculptSession *ss)
+int SCULPT_active_vertex_get(SculptSession *ss)
 {
-  switch (BKE_pbvh_type(ss->pbvh)) {
-    case PBVH_FACES:
-      return ss->active_vertex_index;
-    case PBVH_BMESH:
-      return ss->active_vertex_index;
-    case PBVH_GRIDS:
-      return ss->active_vertex_index;
+  if (ELEM(BKE_pbvh_type(ss->pbvh), PBVH_FACES, PBVH_BMESH, PBVH_GRIDS)) {
+    return ss->active_vertex_index;
   }
-
   return 0;
 }
 
-static const float *SCULPT_active_vertex_co_get(SculptSession *ss)
+const float *SCULPT_active_vertex_co_get(SculptSession *ss)
 {
   return SCULPT_vertex_co_get(ss, SCULPT_active_vertex_get(ss));
 }
@@ -373,7 +367,7 @@ static void SCULPT_vertex_face_set_set(SculptSession *ss, int index, int face_se
   }
 }
 
-static int SCULPT_vertex_face_set_get(SculptSession *ss, int index)
+int SCULPT_vertex_face_set_get(SculptSession *ss, int index)
 {
   switch (BKE_pbvh_type(ss->pbvh)) {
     case PBVH_FACES: {
@@ -394,7 +388,7 @@ static int SCULPT_vertex_face_set_get(SculptSession *ss, int index)
   return 0;
 }
 
-static bool SCULPT_vertex_has_face_set(SculptSession *ss, int index, int face_set)
+bool SCULPT_vertex_has_face_set(SculptSession *ss, int index, int face_set)
 {
   switch (BKE_pbvh_type(ss->pbvh)) {
     case PBVH_FACES: {
@@ -464,7 +458,7 @@ void SCULPT_visibility_sync_all_vertex_to_face_sets(SculptSession *ss)
   }
 }
 
-static bool sculpt_vertex_has_unique_face_set(SculptSession *ss, int index)
+bool SCULPT_vertex_has_unique_face_set(SculptSession *ss, int index)
 {
   switch (BKE_pbvh_type(ss->pbvh)) {
     case PBVH_FACES: {
@@ -819,9 +813,33 @@ void SCULPT_floodfill_init(SculptSession *ss, SculptFloodFill *flood)
   flood->visited_vertices = MEM_callocN(vertex_count * sizeof(char), "visited vertices");
 }
 
-static void sculpt_floodfill_add_initial(SculptFloodFill *flood, int index)
+void sculpt_floodfill_add_initial(SculptFloodFill *flood, int index)
 {
   BLI_gsqueue_push(flood->queue, &index);
+}
+
+void SCULPT_floodfill_add_initial_with_symmetry(
+    Sculpt *sd, Object *ob, SculptSession *ss, SculptFloodFill *flood, int index, float radius)
+{
+  /* Add active vertex and symmetric vertices to the queue. */
+  const char symm = sd->paint.symmetry_flags & PAINT_SYMM_AXIS_ALL;
+  for (char i = 0; i <= symm; ++i) {
+    if (SCULPT_is_symmetry_iteration_valid(i, symm)) {
+      int v = -1;
+      if (i == 0) {
+        v = index;
+      }
+      else if (radius > 0.0f) {
+        float radius_squared = (radius == FLT_MAX) ? FLT_MAX : radius * radius;
+        float location[3];
+        flip_v3_v3(location, SCULPT_vertex_co_get(ss, index), i);
+        v = SCULPT_nearest_vertex_get(sd, ob, location, radius_squared, false);
+      }
+      if (v != -1) {
+        sculpt_floodfill_add_initial(flood, v);
+      }
+    }
+  }
 }
 
 void SCULPT_floodfill_add_active(
@@ -1301,6 +1319,8 @@ void SCULPT_brush_test_init(SculptSession *ss, SculptBrushTest *test)
 
   test->radius_squared = ss->cache ? ss->cache->radius_squared :
                                      ss->cursor_radius * ss->cursor_radius;
+  test->radius = sqrtf(test->radius_squared);
+
   if (ss->cache) {
     copy_v3_v3(test->location, ss->cache->location);
     test->mirror_symmetry_pass = ss->cache->mirror_symmetry_pass;
@@ -1866,6 +1886,7 @@ static void calc_area_normal_and_center_task_cb(void *__restrict userdata,
     if (!(ss->cache && data->brush->sculpt_tool == SCULPT_TOOL_LAYER)) {
       test_radius *= data->brush->normal_radius_factor;
     }
+    normal_test.radius = test_radius;
     normal_test.radius_squared = test_radius * test_radius;
   }
 
@@ -1886,6 +1907,7 @@ static void calc_area_normal_and_center_task_cb(void *__restrict userdata,
         test_radius *= data->brush->normal_radius_factor;
       }
     }
+    area_test.radius = test_radius;
     area_test.radius_squared = test_radius * test_radius;
   }
 
@@ -1919,10 +1941,26 @@ static void calc_area_normal_and_center_task_cb(void *__restrict userdata,
 
         flip_index = (dot_v3v3(ss->cache->view_normal, no) <= 0.0f);
         if (use_area_cos && area_test_r) {
+          /* Weight the coordinates towards the center. */
+          float p = 1.0f - (sqrtf(area_test.dist) / area_test.radius);
+          float afactor = 3.0f * p * p - 2.0f * p * p * p;
+          CLAMP(afactor, 0.0f, 1.0f);
+
+          float disp[3];
+          sub_v3_v3v3(disp, co, area_test.location);
+          mul_v3_fl(disp, 1.0f - afactor);
+          add_v3_v3v3(co, area_test.location, disp);
           add_v3_v3(anctd->area_cos[flip_index], co);
+
           anctd->count_co[flip_index] += 1;
         }
         if (use_area_nos && normal_test_r) {
+          /* Weight the normals towards the center. */
+          float p = 1.0f - (sqrtf(normal_test.dist) / normal_test.radius);
+          float nfactor = 3.0f * p * p - 2.0f * p * p * p;
+          CLAMP(nfactor, 0.0f, 1.0f);
+          mul_v3_fl(no, nfactor);
+
           add_v3_v3(anctd->area_nos[flip_index], no);
           anctd->count_no[flip_index] += 1;
         }
@@ -1932,54 +1970,73 @@ static void calc_area_normal_and_center_task_cb(void *__restrict userdata,
   else {
     BKE_pbvh_vertex_iter_begin(ss->pbvh, data->nodes[n], vd, PBVH_ITER_UNIQUE)
     {
-      const float *co;
+      float co[3];
+
       /* For bm_vert only. */
-      const short *no_s;
+      short no_s[3];
 
       if (use_original) {
         if (unode->bm_entry) {
-          BM_log_original_vert_data(ss->bm_log, vd.bm_vert, &co, &no_s);
+          const float *temp_co;
+          const short *temp_no_s;
+          BM_log_original_vert_data(ss->bm_log, vd.bm_vert, &temp_co, &temp_no_s);
+          copy_v3_v3(co, temp_co);
+          copy_v3_v3_short(no_s, temp_no_s);
         }
         else {
-          co = unode->co[vd.i];
-          no_s = unode->no[vd.i];
+          copy_v3_v3(co, unode->co[vd.i]);
+          copy_v3_v3_short(no_s, unode->no[vd.i]);
         }
       }
       else {
-        co = vd.co;
+        copy_v3_v3(co, vd.co);
       }
 
       normal_test_r = sculpt_brush_normal_test_sq_fn(&normal_test, co);
       area_test_r = sculpt_brush_area_test_sq_fn(&area_test, co);
 
       if (normal_test_r || area_test_r) {
-        float no_buf[3];
-        const float *no;
+        float no[3];
         int flip_index;
 
         data->any_vertex_sampled = true;
 
         if (use_original) {
-          normal_short_to_float_v3(no_buf, no_s);
-          no = no_buf;
+          normal_short_to_float_v3(no, no_s);
         }
         else {
           if (vd.no) {
-            normal_short_to_float_v3(no_buf, vd.no);
-            no = no_buf;
+            normal_short_to_float_v3(no, vd.no);
           }
           else {
-            no = vd.fno;
+            copy_v3_v3(no, vd.fno);
           }
         }
 
         flip_index = (dot_v3v3(ss->cache ? ss->cache->view_normal : ss->cursor_view_normal, no) <=
                       0.0f);
+
         if (use_area_cos && area_test_r) {
+          /* Weight the coordinates towards the center. */
+          float p = 1.0f - (sqrtf(area_test.dist) / area_test.radius);
+          float afactor = 3.0f * p * p - 2.0f * p * p * p;
+          CLAMP(afactor, 0.0f, 1.0f);
+
+          float disp[3];
+          sub_v3_v3v3(disp, co, area_test.location);
+          mul_v3_fl(disp, 1.0f - afactor);
+          add_v3_v3v3(co, area_test.location, disp);
+
           add_v3_v3(anctd->area_cos[flip_index], co);
           anctd->count_co[flip_index] += 1;
         }
         if (use_area_nos && normal_test_r) {
+          /* Weight the normals towards the center. */
+          float p = 1.0f - (sqrtf(normal_test.dist) / normal_test.radius);
+          float nfactor = 3.0f * p * p - 2.0f * p * p * p;
+          CLAMP(nfactor, 0.0f, 1.0f);
+          mul_v3_fl(no, nfactor);
+
           add_v3_v3(anctd->area_nos[flip_index], no);
           anctd->count_no[flip_index] += 1;
         }
@@ -3600,7 +3657,7 @@ static void do_relax_face_sets_brush_task_cb_ex(void *__restrict userdata,
   BKE_pbvh_vertex_iter_begin(ss->pbvh, data->nodes[n], vd, PBVH_ITER_UNIQUE)
   {
     if (sculpt_brush_test_sq_fn(&test, vd.co)) {
-      if (relax_face_sets != sculpt_vertex_has_unique_face_set(ss, vd.index)) {
+      if (relax_face_sets != SCULPT_vertex_has_unique_face_set(ss, vd.index)) {
         const float fade = bstrength * SCULPT_brush_strength_factor(ss,
                                                                     brush,
                                                                     vd.co,
@@ -3817,7 +3874,7 @@ void SCULPT_relax_vertex(SculptSession *ss,
   SculptVertexNeighborIter ni;
   SCULPT_VERTEX_NEIGHBORS_ITER_BEGIN (ss, vd->index, ni) {
     if (!filter_boundary_face_sets ||
-        (filter_boundary_face_sets && !sculpt_vertex_has_unique_face_set(ss, ni.index))) {
+        (filter_boundary_face_sets && !SCULPT_vertex_has_unique_face_set(ss, ni.index))) {
       add_v3_v3(smooth_pos, SCULPT_vertex_co_get(ss, ni.index));
       count++;
     }
@@ -8298,6 +8355,22 @@ static void sculpt_dynamic_topology_disable_ex(
   }
   else {
     BKE_sculptsession_bm_to_me(ob, true);
+
+    /* Reset Face Sets as they are no longer valid. */
+    if (!CustomData_has_layer(&me->pdata, CD_SCULPT_FACE_SETS)) {
+      CustomData_add_layer(&me->pdata, CD_SCULPT_FACE_SETS, CD_CALLOC, NULL, me->totpoly);
+    }
+    ss->face_sets = CustomData_get_layer(&me->pdata, CD_SCULPT_FACE_SETS);
+    for (int i = 0; i < me->totpoly; i++) {
+      ss->face_sets[i] = 1;
+    }
+    me->face_sets_color_default = 1;
+
+    /* Sync the visibility to vertices manually as the pmap is still not initialized. */
+    for (int i = 0; i < me->totvert; i++) {
+      me->mvert[i].flag &= ~ME_HIDE;
+      me->mvert[i].flag |= ME_VERT_PBVH_UPDATE;
+    }
   }
 
   /* Clear data. */
@@ -9423,7 +9496,7 @@ static void mesh_filter_task_cb(void *__restrict userdata,
       /* Skip the edges of the face set when relaxing or smoothing. There is a relax face set
        * option to relax the boindaries independently. */
       if (filter_type == MESH_FILTER_RELAX) {
-        if (!sculpt_vertex_has_unique_face_set(ss, vd.index)) {
+        if (!SCULPT_vertex_has_unique_face_set(ss, vd.index)) {
           continue;
         }
       }
@@ -9437,7 +9510,7 @@ static void mesh_filter_task_cb(void *__restrict userdata,
     }
 
     if (filter_type == MESH_FILTER_RELAX_FACE_SETS) {
-      if (relax_face_sets == sculpt_vertex_has_unique_face_set(ss, vd.index)) {
+      if (relax_face_sets == SCULPT_vertex_has_unique_face_set(ss, vd.index)) {
         continue;
       }
     }

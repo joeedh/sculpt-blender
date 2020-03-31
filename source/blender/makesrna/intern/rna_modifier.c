@@ -93,7 +93,7 @@ const EnumPropertyItem rna_enum_object_modifier_type_items[] = {
      "UV_WARP",
      ICON_MOD_UVPROJECT,
      "UV Warp",
-     "Transform the UV map using the the difference between two objects"},
+     "Transform the UV map using the difference between two objects"},
     {eModifierType_WeightVGEdit,
      "VERTEX_WEIGHT_EDIT",
      ICON_MOD_VERTEX_WEIGHT,
@@ -4538,14 +4538,14 @@ static void rna_def_modifier_screw(BlenderRNA *brna)
   RNA_def_property_update(prop, 0, "rna_Modifier_dependency_update");
 
   prop = RNA_def_property(srna, "steps", PROP_INT, PROP_UNSIGNED);
-  RNA_def_property_range(prop, 2, 10000);
-  RNA_def_property_ui_range(prop, 3, 512, 1, -1);
+  RNA_def_property_range(prop, 1, 10000);
+  RNA_def_property_ui_range(prop, 1, 512, 1, -1);
   RNA_def_property_ui_text(prop, "Steps", "Number of steps in the revolution");
   RNA_def_property_update(prop, 0, "rna_Modifier_update");
 
   prop = RNA_def_property(srna, "render_steps", PROP_INT, PROP_UNSIGNED);
-  RNA_def_property_range(prop, 2, 10000);
-  RNA_def_property_ui_range(prop, 2, 512, 1, -1);
+  RNA_def_property_range(prop, 1, 10000);
+  RNA_def_property_ui_range(prop, 1, 512, 1, -1);
   RNA_def_property_ui_text(prop, "Render Steps", "Number of steps in the revolution");
   RNA_def_property_update(prop, 0, "rna_Modifier_update");
 

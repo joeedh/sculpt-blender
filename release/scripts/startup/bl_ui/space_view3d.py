@@ -3134,12 +3134,12 @@ class VIEW3D_MT_face_sets(Menu):
 
         op = layout.operator("sculpt.face_sets_create", text='Face Set From Visible')
         op.mode = 'VISIBLE'
-        
+
         op = layout.operator("sculpt.face_sets_create", text='Face Set From Edit Mode Selection')
         op.mode = 'SELECTION'
 
         layout.separator()
-        
+
         layout.menu("VIEW3D_MT_face_sets_init", text="Init Face Sets")
 
         layout.separator()
@@ -3894,6 +3894,10 @@ class VIEW3D_MT_edit_mesh_extrude(Menu):
         for menu_id in self.extrude_options(context):
             self._extrude_funcs[menu_id](layout)
 
+        layout.separator()
+
+        layout.operator("mesh.extrude_repeat")
+
 
 class VIEW3D_MT_edit_mesh_vertices(Menu):
     bl_label = "Vertex"
@@ -3924,6 +3928,7 @@ class VIEW3D_MT_edit_mesh_vertices(Menu):
         layout.operator("transform.vert_slide", text="Slide Vertices")
         layout.operator_context = 'EXEC_DEFAULT'
         layout.operator("mesh.vertices_smooth", text="Smooth Vertices").factor = 0.5
+        layout.operator("mesh.vertices_smooth_laplacian", text="Smooth Vertices (Laplacian)")
         layout.operator_context = 'INVOKE_REGION_WIN'
 
         layout.separator()
@@ -3993,6 +3998,7 @@ class VIEW3D_MT_edit_mesh_edges(Menu):
         layout.operator("mesh.extrude_edges_move", text="Extrude Edges")
         layout.operator("mesh.bevel", text="Bevel Edges").vertex_only = False
         layout.operator("mesh.bridge_edge_loops")
+        layout.operator("mesh.screw")
 
         layout.separator()
 
@@ -4630,7 +4636,6 @@ class VIEW3D_MT_edit_armature(Menu):
             layout.operator("armature.extrude_forked")
 
         layout.operator("armature.duplicate_move")
-        layout.operator("armature.merge")
         layout.operator("armature.fill")
         layout.operator("armature.split")
         layout.operator("armature.separate")
@@ -4704,7 +4709,6 @@ class VIEW3D_MT_armature_context_menu(Menu):
         # Remove
         layout.operator("armature.split")
         layout.operator("armature.separate")
-        layout.operator("armature.merge")
         layout.operator("armature.dissolve")
         layout.operator("armature.delete")
 

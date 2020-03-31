@@ -1808,6 +1808,21 @@ static void rna_def_brush(BlenderRNA *brna)
       {0, NULL, 0, NULL, NULL},
   };
 
+  static const EnumPropertyItem brush_pose_origin_type_items[] = {
+      {BRUSH_POSE_ORIGIN_TOPOLOGY,
+       "TOPOLOGY",
+       0,
+       "Topology",
+       "Sets the rotation origin automatically using the topology and shape of the mesh as a "
+       "guide"},
+      {BRUSH_POSE_ORIGIN_FACE_SETS,
+       "FACE_SETS",
+       0,
+       "Face Sets",
+       "Creates a pose segment per face sets, starting from the active face set"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
   srna = RNA_def_struct(brna, "Brush", "ID");
   RNA_def_struct_ui_text(
       srna, "Brush", "Brush data-block for storing brush settings for painting and sculpting");
@@ -1926,6 +1941,13 @@ static void rna_def_brush(BlenderRNA *brna)
   prop = RNA_def_property(srna, "smooth_deform_type", PROP_ENUM, PROP_NONE);
   RNA_def_property_enum_items(prop, brush_smooth_deform_type_items);
   RNA_def_property_ui_text(prop, "Deformation", "Deformation type that is used in the brush");
+  RNA_def_property_update(prop, 0, "rna_Brush_update");
+
+  prop = RNA_def_property(srna, "pose_origin_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, brush_pose_origin_type_items);
+  RNA_def_property_ui_text(prop,
+                           "Rotation Origins",
+                           "Method to set the rotation origins for the segments of the brush");
   RNA_def_property_update(prop, 0, "rna_Brush_update");
 
   prop = RNA_def_property(srna, "jitter_unit", PROP_ENUM, PROP_NONE); /* as an enum */
@@ -2364,7 +2386,8 @@ static void rna_def_brush(BlenderRNA *brna)
 
   prop = RNA_def_property(srna, "use_automasking_boundary_edges", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "automasking_flags", BRUSH_AUTOMASKING_BOUNDARY_EDGES);
-  RNA_def_property_ui_text(prop, "Edges Auto-masking", "Do not affect non manifold boundary edges");
+  RNA_def_property_ui_text(
+      prop, "Mesh Boundary Auto-masking", "Do not affect non manifold boundary edges");
   RNA_def_property_update(prop, 0, "rna_Brush_update");
 
   prop = RNA_def_property(srna, "use_scene_spacing", PROP_ENUM, PROP_NONE);
