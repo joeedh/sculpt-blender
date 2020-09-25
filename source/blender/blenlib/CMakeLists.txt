@@ -40,6 +40,7 @@ set(SRC
   intern/BLI_dial_2d.c
   intern/BLI_dynstr.c
   intern/BLI_filelist.c
+  intern/BLI_trimesh.c
   intern/BLI_ghash.c
   intern/BLI_ghash_utils.c
   intern/BLI_heap.c
@@ -50,6 +51,7 @@ set(SRC
   intern/BLI_linklist_lockfree.c
   intern/BLI_memarena.c
   intern/BLI_memblock.c
+  intern/BLI_threadsafe_mempool.c
   intern/BLI_memiter.c
   intern/BLI_mempool.c
   intern/BLI_timer.c
