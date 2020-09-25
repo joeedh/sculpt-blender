@@ -132,7 +132,7 @@ BLI_ThreadSafePool* BLI_safepool_create(int elemsize, int chunksize, int maxthre
   return pool;
 }
 
-bool BLI_safepool_elem_is_dead(BLI_ThreadSafePool *pool, void *elem) {
+int BLI_safepool_elem_is_dead(void *elem) {
   deadelem *de = (deadelem*)elem;
 
   return de->dead_magic == DEAD_MAGIC;

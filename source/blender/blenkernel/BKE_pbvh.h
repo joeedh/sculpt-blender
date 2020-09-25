@@ -203,6 +203,7 @@ typedef enum {
   PBVH_FACES,
   PBVH_GRIDS,
   PBVH_BMESH,
+  PBVH_TRIMESH
 } PBVHType;
 
 PBVHType BKE_pbvh_type(const PBVH *bvh);

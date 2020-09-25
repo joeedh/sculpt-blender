@@ -26,7 +26,7 @@ struct BLI_ThreadSafePool* BLI_safepool_create(int elemsize, int chunksize, int 
 void* BLI_safepool_alloc(struct BLI_ThreadSafePool *pool, int threadnr);
 
 void BLI_safepool_free(struct BLI_ThreadSafePool*pool, void *elem);
-bool BLI_safepool_is_dead(struct BLI_ThreadSafePool *pool, void *elem);
+int BLI_safepool_elem_is_dead(void *elem);
 
 void BLI_safepool_threaded_free(struct BLI_ThreadSafePool*pool, void *elem, int threadnr);
 int BLI_safepool_length(struct BLI_ThreadSafePool*pool);
@@ -45,3 +45,4 @@ void* BLI_safepool_iterstep(ThreadSafePoolIter* iter);
 void BLI_safepool_threaded_free(struct BLI_ThreadSafePool* pool, void* elem, int thread);
 
 #endif /* _BLI_THREADSAFE_MEMPOOL_H */
+

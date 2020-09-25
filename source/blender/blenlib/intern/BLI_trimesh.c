@@ -34,6 +34,9 @@
 #include "BLI_threadsafe_mempool.h"
 #include "BLI_array.h"
 
+#include "../blenkernel/BKE_customdata.h"
+#include "DNA_customdata_types.h"
+
 #include "BLI_utildefines.h"
 #include "atomic_ops.h"
 
@@ -46,6 +49,14 @@
 #define TRIVERT(tri, n) ((&(tri)->v1)[n])
 #define TRIEDGE(tri, n) ((&(tri)->e1)[n])
 
+#define TRILOP(tri, n) ((&(tri)->l1)[n])
+
+enum {
+  TM_VERTEX = 1,
+  TM_EDGE = 2,
+  TM_LOOP = 4,
+  TM_TRI = 8
+};
 
 enum {
 POOL_VERTEX = 0,
@@ -53,19 +64,25 @@ POOL_EDGE = 1,
 //POOL_LOOP = 2,
 POOL_TRI = 2,
 POOL_ELIST = 3, //pool for lists of edges around vertices
-POOL_TLIST = 4 //pool for lists of triangles around edges
+POOL_TLIST = 4, //pool for lists of triangles around edges
+#ifdef WITH_TRIMESH_CUSTOMDATA
+POOL_LOOP = 5
+#endif
 };
 
 #define V_ELIST_ESIZE 5
 #define E_TLIST_ESIZE 2
 
-//#define 
+//keep up to sync with MAX_TRIMESH_POOLS in BLI_trimesh.h
 static int poolsizes[] = {
   sizeof(OptTriVert),
   sizeof(OptTriEdge),
   sizeof(OptTri),
   sizeof(void*)*V_ELIST_ESIZE,
   sizeof(void*)*E_TLIST_ESIZE,
+#ifdef WITH_TRIMESH_CUSTOMDATA
+  sizeof(OptTriLoop)
+#endif
 };
 
 OptTriMesh* BLI_trimesh_new(int maxthread) {
@@ -78,6 +95,33 @@ OptTriMesh* BLI_trimesh_new(int maxthread) {
 
   return tm;
 }
+
+#ifdef WITH_TRIMESH_CUSTOMDATA
+void trimesh_element_init(void *elem, CustomData *customdata) {
+#else
+void trimesh_element_init(void *elem) {
+#endif
+
+#ifdef WITH_TRIMESH_CUSTOMDATA
+  OptTriElem *e = elem;
+
+  CustomData_bmesh_set_default(customdata, &e->customdata);
+#endif
+}
+
+#ifdef WITH_TRIMESH_CUSTOMDATA
+void trimesh_element_destroy(void *elem, int threadnr, CustomData *customdata) {
+#else
+void trimesh_element_destroy(void *elem, int threadnr) {
+#endif
+
+#ifdef WITH_TRIMESH_CUSTOMDATA
+  OptTriElem *e = elem;
+
+  CustomData_bmesh_free_block(customdata, &e->customdata);
+#endif
+}
+
 
 static void simplelist_remove(OptTriMesh *tm, optmesh_simplelist *list, void *item, int pool, int threadnr) {
   if (list->length == 0) {
@@ -130,7 +174,7 @@ static void simplelist_append(OptTriMesh* tm, optmesh_simplelist* list, void *it
 
 #define OTHER_VERT(e, v) ((v) == (e)->v1 ? (e)->v2 : (e)->v1)
 
-static OptTriEdge *ensure_edge(OptTriMesh* tm, OptTriVert* v1, OptTriVert* v2, int threadnr) {
+static OptTriEdge *ensure_edge(OptTriMesh* tm, OptTriVert* v1, OptTriVert* v2, int threadnr, bool skipcd) {
   for (int i = 0; i < v1->edges.length; i++) {
     OptTriEdge *e = v1->edges.items[i];
 
@@ -147,6 +191,12 @@ static OptTriEdge *ensure_edge(OptTriMesh* tm, OptTriVert* v1, OptTriVert* v2, i
 
   simplelist_append(tm, &e->v1->edges, e, POOL_ELIST, threadnr);
   simplelist_append(tm, &e->v2->edges, e, POOL_ELIST, threadnr);
+
+#ifdef WITH_TRIMESH_CUSTOMDATA
+  trimesh_element_init(e, &tm->edata, skipcd);
+#else
+  trimesh_element_init(e);
+#endif
 
   return e;
 }
@@ -183,19 +233,41 @@ static OptTriEdge *edge_add_tri(OptTriMesh* tm, OptTriVert* v1, OptTriVert* v2, 
   return e;
 }
 
-OptTriVert *BLI_trimesh_make_vert(OptTriMesh *tm, float co[3], float no[3], int threadnr) {
+OptTriVert *BLI_trimesh_make_vert(OptTriMesh *tm, float co[3], float no[3], int threadnr, bool skipcd) {
   OptTriVert *v = BLI_safepool_alloc(tm->pools[POOL_VERTEX], threadnr);
+
+#ifdef WITH_TRIMESH_CUSTOMDATA
+  trimesh_element_init(tm, v, &tm->vdata, skipcd);
+#else
+  trimesh_element_init(tm, v);
+#endif
 
   memset(v, 0, sizeof(*v));
 
   copy_v3_v3(v->co, co);
   copy_v3_v3(v->no, no);
-
 }
-OptTri *BLI_trimesh_make_tri(OptTriMesh *tm, OptTriVert *v1, OptTriVert *v2, OptTriVert *v3, int threadnr) {
+
+OptTriEdge *BLI_trimesh_get_edge(OptTriMesh *tm, OptTriVert *v1, OptTriVert *v2, int threadnr, bool skipcd) {
+  return ensure_edge(tm, v1, v2, threadnr, skipcd);
+}
+
+OptTri *BLI_trimesh_make_tri(OptTriMesh *tm, OptTriVert *v1, OptTriVert *v2, OptTriVert *v3, int threadnr, bool skipcd) {
   OptTri *tri = BLI_safepool_alloc(tm->pools[POOL_TRI], threadnr);
 
   memset(tri, 0, sizeof(*tri));
+
+#ifdef WITH_TRIMESH_CUSTOMDATA
+  trimesh_element_init(tm, tri, &tm->tdata, skipcd);
+#else
+  trimesh_element_init(tm, tri);
+#endif
+
+#ifdef WITH_TRIMESH_CUSTOMDATA
+  tri->l1 = trimesh_make_loop(tm, threadnr, skipcd);
+  tri->l2 = trimesh_make_loop(tm, threadnr, skipcd);
+  tri->l3 = trimesh_make_loop(tm, threadnr, skipcd);
+#endif
 
   tri->v1 = v1;
   tri->v2 = v2;
@@ -208,11 +280,20 @@ OptTri *BLI_trimesh_make_tri(OptTriMesh *tm, OptTriVert *v1, OptTriVert *v2, Opt
   return tri;
 }
 
-OptTri *BLI_trimesh_get_edge(OptTriMesh *tm, OptTriVert *v1, OptTriVert *v2, int threadnr) {
-  return ensure_edge(tm, v1, v2, threadnr);
+#ifdef WITH_TRIMESH_CUSTOMDATA
+static OptTriLoop *trimesh_make_loop(OptTriMesh *tm, int threadnr) {
+  OptTriLoop *loop = BLI_safepool_alloc(tm->pools[POOL_LOOP], threadnr);
+  trimesh_element_init(loop, &tm->ldata);
+
+  return loop;
 }
 
-void BLI_trimesh_add(OptTriMesh *tm, float* vertCos, float* vertNos, int totvert, int* triIndices, int tottri, int threadnr) {
+static void trimesh_kill_loop(OptTriMesh *tm, OptTriLoop *l, int threadnr) {
+  trimesh_element_destroy(l, threadnr, &tm->ldata);
+}
+#endif
+
+void BLI_trimesh_add(OptTriMesh *tm, float* vertCos, float* vertNos, int totvert, int* triIndices, int tottri, int threadnr, bool skipcd) {
   float* vco, * vno;
   BLI_ThreadSafePool *vpool = tm->pools[POOL_VERTEX];
   BLI_ThreadSafePool *fpool = tm->pools[POOL_EDGE];
@@ -229,11 +310,8 @@ void BLI_trimesh_add(OptTriMesh *tm, float* vertCos, float* vertNos, int totvert
   vno = vertNos;
 
   for (i = 0; i < totvert; i++, vco += 3, vno += 3) {
-    OptTriVert*v = BLI_safepool_alloc(vpool, threadnr);
+    OptTriVert *v = BLI_trimesh_make_vert(tm, vco, vno, threadnr, skipcd);
     vmap[i] = v;
-
-    copy_v3_v3(v->co, vco);
-    copy_v3_v3(v->no, vno);
   }
 
   int *tris = triIndices;
@@ -242,15 +320,7 @@ void BLI_trimesh_add(OptTriMesh *tm, float* vertCos, float* vertNos, int totvert
     OptTriVert *v2 = vmap[triIndices[1]];
     OptTriVert *v3 = vmap[triIndices[2]];
 
-    OptTri *tri = BLI_safepool_alloc(tm->pools[POOL_TRI], threadnr);
-
-    tri->v1 = v1;
-    tri->v2 = v2;
-    tri->v3 = v3;
-
-    tri->e1 = ensure_edge(tm, v1, v2, threadnr);
-    tri->e2 = ensure_edge(tm, v2, v3, threadnr);
-    tri->e3 = ensure_edge(tm, v3, v1, threadnr);
+    OptTri *tri = BLI_trimesh_make_tri(tm, v1, v2, v3, threadnr, skipcd);
   }
 
   MEM_freeN(vmap);
@@ -384,7 +454,7 @@ void BLI_trimesh_thread_tag(OptTriMesh *tm, OptTri** tris, int tottri) {
 void BLI_trimesh_clear_threadtags(OptTriMesh *tm) {
   for (int i=0; i<3; i++) {
     ThreadSafePoolIter iter;
-    OptElem *item;
+    OptTriElem *item;
 
     BLI_safepool_iternew(tm->pools[i], &iter);
     item = BLI_safepool_iterstep(&iter);
@@ -481,6 +551,19 @@ void BLI_trimesh_free_islands(OptTriIsland* islands, int totisland, bool free_is
 
   if (free_islands) {
     MEM_freeN(islands);
+  }
+}
+
+CustomData *get_customdata(OptTriMesh *tm, int type) {
+  switch (type) {
+  case TM_VERTEX:
+    return &tm->vdata;
+  case TM_EDGE:
+    return &tm->edata;
+  case TM_LOOP:
+    return &tm->ldata;
+  case TM_TRI:
+    return &tm->tdata;
   }
 }
 
@@ -621,8 +704,14 @@ void BLI_trimesh_foreach_verts(OptTriMesh *tm, OptTri **tris, int tottri, OptTri
 
 void BLI_trimesh_kill_vert(OptTriMesh *tm, OptTriVert *v, int threadnr) {
   while (v->edges.length > 0) {
-    BLI_trimesh_kill_edge(tm, v->edges.items[0], false);
+    BLI_trimesh_kill_edge(tm, v->edges.items[0], threadnr, false);
   }
+
+#ifdef WITH_TRIMESH_CUSTOMDATA
+  trimesh_element_destroy(tm, v, &tm->vdata);
+#else
+  trimesh_element_destroy(tm, v);
+#endif
 
   simplelist_free(tm, &v->edges, POOL_ELIST, threadnr);
   BLI_safepool_free(tm->pools[POOL_VERTEX], v);
@@ -648,6 +737,12 @@ void BLI_trimesh_kill_edge(OptTriMesh *tm, OptTriEdge *e, int threadnr, bool kil
     }
   }
 
+#ifdef WITH_TRIMESH_CUSTOMDATA
+  trimesh_element_destroy(tm, e, &tm->edata);
+#else
+  trimesh_element_destroy(tm, e);
+#endif
+
   simplelist_free(tm, &e->tris, POOL_TLIST, threadnr);
   BLI_safepool_free(tm->pools[POOL_EDGE], e);
 }
@@ -661,6 +756,12 @@ void BLI_trimesh_kill_tri(OptTriMesh *tm, OptTri *tri, int threadnr, bool kill_e
   simplelist_remove(tm, &tri->e2->tris, tri, POOL_TLIST, threadnr);
   simplelist_remove(tm, &tri->e3->tris, tri, POOL_TLIST, threadnr);
 
+#ifdef WITH_TRIMESH_CUSTOMDATA
+  trimesh_kill_loop(tm, tri->l1, threadnr);
+  trimesh_kill_loop(tm, tri->l2, threadnr);
+  trimesh_kill_loop(tm, tri->l3, threadnr);
+#endif
+
   if (tri->e1->tris.length == 0) {
     BLI_trimesh_kill_edge(tm, tri->e1, threadnr, kill_verts);
   }
@@ -671,7 +772,14 @@ void BLI_trimesh_kill_tri(OptTriMesh *tm, OptTri *tri, int threadnr, bool kill_e
     BLI_trimesh_kill_edge(tm, tri->e3, threadnr, kill_verts);
   }
 
-  BLI_safepool_free(tm, tm->pools[POOL_TRI], tri);
+
+#ifdef WITH_TRIMESH_CUSTOMDATA
+  trimesh_element_destroy(tm, tri, &tm->tdata);
+#else
+  trimesh_element_destroy(tm, tri);
+#endif
+
+  BLI_safepool_free(tm->pools[POOL_TRI], tri);
 }
 
 static void weld_verts(OptTriMesh *tm, OptTriVert *v1, OptTriVert *v2, int threadnr) {
@@ -771,7 +879,7 @@ void BLI_trimesh_calc_vert_normal(OptTriMesh *em, OptTriVert *v, int threadnr, b
   }
 }
 
-OptTriVert *BLI_trimesh_split_edge(OptTriMesh *tm, OptTriEdge *e, int threadnr, float fac) {
+OptTriVert *BLI_trimesh_split_edge(OptTriMesh *tm, OptTriEdge *e, int threadnr, float fac, bool skipcd) {
   float co[3];
   float no[3];
 
@@ -779,7 +887,21 @@ OptTriVert *BLI_trimesh_split_edge(OptTriMesh *tm, OptTriEdge *e, int threadnr, 
   add_v3_v3v3(no, e->v1->no, e->v2->no);
   normalize_v3(no);
 
-  OptTriVert *vc = BLI_trimesh_make_vert(tm, co, no, threadnr);
+  OptTriVert *vc = BLI_trimesh_make_vert(tm, co, no, threadnr, skipcd);
+
+  OptTriEdge *e2 = ensure_edge(tm, e->v1, vc, threadnr, skipcd);
+  OptTriEdge *e3 = ensure_edge(tm, vc, e->v2, threadnr, skipcd);
+
+#ifdef WITH_TRIMESH_CUSTOMDATA
+  if (!skipcd) {
+    float src_weights[2] = {0.5f, 0.5f};
+    void *src_blocks[2] = {e->v1->customdata, e->v2->customdata};
+  
+    CustomData_bmesh_interp(&tm->vdata, src_blocks, src_weights, NULL, 2, vc->customdata);
+    CustomData_bmesh_copy_data(&tm->edata, &tm->edata, &e->customdata, &e2->customdata);
+    CustomData_bmesh_copy_data(&tm->edata, &tm->edata, &e->customdata, &e3->customdata);
+  }
+#endif
 
   for (int i=0; i<e->tris.length; i++) {
     OptTri *tri = e->tris.items[0];
@@ -787,7 +909,7 @@ OptTriVert *BLI_trimesh_split_edge(OptTriMesh *tm, OptTriEdge *e, int threadnr, 
     OptTriVert *tv1, *tv2, *tv3;
     int vi = 0;
 
-    for (int i=0; j<3; j++) {
+    for (int j=0; j<3; j++) {
       if (TRIEDGE(tri, j) == e) {
         vi = j;
         break;
@@ -795,17 +917,773 @@ OptTriVert *BLI_trimesh_split_edge(OptTriMesh *tm, OptTriEdge *e, int threadnr, 
     }
 
     tv1 = TRIVERT(tri, vi);
-    tv1 = TRIVERT(tri, (vi+1)%3);
-    tv1 = TRIVERT(tri, (vi+2)%3);
+    tv2 = TRIVERT(tri, (vi+1)%3);
+    tv3 = TRIVERT(tri, (vi+2)%3);
 
-    OptTri *t1 = BLI_trimesh_make_tri(tm, tv1, vc, tv3, threadnr);
-    OptTri *t2 = BLI_trimesh_make_tri(tm, vc, tv2, tv3, threadnr);
+    OptTri *t1 = BLI_trimesh_make_tri(tm, tv1, vc, tv3, threadnr, skipcd);
+    OptTri *t2 = BLI_trimesh_make_tri(tm, vc, tv2, tv3, threadnr, skipcd);
 
+#ifdef WITH_TRIMESH_CUSTOMDATA
+    if (!skipcd) {
+      OptTriLoop *l1 = TRILOOP(tri, vi);
+      OptTriLoop *l2 = TRILOOP(tri, (vi+1)%3);
+      OptTriLoop *l3 = TRILOOP(tri, (vi+2)%3);
+
+      float src_weights[2] = {0.5f, 0.5f};
+      void *src_blocks[2] = {l1->customdata, l3->customdata};
+
+      CustomData_bmesh_copy_data(&tm->ldata, &tm->ldata, l1->customdata, t1->l1->customdata);
+      CustomData_bmesh_interp(&tm->ldata, src_blocks, src_weights, NULL, 2, t1->l2->customdata);
+      CustomData_bmesh_copy_data(&tm->ldata, &tm->ldata, l3->customdata, t1->l3->customdata);
+
+      src_blocks[0] = l2->customdata;
+      src_blocks[1] = l3->customdata;
+
+      CustomData_bmesh_interp(&tm->ldata, src_blocks, src_weights, NULL, 2, t2->l1->customdata);
+      CustomData_bmesh_copy_data(&tm->ldata, &tm->ldata, l1->customdata, t1->l2->customdata);
+      CustomData_bmesh_copy_data(&tm->ldata, &tm->ldata, l3->customdata, t1->l3->customdata);
+    }
+#endif
     BLI_trimesh_kill_tri(tm, tri, threadnr, false, false);
   }
 
   BLI_trimesh_kill_edge(tm, e, threadnr, false);
-  BLI_trimesh_calc_vert_normal(tm, v, threadnr, true);
+  BLI_trimesh_calc_vert_normal(tm, vc, threadnr, true);
 
   return vc;
 }
+
+void BLI_trimesh_index_update(OptTriMesh *tm) {
+  ThreadSafePoolIter iter;
+
+  BLI_safepool_iternew(tm->pools[POOL_VERTEX], &iter);
+  OptTriVert *v = BLI_safepool_iterstep(&iter);
+  for (int i=0; v; v = BLI_safepool_iterstep(&iter), i++) {
+    v->index = i;
+  }
+
+  BLI_safepool_iternew(tm->pools[POOL_EDGE], &iter);
+  OptTriEdge *e = BLI_safepool_iterstep(&iter);
+  for (int i=0; e; e = BLI_safepool_iterstep(&iter), i++) {
+    e->index = i;
+  }
+
+  BLI_safepool_iternew(tm->pools[POOL_TRI], &iter);
+  OptTri *t = BLI_safepool_iterstep(&iter);
+  for (int i=0; t; t = BLI_safepool_iterstep(&iter), i++) {
+    t->index = i;
+  }
+}
+
+#include "BLI_ghash.h"
+
+typedef struct LogEntry {
+  union {
+    void *ptr;
+    float vec3[3];
+    float f;
+    int i;
+    int ivec3[3];
+    int ivec4[3];
+  } value;
+} LogEntry;
+
+typedef struct TriMeshLog {
+  GHash *elemhash_ptr; //maps ids to pointers
+  GHash *elemhash_id; //maps pointers to ids
+  GHash *elemhash_entry; //maps ids to entries indices
+
+  LogEntry *entries;
+  int *groups;
+  int totgroup;
+  int totentries;
+  int idgen;
+
+  OptTriMesh *tm;
+
+  int cd_vert_mask_index;
+
+  int curgroup;
+} TriMeshLog;
+
+static void trimesh_add_group(TriMeshLog *log, bool set_curgroup) {
+  int *groups = log->groups;
+  BLI_array_declare(groups);
+
+  BLI_array_setlen(groups, log->totgroup);
+  BLI_array_append(groups, log->totentries);
+
+  log->groups = groups;
+  log->totgroup = BLI_array_len(groups);
+
+  if (set_curgroup) {
+    log->curgroup = log->totgroup-1;
+  }
+}
+
+TriMeshLog *BLI_trimesh_log_new(OptTriMesh *tm, int cd_vert_mask_index) {
+  TriMeshLog *log = MEM_callocN(sizeof(*log), "TriMeshLog");
+
+  log->elemhash_ptr = BLI_ghash_ptr_new("TriMeshLog ghash ptr");
+  log->elemhash_id = BLI_ghash_int_new("TriMeshLog ghash int");
+  log->elemhash_entry = BLI_ghash_int_new("TriMeshLog ghash entry");
+  log->cd_vert_mask_index = cd_vert_mask_index;
+  log->idgen = 1;
+
+  log->tm = tm;
+
+  trimesh_add_group(log, true);
+
+  return log;
+}
+
+void BLI_trimesh_log_free(TriMeshLog *log) {
+  BLI_ghash_free(log->elemhash_ptr, NULL, NULL);
+  BLI_ghash_free(log->elemhash_id, NULL, NULL);
+  BLI_ghash_free(log->elemhash_entry, NULL, NULL);
+}
+
+void tlog_truncate(TriMeshLog *log) {
+  if (log->curgroup == log->totgroup-1) {
+    return;
+  }
+
+  log->totentries = log->groups[log->curgroup+1];
+  log->totgroup = log->curgroup+1;
+}
+
+LogEntry *tlog_push(TriMeshLog *log) {
+  LogEntry *entries = log->entries;
+  LogEntry e;
+
+  BLI_array_declare(entries);
+
+  if (log->curgroup != log->totgroup) {
+    tlog_truncate(log);
+  }
+
+  BLI_array_append(entries, e);
+
+  log->entries = entries;
+  log->totentries = BLI_array_len(entries);
+}
+
+void tlog_f(TriMeshLog *log, float f) {
+  LogEntry *e = tlog_push(log);
+  e->value.f = f;
+}
+
+void tlog_v3(TriMeshLog *log, float f[3]) {
+  LogEntry *e = tlog_push(log);
+  copy_v3_v3(e->value.vec3, f);
+}
+
+void tlog_i3(TriMeshLog *log, int f[3]) {
+  LogEntry *e = tlog_push(log);
+
+  e->value.ivec3[0] = f[0];
+  e->value.ivec3[1] = f[1];
+  e->value.ivec3[2] = f[2];
+}
+
+void tlog_i4(TriMeshLog *log, int f[4]) {
+  LogEntry *e = tlog_push(log);
+
+  e->value.ivec4[0] = f[0];
+  e->value.ivec4[1] = f[2];
+  e->value.ivec4[2] = f[3];
+  e->value.ivec4[3] = f[4];
+}
+
+
+void tlog_i(TriMeshLog *log, int f) {
+  LogEntry *e = tlog_push(log);
+  e->value.i = f;
+}
+
+void tlog_ptr(TriMeshLog *log, void *f) {
+  LogEntry *e = tlog_push(log);
+  e->value.ptr = f;
+}
+
+static int tlog_start(TriMeshLog *log, int code) {
+  int i = log->totentries;
+
+  tlog_i(log, code);
+
+  return i;
+}
+
+static void tlog_end(TriMeshLog *log, int entry_i) {
+  tlog_i(log, entry_i);
+}
+
+enum {
+  LOG_VERT_ADD = 0,
+  LOG_EDGE_ADD = 1,
+  LOG_TRI_ADD = 2,
+  LOG_VERT_KILL = 3,
+  LOG_EDGE_KILL = 4,
+  LOG_TRI_KILL = 5,
+  LOG_SPLIT_EDGE = 6,
+  LOG_COLLAPSE_EDGE = 7,
+  LOG_CD = 8
+};
+
+/* Set a vertex's paint-mask value
+*
+* Has no effect is no paint-mask layer is present */
+static void vert_mask_set(OptTriVert *v, const float new_mask, const int cd_vert_mask_offset)
+{
+  if (cd_vert_mask_offset != -1) {
+    TRIMESH_ELEM_CD_SET_FLOAT(v, cd_vert_mask_offset, new_mask);
+  }
+}
+
+static float vert_mask_get(OptTriVert *v, const int cd_vert_mask_offset)
+{
+  if (cd_vert_mask_offset != -1) {
+    return TRIMESH_ELEM_CD_GET_FLOAT(v, cd_vert_mask_offset);
+  }
+  else {
+    return 0.0f;
+  }
+}
+
+void elemhash_add(TriMeshLog *log, void *elem, int id, int entryidx) {
+  BLI_ghash_insert(log->elemhash_id, (void*)id, elem);
+  BLI_ghash_insert(log->elemhash_ptr, elem, (void*)id);
+  BLI_ghash_insert(log->elemhash_entry, (void*)id, (void*)entryidx);
+}
+
+void *elemhash_lookup_id(TriMeshLog *log, int id) {
+  return BLI_ghash_lookup(log->elemhash_id, (void*)id);
+}
+
+int elemhash_get_id(TriMeshLog *log, void *elem) {
+  void **ret = NULL;
+
+  BLI_ghash_lookup_p(log->elemhash_ptr, elem);
+
+  if (!ret || !*ret) {
+    return -1;
+  }
+
+  return (int)(*ret);
+}
+
+int BLI_trimesh_log_vert_add(TriMeshLog *log, OptTriVert *v, const int cd_mask_offset, bool skipcd) {
+  int id = log->idgen++;
+
+  elemhash_add(log, v, id, log->totentries);
+  
+  int start = tlog_start(log, LOG_VERT_ADD);
+
+  tlog_i(log, id);
+  tlog_v3(log, v->co);
+  tlog_v3(log, v->no);
+  tlog_f(log, vert_mask_get(v, cd_mask_offset));
+  tlog_i(log, skipcd);
+
+  tlog_end(log, start);
+
+  return id;
+}
+
+int elemhash_get_vert_id(TriMeshLog *log, OptTriVert *v, int cd_vert_mask_offset) {
+  int ret = elemhash_get_id(v);
+
+  if (!v) {
+    return BLI_trimesh_log_vert_add(log, v, cd_vert_mask_offset);
+  }
+
+  return ret;
+}
+
+int BLI_trimesh_log_edge_add(TriMeshLog *log, OptTriEdge *e, const int cd_mask_offset, int skipcd) {
+  int id = log->idgen++;
+
+  elemhash_add(log, e, id, log->totentries);
+
+  int v1id = elemhash_get_vert_id(log, e->v1, cd_mask_offset));
+  int v2id = elemhash_get_vert_id(log, e->v2, cd_mask_offset));
+
+  int start = tlog_start(log, LOG_EDGE_ADD);
+  tlog_i(log, id);
+  tlog_i(log, v1id);
+  tlog_i(log, v2id);
+  tlog_i(log, skipcd);
+
+  tlog_end(log, start);
+
+  return id;
+}
+
+int elemhash_get_edge_id(TriMeshLog *log, OptTriEdge *e, int cd_vert_mask_offset) {
+  int ret = elemhash_get_id(e);
+
+  if (!e) {
+    return BLI_trimesh_log_edge_add(log, e, cd_vert_mask_offset);
+  }
+
+  return ret;
+}
+
+
+int trimesh_log_cdata(TriMeshLog *log, void *velem, int type) {
+  OptTriElem *elem = velem;
+  CustomData *cdata = get_customdata(log, type);
+
+  int size = !elem->customdata ? 0 : cdata->totsize;
+  if (!size) {
+    tlog_i(log, 0);
+    tlog_i(log, 0);
+    return;
+  }
+
+  tlog_i(log, size);
+
+  int totentries = size>>2 + 1;
+  int cur = 0;
+
+  tlog_i(log, totentries);
+
+  char *addr = (char*) elem->customdata;
+
+  for (int i=0; i<totentries; i++) {
+    int tot;
+
+    if (i == totentries-1) {
+      tot = size % 4;
+    } else {
+      tot = 4;
+    }
+
+    for (j=0; j<tot; j++) {
+      int iv[4];
+
+      memcpy(iv, addr, sizeof(int)*tot);
+      addr += sizeof(int)*tot;
+
+      tlog_i4(log, iv);
+    }
+  }
+}
+
+int trimesh_log_read_cdata(TriMeshLog *tlog, int entry_i, void *velem, int type) {
+  CustomData *cdata = get_customdata(tlog->tm, type);
+  OptTriElem *elem = velem;
+  LogEntry *log = tlog->entries;
+  int i = entry_i;
+
+  int size = log[i--].value.i;
+  int totchunk = log[i--].value.i;
+
+  void *data = elem->customdata;
+  char *addr = (char*)data;
+
+  for (int j=0; j<totchunk; j++) {
+    int tot;
+    int *iv = log[i--].value.ivec4;
+
+    if (i == totchunk-1) {
+      tot = size % 4;
+    } else {
+      tot = 4;
+    }
+
+    memcpy(addr, iv, sizeof(int)*tot);
+    addr += sizeof(int)*tot;
+  }
+
+  return i;
+}
+
+
+int trimesh_log_skip_cdata(TriMeshLog *tlog, int entry_i) {
+  LogEntry *log = tlog->entries;
+  int i = entry_i;
+
+  int size = log[i--].value.i;
+  int totchunk = log[i--].value.i;
+
+  return i - totchunk;
+}
+
+int trimesh_skip_loop(TriMeshLog *log, int entry_i) {
+  return trimesh_log_skip_cdata(log, entry_i+1);
+}
+
+int trimesh_log_loop(TriMeshLog *log, OptTri *tri, OptTriLoop *loop) {
+  trimesh_log_cdata(log, loop, TM_LOOP);
+}
+
+int trimesh_read_loop(TriMeshLog *tlog, OptTriLoop *l, int entry_i) {
+  int i = entry_i;
+
+  i++; //skip entry tag
+  i = trimesh_log_read_cdata(tlog, i, l, TM_LOOP);
+
+  return i;
+}
+
+int BLI_trimesh_log_tri(TriMeshLog *log, OptTri *tri, int cd_vert_mask_offset, bool skipcd) {
+  int id = log->idgen++;
+
+  elemhash_add(log, tri, id, log->totentries);
+
+  int e1 = elemhash_get_edge_id(log, tri->e1, cd_vert_mask_offset);
+  int e2 = elemhash_get_edge_id(log, tri->e2, cd_vert_mask_offset);
+  int e3 = elemhash_get_edge_id(log, tri->e3, cd_vert_mask_offset);
+
+  int v1 = elemhash_get_vert_id(log, tri->v1, cd_vert_mask_offset);
+  int v2 = elemhash_get_vert_id(log, tri->v1, cd_vert_mask_offset);
+  int v3 = elemhash_get_vert_id(log, tri->v1, cd_vert_mask_offset);
+  int start = tlog_start(log, LOG_TRI_ADD);
+
+  tlog_i(log, id);
+  tlog_i(log, skipcd);
+
+  tlog_i(log, v1);
+  tlog_i(log, v2);
+  tlog_i(log, v3);
+
+  tlog_i(log, e1);
+  tlog_i(log, e2);
+  tlog_i(log, e3);
+
+#ifdef WITH_TRIMESH_CUSTOMDATA
+  if (!skipcd) {
+    trimesh_log_loop(log, tri, tri->l1);
+    trimesh_log_loop(log, tri, tri->l2);
+    trimesh_log_loop(log, tri, tri->l3);
+  }
+#endif
+
+  return id;
+}
+
+int elemhash_get_tri_id(TriMeshLog *log, OptTri *tri) {
+  int ret = elemhash_get_id(log, tri);
+
+  if (!ret) {
+    return BLI_trimesh_log_tri(log, tri, log->cd_vert_mask_index, false);
+  }
+
+  return ret;
+}
+
+int BLI_trimesh_log_vert_kill(TriMeshLog *log, OptTriVert *v, int cd_mask_offset) {
+  int id = elemhash_get_id(log, v);
+
+  if (!id) {
+    return; //invalid element
+  }
+
+  //make sure edge entries exist
+  for (int i=0; i<v->edges.length; i++) {
+    OptTriEdge *e = v->edges.items[i];
+    elemhash_get_edge_id(log, e, cd_mask_offset);
+  }
+
+  int start = tlog_start(log, LOG_VERT_KILL);
+  tlog_i(log, id);
+
+  //create a wind list
+  tlog_i(log, v->edges.length);
+  for (int i=0; i<v->edges.length; i++) {
+    OptTriEdge *e = v->edges.items[i];
+    tlog_i(log, elemhash_get_edge_id(log, e, cd_mask_offset));
+  }
+
+  tlog_end(log, start);
+
+  return id;
+}
+
+int BLI_trimesh_log_edge_kill(TriMeshLog *log, OptTriEdge *e, int kill_verts) {
+  int id = elemhash_get_id(log, e);
+
+  if (!id) {
+    return; //invalid element
+  }
+
+  //make sure tri entries exist
+  for (int i=0; i<e->tris.length; i++) {
+    OptTri *tri = e->tris.items[i];
+
+    elemhash_get_tri_id(log, tri);
+  }
+
+  int start = tlog_start(log, LOG_EDGE_KILL);
+  tlog_i(log, id);
+  tlog_i(log, kill_verts);
+
+  tlog_i(log, e->tris.length);
+  for (int i=0; i<e->tris.length; i++) {
+    OptTri *tri = e->tris.items[i];
+
+    tlog_i(log, elemhash_get_tri_id(log, tri));
+  }
+
+  tlog_end(log, start);
+}
+
+int BLI_trimesh_log_tri_kill(TriMeshLog *log, OptTri *tri, int kill_verts, int kill_edges) {
+  int id = elemhash_get_id(log, tri);
+
+  if (!id) {
+    return; //invalid element
+  }
+
+  int start = tlog_start(log, LOG_TRI_KILL);
+  tlog_i(log, id);
+  tlog_i(log, kill_verts);
+  tlog_i(log, kill_edges);
+
+  //make wind list
+  tlog_i(log, 6);
+  tlog_i(log, elemhash_get_edge(log, tri->e1, log->cd_vert_mask_index));
+  tlog_i(log, elemhash_get_edge(log, tri->e2, log->cd_vert_mask_index));
+  tlog_i(log, elemhash_get_edge(log, tri->e3, log->cd_vert_mask_index));
+  tlog_i(log, elemhash_get_vert(log, tri->v1, log->cd_vert_mask_index));
+  tlog_i(log, elemhash_get_vert(log, tri->v2, log->cd_vert_mask_index));
+  tlog_i(log, elemhash_get_vert(log, tri->v3, log->cd_vert_mask_index));
+
+#ifdef WITH_TRIMESH_CUSTOMDATA
+  trimesh_log_cdata(log, tri->l1, TM_LOOP);
+  trimesh_log_cdata(log, tri->l2, TM_LOOP);
+  trimesh_log_cdata(log, tri->l3, TM_LOOP);
+#endif
+
+  tlog_end(log, start);
+}
+
+void BLI_trimesh_log_split_edge(TriMeshLog *log, OptTriEdge *e, float fac, OptTriVert *newvert, int cd_vert_mask_index) {
+  int start = tlog_start(log, LOG_SPLIT_EDGE);
+
+  int nvid = elemhash_get_vert_id(log, newvert, log->cd_vert_mask_index);
+  int v1 = elemhash_get_vert_id(log, e->v1, log->cd_vert_mask_index);
+  int v2 = elemhash_get_vert_id(log, e->v2, log->cd_vert_mask_index);
+  int eid = elemhash_get_edge_id(log, e, log->cd_vert_mask_index);
+
+  tlog_i(log, eid);
+  tlog_i(log, v1);
+  tlog_i(log, v2);
+  tlog_i(log, nvid);
+  tlog_f(log, fac);
+
+  tlog_end(log, start);
+}
+
+void BLI_trimesh_log_collapse_edge(TriMeshLog *log, OptTriEdge *e) {
+  int start = tlog_start(log, LOG_COLLAPSE_EDGE);
+  tlog_i(log, elemhash_get_id(log, e->v1));
+  tlog_i(log, elemhash_get_id(log, e->v2));
+
+  tlog_end(log, start);
+}
+
+void BLI_log_add_setpoint(TriMeshLog *log, int setgroup) {
+  tlog_truncate(log);
+  trimesh_add_group(log, setgroup);
+}
+
+int meshlog_wind(TriMeshLog *tlog, int entry_i, int threadnr) {
+  int i = entry_i;
+
+  LogEntry *log = tlog->entries;
+  LogEntry *item = &log[i++];
+
+  switch (item->value.i) {
+  case LOG_VERT_ADD: {
+    int id = log[i++].value.i;
+    float *co = log[i++].value.vec3;
+    float *no = log[i++].value.vec3;
+    float mask = log[i++].value.f;
+    int skipcd = log[i++].value.i;
+
+    OptTriVert *v = BLI_trimesh_make_vert(tlog->tm, co, no, threadnr, skipcd);
+
+    if (tlog->cd_vert_mask_index >= 0) {
+      TRIMESH_ELEM_CD_SET_FLOAT(v, tlog->cd_vert_mask_index, mask);
+    }
+
+    elemhash_add(tlog, v, id, entry_i);
+
+    break;
+  }
+  }
+
+  return i;
+}
+
+int mesh_wind_list(TriMeshLog *tlog, int entry_i, int threadnr) {
+  LogEntry *log = tlog->entries;
+  int i = entry_i;
+
+  int tot = log[i++].value.i;
+
+  for (int j=0; j<tot; j++) {
+    int tid = log[i++].value.i;
+    int **ret = BLI_ghash_lookup_p(tlog->elemhash_entry, tid);
+
+    if (!ret) {
+      continue; //error!
+    }
+
+    int ti = (int)*ret;
+    meshlog_wind(tlog, ti, threadnr);
+  }
+
+  return i;
+}
+
+int mesh_unwind_list(TriMeshLog *tlog, int entry_i, int threadnr) {
+  LogEntry *log = tlog->entries;
+  int i = entry_i;
+
+  int tot = log[i++].value.i;
+
+  for (int j=0; j<tot; j++) {
+    int tid = log[i++].value.i;
+    int **ret = BLI_ghash_lookup_p(tlog->elemhash_entry, tid);
+
+    if (!ret) {
+      continue; //error!
+    }
+
+    int ti = (int)*ret;
+    meshlog_unwind(tlog, ti, threadnr);
+  }
+
+  return i;
+}
+
+int meshlog_unwind(TriMeshLog *tlog, int entry_i, int threadnr) {
+  int i = entry_i;
+
+  LogEntry *log = tlog->entries;
+  LogEntry *item = &log[i++];
+
+  switch (item->value.i) {
+  case LOG_VERT_ADD: {
+    int id = log[i++].value.i;
+    float *co = log[i++].value.vec3;
+    float *no = log[i++].value.vec3;
+    float mask = log[i++].value.f;
+    int skipcd = log[i++].value.i;
+
+    OptTriVert *v = elemhash_lookup_id(log, id);
+
+    BLI_trimesh_kill_vert(v);
+    break;
+  }
+  case LOG_EDGE_ADD: {
+    int id = log[i++].value.i;
+    int v1id = log[i++].value.i;
+    int v2id = log[i++].value.i;
+    int skipcd = log[i++].value.i;
+    break;
+  }
+  case LOG_TRI_ADD: {
+    int id = log[i++].value.i;
+    int v1id = log[i++].value.i;
+    int v2id = log[i++].value.i;
+    int v3id = log[i++].value.i;
+    int skipcd = log[i++].value.i;
+
+    if (!skipcd) {
+      //remember that customdata logs usually don't handle their own heading tag
+      i = trimesh_skip_loop(tlog, i);
+      i = trimesh_skip_loop(tlog, i);
+      i = trimesh_skip_loop(tlog, i);
+    }
+    break;
+  }
+  case LOG_VERT_KILL: {
+    int id = log[i++].value.i;
+    int totedge = log[i++].value.i;
+
+    for (int j=0; j<totedge; j++) {
+      int eid = log[i++].value.i;
+      int **ret = BLI_ghash_lookup_p(tlog->elemhash_entry, eid);
+
+      if (!ret) {
+        continue; //error!
+      }
+
+      int ei = (int)*ret;
+      meshlog_wind(tlog, ei, threadnr);
+    }
+    break;
+  }
+
+  case LOG_EDGE_KILL: {
+    int id = log[i++].value.i;
+    int kill_verts = log[i++].value.i;
+    mesh_wind_list(tlog, i, threadnr);
+    break;
+  }
+  case LOG_TRI_KILL: {
+    int id = log[i++].value.i;
+    int kill_verts = log[i++].value.i;
+    int kill_edges = log[i++].value.i;
+    OptTriVert *vs[3], *es[3];
+
+    mesh_wind_list(tlog, i, threadnr);
+
+    i += 1; //skip wind list length (which is 6)
+
+    for (int j=0; j<3; j++) {
+      int id = log[i++].value.i;
+
+      vs[j] = BLI_ghash_lookup(tlog->elemhash_ptr, (void*)id);
+    }
+
+    i -= 6;
+    OptTri *tri = BLI_trimesh_make_tri(tlog->tm, vs[0], vs[1], vs[2], threadnr, false);
+
+#ifdef WITH_TRIMESH_CUSTOMDATA
+    i = trimesh_read_loop(tlog, tri->l1, i);
+    i = trimesh_read_loop(tlog, tri->l2, i);
+    i = trimesh_read_loop(tlog, tri->l3, i);
+#endif
+    break;
+  }
+
+  case LOG_SPLIT_EDGE: {
+    int v1id = log[i++].value.i;
+    int v2id = log[i++].value.i;
+    float fac = log[i++].value.f;
+    int logged_newvert = log[i++].value.i;
+    break;
+  }
+  case LOG_COLLAPSE_EDGE: {
+    int v1id = log[i++].value.i;
+    int v2id = log[i++].value.i;
+    break;
+  }
+  }
+
+  return i;
+}
+
+void BLI_log_unwind(TriMeshLog *tlog, int threadnr) {
+  int start;
+  int end;
+
+  if (tlog->curgroup == tlog->totgroup-1) {
+    start = tlog->totentries - 1;
+  } else {
+    start = tlog->groups[tlog->totgroup+1];
+  }
+
+  end = tlog->groups[tlog->curgroup];
+  LogEntry *log = tlog->entries;
+
+  for (int i=start; i >= end; i = log[i].value.i) {
+    meshlog_unwind(tlog, i, threadnr);
+  }
+}
+

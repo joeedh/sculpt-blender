@@ -105,6 +105,14 @@ struct PBVHNode {
   float (*bm_orco)[3];
   int (*bm_ortri)[3];
   int bm_tot_ortri;
+
+  /* trimesh */
+  GSet *tm_faces;
+  GSet *tm_unique_verts;
+  GSet *tm_other_verts;
+  float (*tm_orco)[3];
+  int (*tm_ortri)[3];
+  int tm_tot_ortri;
 };
 
 typedef enum {
@@ -168,6 +176,11 @@ struct PBVH {
   int cd_face_node_offset;
 
   struct BMLog *bm_log;
+
+  /* trimesh data */
+  struct TriMesh *tm;
+  float tm_max_edge_len;
+  float tm_min_edge_len;
 };
 
 /* pbvh.c */
