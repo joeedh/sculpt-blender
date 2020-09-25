@@ -4866,6 +4866,14 @@ void blo_do_versions_280(FileData *fd, Library *UNUSED(lib), Main *bmain)
     }
   }
 
+  if (!MAIN_VERSION_ATLEAST(bmain, 283, 12)) {
+    for (Scene* scene = bmain->scenes.first; scene; scene = scene->id.next) {
+      if (scene->r.hair_cyl_res == 0) {
+        scene->r.hair_cyl_res = 6;
+      }
+    }
+  }
+
   /**
    * Versioning code until next subversion bump goes here.
    *

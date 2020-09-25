@@ -249,6 +249,12 @@ class CyclesRenderSettings(bpy.types.PropertyGroup):
         default=False,
     )
 
+    use_bluenoise_seeds: BoolProperty(
+        name="Blue Noise Seeds",
+        description="Use blue noise seeds to add coherency",
+        default=False,
+    )
+    
     samples: IntProperty(
         name="Samples",
         description="Number of samples to render for each pixel",
@@ -329,6 +335,19 @@ class CyclesRenderSettings(bpy.types.PropertyGroup):
         default='SOBOL',
     )
 
+    coherency_shift: IntProperty(
+        name="Coherency Shift",
+        description="Higher values force pixels to be more similar to each other",
+        min=0, max=31,
+        default=16,
+    )
+    
+    coherency_only_blue : BoolProperty(
+        name="Bluenoise Only",
+        description="Use coherency parameter for bluenoise seeds only",
+        default=True
+    )
+    
     use_layer_samples: EnumProperty(
         name="Layer Samples",
         description="How to use per view layer sample settings",

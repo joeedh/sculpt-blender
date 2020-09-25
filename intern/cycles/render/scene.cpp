@@ -79,7 +79,8 @@ DeviceScene::DeviceScene(Device *device)
       shaders(device, "__shaders", MEM_GLOBAL),
       lookup_table(device, "__lookup_table", MEM_GLOBAL),
       sample_pattern_lut(device, "__sample_pattern_lut", MEM_GLOBAL),
-      ies_lights(device, "__ies", MEM_GLOBAL)
+      ies_lights(device, "__ies", MEM_GLOBAL),
+      bluenoise_mask(device, "__bluenoise_mask", MEM_TEXTURE)
 {
   memset((void *)&data, 0, sizeof(data));
 }

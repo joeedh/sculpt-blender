@@ -522,6 +522,9 @@ class RENDER_PT_eevee_hair(RenderButtonsPanel, Panel):
 
         layout.prop(rd, "hair_type", expand=True)
         layout.prop(rd, "hair_subdiv")
+        
+        if rd.hair_type == "CYLINDER":
+          layout.prop(rd, "hair_cyl_res")
 
 
 class RENDER_PT_eevee_performance(RenderButtonsPanel, Panel):

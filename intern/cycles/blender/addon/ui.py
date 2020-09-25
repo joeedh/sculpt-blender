@@ -277,6 +277,12 @@ class CYCLES_RENDER_PT_sampling_advanced(CyclesButtonsPanel, Panel):
         col.prop(cscene, "sampling_pattern", text="Pattern")
 
         layout.prop(cscene, "use_square_samples")
+        
+        layout.prop(cscene, "use_bluenoise_seeds", text="Blue Noise Seeds")
+
+        row = layout.row()
+        row.prop(cscene, "coherency_shift", text="Coherency")
+        row.prop(cscene, "coherency_only_blue", text="Bluenoise Only")
 
         layout.separator()
 

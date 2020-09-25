@@ -1029,7 +1029,7 @@ static void particle_batch_cache_ensure_procedural_indices(PTCacheEdit *edit,
                                                            int thickness_res,
                                                            int subdiv)
 {
-  BLI_assert(thickness_res <= MAX_THICKRES); /* Cylinder strip not currently supported. */
+  BLI_assert(thickness_res <= MAX_THICKRES);
 
   if (cache->final[subdiv].proc_hairs[thickness_res - 1] != NULL) {
     return;

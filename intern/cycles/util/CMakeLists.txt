@@ -10,6 +10,7 @@ set(INC_SYS
 
 set(SRC
   util_aligned_malloc.cpp
+  util_bluenoise_mask.cpp
   util_debug.cpp
   util_ies.cpp
   util_logging.cpp

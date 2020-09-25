@@ -1067,31 +1067,46 @@ GHOST_TSuccess GHOST_WindowWin32::getPointerInfo(GHOST_PointerInfoWin32 *pointer
   pointerInfo->tabletData.Xtilt = 0.0f;
   pointerInfo->tabletData.Ytilt = 0.0f;
 
-  if (pointerApiInfo.pointerType != PT_PEN) {
-    return GHOST_kFailure;
+  if (pointerApiInfo.pointerType == PT_PEN) {
+      POINTER_PEN_INFO pointerPenInfo;
+      if (m_fpGetPointerPenInfo && m_fpGetPointerPenInfo(pointerInfo->pointerId, &pointerPenInfo)) {
+          pointerInfo->tabletData.Active = GHOST_kTabletModeStylus;
+
+          if (pointerPenInfo.penMask & PEN_MASK_PRESSURE) {
+              pointerInfo->tabletData.Pressure = pointerPenInfo.pressure / 1024.0f;
+          }
+
+          if (pointerPenInfo.penFlags & PEN_FLAG_ERASER) {
+              pointerInfo->tabletData.Active = GHOST_kTabletModeEraser;
+          }
+
+          if (pointerPenInfo.penFlags & PEN_MASK_TILT_X) {
+              pointerInfo->tabletData.Xtilt = fmin(fabs(pointerPenInfo.tiltX / 90), 1.0f);
+          }
+
+          if (pointerPenInfo.penFlags & PEN_MASK_TILT_Y) {
+              pointerInfo->tabletData.Ytilt = fmin(fabs(pointerPenInfo.tiltY / 90), 1.0f);
+          }
+      }
+  } else if (pointerApiInfo.pointerType == PT_TOUCH) {
+      POINTER_TOUCH_INFO pointerTouchInfo;
+
+      if (m_fpGetPointerTouchInfo && m_fpGetPointerTouchInfo(pointerInfo->pointerId, &pointerTouchInfo)) {
+          pointerInfo->tabletData.Active = GHOST_kTabletModeStylus;
+
+          if (pointerTouchInfo.touchMask & TOUCH_MASK_PRESSURE) {
+              pointerInfo->tabletData.Pressure = ((float)pointerTouchInfo.pressure) / 1024.0f;
+          }
+          
+          if (pointerTouchInfo.touchMask & TOUCH_MASK_ORIENTATION) {
+              pointerInfo->tabletData.Xtilt = fmin(fabs((float)pointerTouchInfo.orientation / 359.0f), 1.0f);
+          }
+      } else {
+          pointerInfo->tabletData.Active = GHOST_kTabletModeNone;
+      }
+  } else {
+      return GHOST_kFailure;
   }
-
-  POINTER_PEN_INFO pointerPenInfo;
-  if (m_fpGetPointerPenInfo && m_fpGetPointerPenInfo(pointerInfo->pointerId, &pointerPenInfo)) {
-    pointerInfo->tabletData.Active = GHOST_kTabletModeStylus;
-
-    if (pointerPenInfo.penMask & PEN_MASK_PRESSURE) {
-      pointerInfo->tabletData.Pressure = pointerPenInfo.pressure / 1024.0f;
-    }
-
-    if (pointerPenInfo.penFlags & PEN_FLAG_ERASER) {
-      pointerInfo->tabletData.Active = GHOST_kTabletModeEraser;
-    }
-
-    if (pointerPenInfo.penFlags & PEN_MASK_TILT_X) {
-      pointerInfo->tabletData.Xtilt = fmin(fabs(pointerPenInfo.tiltX / 90), 1.0f);
-    }
-
-    if (pointerPenInfo.penFlags & PEN_MASK_TILT_Y) {
-      pointerInfo->tabletData.Ytilt = fmin(fabs(pointerPenInfo.tiltY / 90), 1.0f);
-    }
-  }
-
   return GHOST_kSuccess;
 }
 

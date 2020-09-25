@@ -271,6 +271,7 @@ enum SamplingPattern {
   SAMPLING_PATTERN_SOBOL = 0,
   SAMPLING_PATTERN_CMJ = 1,
   SAMPLING_PATTERN_PMJ = 2,
+  SAMPLING_PATTERN_BLUE = 3,
 
   SAMPLING_NUM_PATTERNS,
 };
@@ -1346,6 +1347,9 @@ typedef struct KernelIntegrator {
 
   /* sampler */
   int sampling_pattern;
+  int coherency_shift;
+  int coherency_only_blue;
+  int use_bluenoise_seeds;
   int aa_samples;
   int adaptive_min_samples;
   float adaptive_threshold;
@@ -1359,8 +1363,6 @@ typedef struct KernelIntegrator {
   int start_sample;
 
   int max_closures;
-
-  int pad1, pad2, pad3;
 } KernelIntegrator;
 static_assert_align(KernelIntegrator, 16);
 

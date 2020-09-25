@@ -15,6 +15,7 @@
  */
 
 #include "kernel/kernel_jitter.h"
+#include "kernel/kernel_bluenoise_mask.h"
 #include "util/util_hash.h"
 
 CCL_NAMESPACE_BEGIN
@@ -135,6 +136,31 @@ ccl_device_inline void path_rng_init(KernelGlobals *kg,
 {
   /* load state */
   *rng_hash = hash_uint2(x, y);
+  
+  uint shift = kernel_data.integrator.coherency_shift;
+
+  //see: https://www.arnoldrenderer.com/research/dither_abstract.pdf
+  // also, page 32:8:5.1 http://www.iliyan.com/publications/Arnold/Arnold_TOG2018.pdf
+    
+  if (kernel_data.integrator.use_bluenoise_seeds) {
+    //blue noise mask is 16 bit, while hash_int_2d is 32, so we shift coherency_shift left by 1
+    //to match hash_int_2d
+    uint idx = (y & BLUE_MASK_MASK) * BLUE_MASK_DIMEN + (x & BLUE_MASK_MASK);
+    uint val = kernel_tex_fetch(__bluenoise_mask, idx);
+
+    //not sure if I need to stretch across the whole 32-bit space after
+    //chomping off bits for coherency? -joeedh
+    shift >>= 1;
+    *rng_hash = ((val >> shift) << shift) << 1;
+  } else {
+    /* load state */
+    *rng_hash = hash_uint2(x, y);
+
+    if (!kernel_data.integrator.coherency_only_blue) {
+      *rng_hash = (*rng_hash >> shift) << shift;
+    }
+  }
+
   *rng_hash ^= kernel_data.integrator.seed;
 
 #ifdef __DEBUG_CORRELATION__

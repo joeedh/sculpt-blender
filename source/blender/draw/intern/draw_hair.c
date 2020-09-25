@@ -139,7 +139,19 @@ static DRWShadingGroup *drw_shgroup_create_hair_procedural_ex(Object *object,
   DupliObject *dupli_object = DRW_object_get_dupli(object);
 
   int subdiv = scene->r.hair_subdiv;
-  int thickness_res = (scene->r.hair_type == SCE_HAIR_SHAPE_STRAND) ? 1 : 2;
+  int thickness_res = 1;
+
+  switch (scene->r.hair_type) {
+    case SCE_HAIR_SHAPE_STRAND:
+      thickness_res = 1;
+      break;
+    case SCE_HAIR_SHAPE_STRIP:
+      thickness_res = 2;
+      break;
+    case SCE_HAIR_SHAPE_CYLINDER:
+      thickness_res = MAX2(scene->r.hair_cyl_res, 3)*2;
+      break;
+  }
 
   ParticleHairCache *hair_cache;
   bool need_ft_update;

@@ -23,6 +23,7 @@
 #include "render/scene.h"
 #include "render/shader.h"
 #include "render/sobol.h"
+#include "kernel/kernel_bluenoise_mask.h"
 
 #include "kernel/kernel_types.h"
 
@@ -87,6 +88,10 @@ NODE_DEFINE(Integrator)
   sampling_pattern_enum.insert("cmj", SAMPLING_PATTERN_CMJ);
   sampling_pattern_enum.insert("pmj", SAMPLING_PATTERN_PMJ);
   SOCKET_ENUM(sampling_pattern, "Sampling Pattern", sampling_pattern_enum, SAMPLING_PATTERN_SOBOL);
+  SOCKET_INT(coherency_shift, "Coherency Shift", 9);
+  
+  SOCKET_BOOLEAN(coherency_only_blue, "Bluenoise Only Coherency", true);
+  SOCKET_BOOLEAN(use_bluenoise_seeds, "Bluenoise Seeds", true);
 
   return type;
 }
@@ -112,11 +117,14 @@ void Integrator::device_update(Device *device, DeviceScene *dscene, Scene *scene
   /* integrator parameters */
   kintegrator->min_bounce = min_bounce + 1;
   kintegrator->max_bounce = max_bounce + 1;
+  kintegrator->coherency_shift = coherency_shift;
+  kintegrator->coherency_only_blue = coherency_only_blue;
 
   kintegrator->max_diffuse_bounce = max_diffuse_bounce + 1;
   kintegrator->max_glossy_bounce = max_glossy_bounce + 1;
   kintegrator->max_transmission_bounce = max_transmission_bounce + 1;
   kintegrator->max_volume_bounce = max_volume_bounce + 1;
+  kintegrator->use_bluenoise_seeds = use_bluenoise_seeds;
 
   kintegrator->transparent_min_bounce = transparent_min_bounce + 1;
   kintegrator->transparent_max_bounce = transparent_max_bounce + 1;
@@ -225,6 +233,15 @@ void Integrator::device_update(Device *device, DeviceScene *dscene, Scene *scene
 
   max_samples *= total_bounces;
 
+   //seems like it's safer to use a uint texture than a short one, 
+  //dunno if all combinations of cuda arch/gpus supports 16-bit integers or not
+  uint *cuda_bluenoise_mask = dscene->bluenoise_mask.alloc(sizeof(bluenoise_mask));
+  for (int i = 0; i < sizeof(bluenoise_mask); i++) {
+    cuda_bluenoise_mask[i] = bluenoise_mask[i];
+  }
+  dscene->bluenoise_mask.copy_to_device();
+
+
   int dimensions = PRNG_BASE_NUM + max_samples * PRNG_BOUNCE_NUM;
   dimensions = min(dimensions, SOBOL_MAX_DIMENSIONS);
 
@@ -256,6 +273,7 @@ void Integrator::device_update(Device *device, DeviceScene *dscene, Scene *scene
 void Integrator::device_free(Device *, DeviceScene *dscene)
 {
   dscene->sample_pattern_lut.free();
+  dscene->bluenoise_mask.free();
 }
 
 bool Integrator::modified(const Integrator &integrator)
