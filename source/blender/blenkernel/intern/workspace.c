@@ -32,6 +32,7 @@
 #include "BKE_idprop.h"
 #include "BKE_idtype.h"
 #include "BKE_lib_id.h"
+#include "BKE_lib_query.h"
 #include "BKE_main.h"
 #include "BKE_object.h"
 #include "BKE_scene.h"
@@ -65,6 +66,15 @@ static void workspace_free_data(ID *id)
   MEM_SAFE_FREE(workspace->status_text);
 }
 
+static void workspace_foreach_id(ID *id, LibraryForeachIDData *data)
+{
+  WorkSpace *workspace = (WorkSpace *)id;
+
+  LISTBASE_FOREACH (WorkSpaceLayout *, layout, &workspace->layouts) {
+    BKE_LIB_FOREACHID_PROCESS(data, layout->screen, IDWALK_CB_USER);
+  }
+}
+
 IDTypeInfo IDType_ID_WS = {
     .id_code = ID_WS,
     .id_filter = FILTER_ID_WS,
@@ -79,6 +89,13 @@ IDTypeInfo IDType_ID_WS = {
     .copy_data = NULL,
     .free_data = workspace_free_data,
     .make_local = NULL,
+    .foreach_id = workspace_foreach_id,
+    .foreach_cache = NULL,
+
+    .blend_write = NULL,
+    .blend_read_data = NULL,
+    .blend_read_lib = NULL,
+    .blend_read_expand = NULL,
 };
 
 /** \name Internal Utils
@@ -146,9 +163,8 @@ static void *workspace_relation_get_data_matching_parent(const ListBase *relatio
   if (relation != NULL) {
     return relation->value;
   }
-  else {
-    return NULL;
-  }
+
+  return NULL;
 }
 
 /**
@@ -209,7 +225,7 @@ WorkSpaceInstanceHook *BKE_workspace_instance_hook_create(const Main *bmain)
 
   /* set an active screen-layout for each possible window/workspace combination */
   for (WorkSpace *workspace = bmain->workspaces.first; workspace; workspace = workspace->id.next) {
-    BKE_workspace_hook_layout_for_workspace_set(hook, workspace, workspace->layouts.first);
+    BKE_workspace_active_layout_set(hook, workspace, workspace->layouts.first);
   }
 
   return hook;
@@ -386,17 +402,16 @@ bool BKE_workspace_owner_id_check(const WorkSpace *workspace, const char *owner_
   if ((*owner_id == '\0') || ((workspace->flags & WORKSPACE_USE_FILTER_BY_ORIGIN) == 0)) {
     return true;
   }
-  else {
-    /* We could use hash lookup, for now this list is highly likely under < ~16 items. */
-    return BLI_findstring(&workspace->owner_ids, owner_id, offsetof(wmOwnerID, name)) != NULL;
-  }
+
+  /* We could use hash lookup, for now this list is highly likely under < ~16 items. */
+  return BLI_findstring(&workspace->owner_ids, owner_id, offsetof(wmOwnerID, name)) != NULL;
 }
 
 void BKE_workspace_id_tag_all_visible(Main *bmain, int tag)
 {
   BKE_main_id_tag_listbase(&bmain->workspaces, tag, false);
   wmWindowManager *wm = bmain->wm.first;
-  for (wmWindow *win = wm->windows.first; win; win = win->next) {
+  LISTBASE_FOREACH (wmWindow *, win, &wm->windows) {
     WorkSpace *workspace = BKE_workspace_active_get(win->workspace_hook);
     workspace->id.tag |= tag;
   }
@@ -414,6 +429,14 @@ WorkSpace *BKE_workspace_active_get(WorkSpaceInstanceHook *hook)
 }
 void BKE_workspace_active_set(WorkSpaceInstanceHook *hook, WorkSpace *workspace)
 {
+  /* DO NOT check for `hook->active == workspace` here. Caller code is supposed to do it if
+   * that optimization is possible and needed.
+   * This code can be called from places where we might have this equality, but still want to
+   * ensure/update the active layout below.
+   * Known case where this is buggy and will crash later due to NULL active layout: reading
+   * a blend file, when the new read workspace ID happens to have the exact same memory address
+   * as when it was saved in the blend file (extremely unlikely, but possible). */
+
   hook->active = workspace;
   if (workspace) {
     WorkSpaceLayout *layout = workspace_relation_get_data_matching_parent(
@@ -424,13 +447,47 @@ void BKE_workspace_active_set(WorkSpaceInstanceHook *hook, WorkSpace *workspace)
   }
 }
 
+/**
+ * Get the layout that is active for \a hook (which is the visible layout for the active workspace
+ * in \a hook).
+ */
 WorkSpaceLayout *BKE_workspace_active_layout_get(const WorkSpaceInstanceHook *hook)
 {
   return hook->act_layout;
 }
-void BKE_workspace_active_layout_set(WorkSpaceInstanceHook *hook, WorkSpaceLayout *layout)
+
+/**
+ * Get the layout to be activated should \a workspace become or be the active workspace in \a hook.
+ */
+WorkSpaceLayout *BKE_workspace_active_layout_for_workspace_get(const WorkSpaceInstanceHook *hook,
+                                                               const WorkSpace *workspace)
+{
+  /* If the workspace is active, the active layout can be returned, no need for a lookup. */
+  if (hook->active == workspace) {
+    return hook->act_layout;
+  }
+
+  /* Inactive workspace */
+  return workspace_relation_get_data_matching_parent(&workspace->hook_layout_relations, hook);
+}
+
+/**
+ * \brief Activate a layout
+ *
+ * Sets \a layout as active for \a workspace when activated through or already active in \a hook.
+ * So when the active workspace of \a hook is \a workspace, \a layout becomes the active layout of
+ * \a hook too. See #BKE_workspace_active_set().
+ *
+ * \a workspace does not need to be active for this.
+ *
+ * WorkSpaceInstanceHook.act_layout should only be modified directly to update the layout pointer.
+ */
+void BKE_workspace_active_layout_set(WorkSpaceInstanceHook *hook,
+                                     WorkSpace *workspace,
+                                     WorkSpaceLayout *layout)
 {
   hook->act_layout = layout;
+  workspace_relation_ensure_updated(&workspace->hook_layout_relations, hook, layout);
 }
 
 bScreen *BKE_workspace_active_screen_get(const WorkSpaceInstanceHook *hook)
@@ -443,12 +500,7 @@ void BKE_workspace_active_screen_set(WorkSpaceInstanceHook *hook,
 {
   /* we need to find the WorkspaceLayout that wraps this screen */
   WorkSpaceLayout *layout = BKE_workspace_layout_find(hook->active, screen);
-  BKE_workspace_hook_layout_for_workspace_set(hook, workspace, layout);
-}
-
-ListBase *BKE_workspace_layouts_get(WorkSpace *workspace)
-{
-  return &workspace->layouts;
+  BKE_workspace_active_layout_set(hook, workspace, layout);
 }
 
 const char *BKE_workspace_layout_name_get(const WorkSpaceLayout *layout)
@@ -465,23 +517,6 @@ void BKE_workspace_layout_name_set(WorkSpace *workspace,
 bScreen *BKE_workspace_layout_screen_get(const WorkSpaceLayout *layout)
 {
   return layout->screen;
-}
-void BKE_workspace_layout_screen_set(WorkSpaceLayout *layout, bScreen *screen)
-{
-  layout->screen = screen;
-}
-
-WorkSpaceLayout *BKE_workspace_hook_layout_for_workspace_get(const WorkSpaceInstanceHook *hook,
-                                                             const WorkSpace *workspace)
-{
-  return workspace_relation_get_data_matching_parent(&workspace->hook_layout_relations, hook);
-}
-void BKE_workspace_hook_layout_for_workspace_set(WorkSpaceInstanceHook *hook,
-                                                 WorkSpace *workspace,
-                                                 WorkSpaceLayout *layout)
-{
-  hook->act_layout = layout;
-  workspace_relation_ensure_updated(&workspace->hook_layout_relations, hook, layout);
 }
 
 /** \} */

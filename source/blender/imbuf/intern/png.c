@@ -71,7 +71,7 @@ int imb_is_a_png(const unsigned char *mem)
     ret_val = !png_sig_cmp(mem, 0, 8);
 #endif
   }
-  return (ret_val);
+  return ret_val;
 }
 
 static void Flush(png_structp png_ptr)
@@ -119,7 +119,7 @@ BLI_INLINE unsigned short ftoshort(float val)
   return unit_float_to_ushort_clamp(val);
 }
 
-int imb_savepng(struct ImBuf *ibuf, const char *name, int flags)
+int imb_savepng(struct ImBuf *ibuf, const char *filepath, int flags)
 {
   png_structp png_ptr;
   png_infop info_ptr;
@@ -155,31 +155,26 @@ int imb_savepng(struct ImBuf *ibuf, const char *name, int flags)
 
   /* for prints */
   if (flags & IB_mem) {
-    name = "<memory>";
+    filepath = "<memory>";
   }
 
   bytesperpixel = (ibuf->planes + 7) >> 3;
   if ((bytesperpixel > 4) || (bytesperpixel == 2)) {
-    printf("imb_savepng: Unsupported bytes per pixel: %d for file: '%s'\n", bytesperpixel, name);
-    return (0);
+    printf(
+        "imb_savepng: Unsupported bytes per pixel: %d for file: '%s'\n", bytesperpixel, filepath);
+    return 0;
   }
 
   png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
   if (png_ptr == NULL) {
-    printf("imb_savepng: Cannot png_create_write_struct for file: '%s'\n", name);
+    printf("imb_savepng: Cannot png_create_write_struct for file: '%s'\n", filepath);
     return 0;
   }
 
   info_ptr = png_create_info_struct(png_ptr);
   if (info_ptr == NULL) {
     png_destroy_write_struct(&png_ptr, (png_infopp)NULL);
-    printf("imb_savepng: Cannot png_create_info_struct for file: '%s'\n", name);
-    return 0;
-  }
-
-  if (setjmp(png_jmpbuf(png_ptr))) {
-    png_destroy_write_struct(&png_ptr, &info_ptr);
-    printf("imb_savepng: Cannot setjmp for file: '%s'\n", name);
+    printf("imb_savepng: Cannot png_create_info_struct for file: '%s'\n", filepath);
     return 0;
   }
 
@@ -191,15 +186,39 @@ int imb_savepng(struct ImBuf *ibuf, const char *name, int flags)
   else {
     pixels = MEM_mallocN(num_bytes * sizeof(unsigned char), "png 8bit pixels");
   }
-
   if (pixels == NULL && pixels16 == NULL) {
-    png_destroy_write_struct(&png_ptr, &info_ptr);
     printf(
-        "imb_savepng: Cannot allocate pixels array of %dx%d, %d bytes per pixel for file: '%s'\n",
+        "imb_savepng: Cannot allocate pixels array of %dx%d, %d bytes per pixel for file: "
+        "'%s'\n",
         ibuf->x,
         ibuf->y,
         bytesperpixel,
-        name);
+        filepath);
+  }
+
+  /* allocate memory for an array of row-pointers */
+  row_pointers = (png_bytepp)MEM_mallocN(ibuf->y * sizeof(png_bytep), "row_pointers");
+  if (row_pointers == NULL) {
+    printf("imb_savepng: Cannot allocate row-pointers array for file '%s'\n", filepath);
+  }
+
+  if ((pixels == NULL && pixels16 == NULL) || (row_pointers == NULL) ||
+      setjmp(png_jmpbuf(png_ptr))) {
+    /* On error jump here, and free any resources. */
+    png_destroy_write_struct(&png_ptr, &info_ptr);
+    if (pixels) {
+      MEM_freeN(pixels);
+    }
+    if (pixels16) {
+      MEM_freeN(pixels16);
+    }
+    if (row_pointers) {
+      MEM_freeN(row_pointers);
+    }
+    if (fp) {
+      fflush(fp);
+      fclose(fp);
+    }
     return 0;
   }
 
@@ -378,7 +397,7 @@ int imb_savepng(struct ImBuf *ibuf, const char *name, int flags)
     png_set_write_fn(png_ptr, (png_voidp)ibuf, WriteData, Flush);
   }
   else {
-    fp = BLI_fopen(name, "wb");
+    fp = BLI_fopen(filepath, "wb");
     if (!fp) {
       png_destroy_write_struct(&png_ptr, &info_ptr);
       if (pixels) {
@@ -387,7 +406,7 @@ int imb_savepng(struct ImBuf *ibuf, const char *name, int flags)
       if (pixels16) {
         MEM_freeN(pixels16);
       }
-      printf("imb_savepng: Cannot open file for writing: '%s'\n", name);
+      printf("imb_savepng: Cannot open file for writing: '%s'\n", filepath);
       return 0;
     }
     png_init_io(png_ptr, fp);
@@ -457,23 +476,6 @@ int imb_savepng(struct ImBuf *ibuf, const char *name, int flags)
   png_set_swap(png_ptr);
 #endif
 
-  /* allocate memory for an array of row-pointers */
-  row_pointers = (png_bytepp)MEM_mallocN(ibuf->y * sizeof(png_bytep), "row_pointers");
-  if (row_pointers == NULL) {
-    printf("imb_savepng: Cannot allocate row-pointers array for file '%s'\n", name);
-    png_destroy_write_struct(&png_ptr, &info_ptr);
-    if (pixels) {
-      MEM_freeN(pixels);
-    }
-    if (pixels16) {
-      MEM_freeN(pixels16);
-    }
-    if (fp) {
-      fclose(fp);
-    }
-    return 0;
-  }
-
   /* set the individual row-pointers to point at the correct offsets */
   if (is_16bit) {
     for (i = 0; i < ibuf->y; i++) {
@@ -510,7 +512,7 @@ int imb_savepng(struct ImBuf *ibuf, const char *name, int flags)
     fclose(fp);
   }
 
-  return (1);
+  return 1;
 }
 
 static void imb_png_warning(png_structp UNUSED(png_ptr), png_const_charp message)
@@ -548,7 +550,7 @@ ImBuf *imb_loadpng(const unsigned char *mem, size_t size, int flags, char colors
   unsigned int channels;
 
   if (imb_is_a_png(mem) == 0) {
-    return (NULL);
+    return NULL;
   }
 
   /* both 8 and 16 bit PNGs are default to standard byte colorspace */
@@ -576,6 +578,7 @@ ImBuf *imb_loadpng(const unsigned char *mem, size_t size, int flags, char colors
   png_set_read_fn(png_ptr, (void *)&ps, ReadData);
 
   if (setjmp(png_jmpbuf(png_ptr))) {
+    /* On error jump here, and free any resources. */
     png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp)NULL);
     if (pixels) {
       MEM_freeN(pixels);
@@ -817,5 +820,5 @@ ImBuf *imb_loadpng(const unsigned char *mem, size_t size, int flags, char colors
   }
   png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp)NULL);
 
-  return (ibuf);
+  return ibuf;
 }

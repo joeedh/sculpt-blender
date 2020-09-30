@@ -41,6 +41,7 @@
 #include "DNA_object_fluidsim_types.h"
 #include "DNA_object_force_types.h"
 #include "DNA_object_types.h"
+#include "DNA_pointcloud_types.h"
 #include "DNA_scene_types.h"
 #include "DNA_vfont_types.h"
 
@@ -53,8 +54,7 @@
 #include "BLT_translation.h"
 
 #include "BKE_action.h"
-#include "BKE_anim.h"
-#include "BKE_animsys.h"
+#include "BKE_anim_data.h"
 #include "BKE_armature.h"
 #include "BKE_camera.h"
 #include "BKE_collection.h"
@@ -62,8 +62,10 @@
 #include "BKE_context.h"
 #include "BKE_curve.h"
 #include "BKE_displist.h"
+#include "BKE_duplilist.h"
 #include "BKE_effect.h"
 #include "BKE_font.h"
+#include "BKE_gpencil_curve.h"
 #include "BKE_gpencil_geom.h"
 #include "BKE_hair.h"
 #include "BKE_key.h"
@@ -95,6 +97,8 @@
 #include "RNA_access.h"
 #include "RNA_define.h"
 #include "RNA_enum_types.h"
+
+#include "UI_interface.h"
 
 #include "WM_api.h"
 #include "WM_types.h"
@@ -146,7 +150,7 @@ static const EnumPropertyItem field_type_items[] = {
     {PFIELD_BOID, "BOID", ICON_FORCE_BOID, "Boid", ""},
     {PFIELD_TURBULENCE, "TURBULENCE", ICON_FORCE_TURBULENCE, "Turbulence", ""},
     {PFIELD_DRAG, "DRAG", ICON_FORCE_DRAG, "Drag", ""},
-    {PFIELD_SMOKEFLOW, "SMOKE", ICON_FORCE_SMOKEFLOW, "Smoke Flow", ""},
+    {PFIELD_FLUIDFLOW, "FLUID", ICON_FORCE_FLUIDFLOW, "Fluid Flow", ""},
     {0, NULL, 0, NULL, NULL},
 };
 
@@ -202,7 +206,7 @@ void ED_object_rotation_from_quat(float rot[3], const float viewquat[4], const c
   switch (align_axis) {
     case 'X': {
       /* Same as 'rv3d->viewinv[1]' */
-      float axis_y[4] = {0.0f, 1.0f, 0.0f};
+      const float axis_y[4] = {0.0f, 1.0f, 0.0f};
       float quat_y[4], quat[4];
       axis_angle_to_quat(quat_y, axis_y, M_PI_2);
       mul_qt_qtqt(quat, viewquat, quat_y);
@@ -252,13 +256,13 @@ void ED_object_base_init_transform_on_add(Object *object, const float loc[3], co
 /* Uses context to figure out transform for primitive.
  * Returns standard diameter. */
 float ED_object_new_primitive_matrix(
-    bContext *C, Object *obedit, const float loc[3], const float rot[3], float primmat[4][4])
+    bContext *C, Object *obedit, const float loc[3], const float rot[3], float r_primmat[4][4])
 {
   Scene *scene = CTX_data_scene(C);
   View3D *v3d = CTX_wm_view3d(C);
   float mat[3][3], rmat[3][3], cmat[3][3], imat[3][3];
 
-  unit_m4(primmat);
+  unit_m4(r_primmat);
 
   eul_to_mat3(rmat, rot);
   invert_m3(rmat);
@@ -267,13 +271,13 @@ float ED_object_new_primitive_matrix(
   copy_m3_m4(mat, obedit->obmat);
   mul_m3_m3m3(cmat, rmat, mat);
   invert_m3_m3(imat, cmat);
-  copy_m4_m3(primmat, imat);
+  copy_m4_m3(r_primmat, imat);
 
   /* center */
-  copy_v3_v3(primmat[3], loc);
-  sub_v3_v3v3(primmat[3], primmat[3], obedit->obmat[3]);
+  copy_v3_v3(r_primmat[3], loc);
+  sub_v3_v3v3(r_primmat[3], r_primmat[3], obedit->obmat[3]);
   invert_m3_m3(imat, mat);
-  mul_m3_v3(imat, primmat[3]);
+  mul_m3_v3(imat, r_primmat[3]);
 
   {
     const float dia = v3d ? ED_view3d_grid_scale(scene, v3d, NULL) :
@@ -303,10 +307,15 @@ void ED_object_add_unit_props_size(wmOperatorType *ot)
       ot->srna, "size", 2.0f, 0.0, OBJECT_ADD_SIZE_MAXF, "Size", "", 0.001, 100.00);
 }
 
-void ED_object_add_unit_props_radius(wmOperatorType *ot)
+void ED_object_add_unit_props_radius_ex(wmOperatorType *ot, float default_value)
 {
   RNA_def_float_distance(
-      ot->srna, "radius", 1.0f, 0.0, OBJECT_ADD_SIZE_MAXF, "Radius", "", 0.001, 100.00);
+      ot->srna, "radius", default_value, 0.0, OBJECT_ADD_SIZE_MAXF, "Radius", "", 0.001, 100.00);
+}
+
+void ED_object_add_unit_props_radius(wmOperatorType *ot)
+{
+  ED_object_add_unit_props_radius_ex(ot, 1.0f);
 }
 
 void ED_object_add_generic_props(wmOperatorType *ot, bool do_editmode)
@@ -345,6 +354,18 @@ void ED_object_add_generic_props(wmOperatorType *ot, bool do_editmode)
                                 DEG2RADF(-360.0f),
                                 DEG2RADF(360.0f));
   RNA_def_property_flag(prop, PROP_SKIP_SAVE);
+
+  prop = RNA_def_float_vector_xyz(ot->srna,
+                                  "scale",
+                                  3,
+                                  NULL,
+                                  -OBJECT_ADD_SIZE_MAXF,
+                                  OBJECT_ADD_SIZE_MAXF,
+                                  "Scale",
+                                  "Scale for the newly added object",
+                                  -1000.0f,
+                                  1000.0f);
+  RNA_def_property_flag(prop, PROP_HIDDEN | PROP_SKIP_SAVE);
 }
 
 void ED_object_add_mesh_props(wmOperatorType *ot)
@@ -357,6 +378,7 @@ bool ED_object_add_generic_get_opts(bContext *C,
                                     const char view_align_axis,
                                     float loc[3],
                                     float rot[3],
+                                    float scale[3],
                                     bool *enter_editmode,
                                     ushort *local_view_bits,
                                     bool *is_view_aligned)
@@ -465,31 +487,69 @@ bool ED_object_add_generic_get_opts(bContext *C,
     }
   }
 
+  /* Scale! */
+  {
+    float _scale[3];
+    if (!scale) {
+      scale = _scale;
+    }
+
+    /* For now this is optional, we can make it always use. */
+    copy_v3_fl(scale, 1.0f);
+    if ((prop = RNA_struct_find_property(op->ptr, "scale"))) {
+      if (RNA_property_is_set(op->ptr, prop)) {
+        RNA_property_float_get_array(op->ptr, prop, scale);
+      }
+      else {
+        copy_v3_fl(scale, 1.0f);
+        RNA_property_float_set_array(op->ptr, prop, scale);
+      }
+    }
+  }
+
   return true;
 }
 
-/* For object add primitive operators.
- * Do not call undo push in this function (users of this function have to). */
-Object *ED_object_add_type(bContext *C,
-                           int type,
-                           const char *name,
-                           const float loc[3],
-                           const float rot[3],
-                           bool enter_editmode,
-                           ushort local_view_bits)
+/**
+ * For object add primitive operators, or for object creation when `obdata != NULL`.
+ * \param obdata: Assigned to #Object.data, with increased user count.
+ *
+ * \note Do not call undo push in this function (users of this function have to).
+ */
+Object *ED_object_add_type_with_obdata(bContext *C,
+                                       const int type,
+                                       const char *name,
+                                       const float loc[3],
+                                       const float rot[3],
+                                       const bool enter_editmode,
+                                       const ushort local_view_bits,
+                                       ID *obdata)
 {
   Main *bmain = CTX_data_main(C);
   Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   Object *ob;
 
-  /* for as long scene has editmode... */
-  if (CTX_data_edit_object(C)) {
-    ED_object_editmode_exit(C, EM_FREEDATA);
+  /* For as long scene has editmode... */
+  {
+    Object *obedit = OBEDIT_FROM_VIEW_LAYER(view_layer);
+    if (obedit != NULL) {
+      ED_object_editmode_exit_ex(bmain, scene, obedit, EM_FREEDATA);
+    }
   }
 
   /* deselects all, sets active object */
-  ob = BKE_object_add(bmain, scene, view_layer, type, name);
+  if (obdata != NULL) {
+    BLI_assert(type == BKE_object_obdata_to_type(obdata));
+    ob = BKE_object_add_for_data(bmain, view_layer, type, name, obdata, true);
+    const short *materials_len_p = BKE_id_material_len_p(obdata);
+    if (materials_len_p && *materials_len_p > 0) {
+      BKE_object_materials_test(bmain, ob, ob->data);
+    }
+  }
+  else {
+    ob = BKE_object_add(bmain, view_layer, type, name);
+  }
   BASACT(view_layer)->local_view_bits = local_view_bits;
   /* editor level activate, notifiers */
   ED_object_base_activate(C, view_layer->basact);
@@ -520,6 +580,18 @@ Object *ED_object_add_type(bContext *C,
   return ob;
 }
 
+Object *ED_object_add_type(bContext *C,
+                           const int type,
+                           const char *name,
+                           const float loc[3],
+                           const float rot[3],
+                           const bool enter_editmode,
+                           const ushort local_view_bits)
+{
+  return ED_object_add_type_with_obdata(
+      C, type, name, loc, rot, enter_editmode, local_view_bits, NULL);
+}
+
 /* for object add operator */
 static int object_add_exec(bContext *C, wmOperator *op)
 {
@@ -530,7 +602,7 @@ static int object_add_exec(bContext *C, wmOperator *op)
 
   WM_operator_view3d_unit_defaults(C, op);
   if (!ED_object_add_generic_get_opts(
-          C, op, 'Z', loc, rot, &enter_editmode, &local_view_bits, NULL)) {
+          C, op, 'Z', loc, rot, NULL, &enter_editmode, &local_view_bits, NULL)) {
     return OPERATOR_CANCELLED;
   }
   radius = RNA_float_get(op->ptr, "radius");
@@ -604,7 +676,7 @@ static int lightprobe_add_exec(bContext *C, wmOperator *op)
 
   WM_operator_view3d_unit_defaults(C, op);
   if (!ED_object_add_generic_get_opts(
-          C, op, 'Z', loc, rot, &enter_editmode, &local_view_bits, NULL)) {
+          C, op, 'Z', loc, rot, NULL, &enter_editmode, &local_view_bits, NULL)) {
     return OPERATOR_CANCELLED;
   }
   type = RNA_enum_get(op->ptr, "type");
@@ -651,6 +723,46 @@ void OBJECT_OT_lightprobe_add(wmOperatorType *ot)
  * \{ */
 
 /* for object add operator */
+
+static const char *get_effector_defname(ePFieldType type)
+{
+  switch (type) {
+    case PFIELD_FORCE:
+      return CTX_DATA_(BLT_I18NCONTEXT_ID_OBJECT, "Force");
+    case PFIELD_VORTEX:
+      return CTX_DATA_(BLT_I18NCONTEXT_ID_OBJECT, "Vortex");
+    case PFIELD_MAGNET:
+      return CTX_DATA_(BLT_I18NCONTEXT_ID_OBJECT, "Magnet");
+    case PFIELD_WIND:
+      return CTX_DATA_(BLT_I18NCONTEXT_ID_OBJECT, "Wind");
+    case PFIELD_GUIDE:
+      return CTX_DATA_(BLT_I18NCONTEXT_ID_OBJECT, "CurveGuide");
+    case PFIELD_TEXTURE:
+      return CTX_DATA_(BLT_I18NCONTEXT_ID_OBJECT, "TextureField");
+    case PFIELD_HARMONIC:
+      return CTX_DATA_(BLT_I18NCONTEXT_ID_OBJECT, "Harmonic");
+    case PFIELD_CHARGE:
+      return CTX_DATA_(BLT_I18NCONTEXT_ID_OBJECT, "Charge");
+    case PFIELD_LENNARDJ:
+      return CTX_DATA_(BLT_I18NCONTEXT_ID_OBJECT, "Lennard-Jones");
+    case PFIELD_BOID:
+      return CTX_DATA_(BLT_I18NCONTEXT_ID_OBJECT, "Boid");
+    case PFIELD_TURBULENCE:
+      return CTX_DATA_(BLT_I18NCONTEXT_ID_OBJECT, "Turbulence");
+    case PFIELD_DRAG:
+      return CTX_DATA_(BLT_I18NCONTEXT_ID_OBJECT, "Drag");
+    case PFIELD_FLUIDFLOW:
+      return CTX_DATA_(BLT_I18NCONTEXT_ID_OBJECT, "FluidField");
+    case PFIELD_NULL:
+      return CTX_DATA_(BLT_I18NCONTEXT_ID_OBJECT, "Field");
+    case NUM_PFIELD_TYPES:
+      break;
+  }
+
+  BLI_assert(false);
+  return CTX_DATA_(BLT_I18NCONTEXT_ID_OBJECT, "Field");
+}
+
 static int effector_add_exec(bContext *C, wmOperator *op)
 {
   Object *ob;
@@ -663,30 +775,32 @@ static int effector_add_exec(bContext *C, wmOperator *op)
 
   WM_operator_view3d_unit_defaults(C, op);
   if (!ED_object_add_generic_get_opts(
-          C, op, 'Z', loc, rot, &enter_editmode, &local_view_bits, NULL)) {
+          C, op, 'Z', loc, rot, NULL, &enter_editmode, &local_view_bits, NULL)) {
     return OPERATOR_CANCELLED;
   }
   type = RNA_enum_get(op->ptr, "type");
   dia = RNA_float_get(op->ptr, "radius");
 
   if (type == PFIELD_GUIDE) {
+    Main *bmain = CTX_data_main(C);
+    Scene *scene = CTX_data_scene(C);
     Curve *cu;
-    const char *name = CTX_DATA_(BLT_I18NCONTEXT_ID_OBJECT, "CurveGuide");
-    ob = ED_object_add_type(C, OB_CURVE, name, loc, rot, false, local_view_bits);
+    ob = ED_object_add_type(
+        C, OB_CURVE, get_effector_defname(type), loc, rot, false, local_view_bits);
 
     cu = ob->data;
     cu->flag |= CU_PATH | CU_3D;
-    ED_object_editmode_enter(C, 0);
+    ED_object_editmode_enter_ex(bmain, scene, ob, 0);
     ED_object_new_primitive_matrix(C, ob, loc, rot, mat);
     BLI_addtail(&cu->editnurb->nurbs,
                 ED_curve_add_nurbs_primitive(C, ob, mat, CU_NURBS | CU_PRIM_PATH, dia));
     if (!enter_editmode) {
-      ED_object_editmode_exit(C, EM_FREEDATA);
+      ED_object_editmode_exit_ex(bmain, scene, ob, EM_FREEDATA);
     }
   }
   else {
-    const char *name = CTX_DATA_(BLT_I18NCONTEXT_ID_OBJECT, "Field");
-    ob = ED_object_add_type(C, OB_EMPTY, name, loc, rot, false, local_view_bits);
+    ob = ED_object_add_type(
+        C, OB_EMPTY, get_effector_defname(type), loc, rot, false, local_view_bits);
     BKE_object_obdata_size_init(ob, dia);
     if (ELEM(type, PFIELD_WIND, PFIELD_VORTEX)) {
       ob->empty_drawtype = OB_SINGLE_ARROW;
@@ -741,7 +855,7 @@ static int object_camera_add_exec(bContext *C, wmOperator *op)
   RNA_enum_set(op->ptr, "align", ALIGN_VIEW);
 
   if (!ED_object_add_generic_get_opts(
-          C, op, 'Z', loc, rot, &enter_editmode, &local_view_bits, NULL)) {
+          C, op, 'Z', loc, rot, NULL, &enter_editmode, &local_view_bits, NULL)) {
     return OPERATOR_CANCELLED;
   }
   ob = ED_object_add_type(C, OB_CAMERA, NULL, loc, rot, false, local_view_bits);
@@ -792,7 +906,10 @@ void OBJECT_OT_camera_add(wmOperatorType *ot)
 
 static int object_metaball_add_exec(bContext *C, wmOperator *op)
 {
-  Object *obedit = CTX_data_edit_object(C);
+  Main *bmain = CTX_data_main(C);
+  Scene *scene = CTX_data_scene(C);
+  ViewLayer *view_layer = CTX_data_view_layer(C);
+  Object *obedit = OBEDIT_FROM_VIEW_LAYER(view_layer);
   bool newob = false;
   bool enter_editmode;
   ushort local_view_bits;
@@ -802,7 +919,7 @@ static int object_metaball_add_exec(bContext *C, wmOperator *op)
 
   WM_operator_view3d_unit_defaults(C, op);
   if (!ED_object_add_generic_get_opts(
-          C, op, 'Z', loc, rot, &enter_editmode, &local_view_bits, NULL)) {
+          C, op, 'Z', loc, rot, NULL, &enter_editmode, &local_view_bits, NULL)) {
     return OPERATOR_CANCELLED;
   }
   if (obedit == NULL || obedit->type != OB_MBALL) {
@@ -814,13 +931,16 @@ static int object_metaball_add_exec(bContext *C, wmOperator *op)
   }
 
   ED_object_new_primitive_matrix(C, obedit, loc, rot, mat);
-  dia = RNA_float_get(op->ptr, "radius");
+  /* Halving here is done to account for constant values from #BKE_mball_element_add.
+   * While the default radius of the resulting meta element is 2,
+   * we want to pass in 1 so other values such as resolution are scaled by 1.0. */
+  dia = RNA_float_get(op->ptr, "radius") / 2;
 
-  ED_mball_add_primitive(C, obedit, mat, dia, RNA_enum_get(op->ptr, "type"));
+  ED_mball_add_primitive(C, obedit, newob, mat, dia, RNA_enum_get(op->ptr, "type"));
 
   /* userdef */
   if (newob && !enter_editmode) {
-    ED_object_editmode_exit(C, EM_FREEDATA);
+    ED_object_editmode_exit_ex(bmain, scene, obedit, EM_FREEDATA);
   }
 
   WM_event_add_notifier(C, NC_OBJECT | ND_DRAW, obedit);
@@ -845,7 +965,7 @@ void OBJECT_OT_metaball_add(wmOperatorType *ot)
 
   ot->prop = RNA_def_enum(ot->srna, "type", rna_enum_metaelem_type_items, 0, "Primitive", "");
 
-  ED_object_add_unit_props_radius(ot);
+  ED_object_add_unit_props_radius_ex(ot, 2.0f);
   ED_object_add_generic_props(ot, true);
 }
 
@@ -864,7 +984,7 @@ static int object_add_text_exec(bContext *C, wmOperator *op)
 
   WM_operator_view3d_unit_defaults(C, op);
   if (!ED_object_add_generic_get_opts(
-          C, op, 'Z', loc, rot, &enter_editmode, &local_view_bits, NULL)) {
+          C, op, 'Z', loc, rot, NULL, &enter_editmode, &local_view_bits, NULL)) {
     return OPERATOR_CANCELLED;
   }
   if (obedit && obedit->type == OB_FONT) {
@@ -906,7 +1026,11 @@ void OBJECT_OT_text_add(wmOperatorType *ot)
 
 static int object_armature_add_exec(bContext *C, wmOperator *op)
 {
-  Object *obedit = CTX_data_edit_object(C);
+  Main *bmain = CTX_data_main(C);
+  Scene *scene = CTX_data_scene(C);
+  ViewLayer *view_layer = CTX_data_view_layer(C);
+  Object *obedit = OBEDIT_FROM_VIEW_LAYER(view_layer);
+
   RegionView3D *rv3d = CTX_wm_region_view3d(C);
   bool newob = false;
   bool enter_editmode;
@@ -916,12 +1040,12 @@ static int object_armature_add_exec(bContext *C, wmOperator *op)
 
   WM_operator_view3d_unit_defaults(C, op);
   if (!ED_object_add_generic_get_opts(
-          C, op, 'Z', loc, rot, &enter_editmode, &local_view_bits, NULL)) {
+          C, op, 'Z', loc, rot, NULL, &enter_editmode, &local_view_bits, NULL)) {
     return OPERATOR_CANCELLED;
   }
   if ((obedit == NULL) || (obedit->type != OB_ARMATURE)) {
     obedit = ED_object_add_type(C, OB_ARMATURE, NULL, loc, rot, true, local_view_bits);
-    ED_object_editmode_enter(C, 0);
+    ED_object_editmode_enter_ex(bmain, scene, obedit, 0);
     newob = true;
   }
   else {
@@ -938,7 +1062,7 @@ static int object_armature_add_exec(bContext *C, wmOperator *op)
 
   /* userdef */
   if (newob && !enter_editmode) {
-    ED_object_editmode_exit(C, EM_FREEDATA);
+    ED_object_editmode_exit_ex(bmain, scene, obedit, EM_FREEDATA);
   }
 
   WM_event_add_notifier(C, NC_OBJECT | ND_DRAW, obedit);
@@ -979,7 +1103,7 @@ static int object_empty_add_exec(bContext *C, wmOperator *op)
   float loc[3], rot[3];
 
   WM_operator_view3d_unit_defaults(C, op);
-  if (!ED_object_add_generic_get_opts(C, op, 'Z', loc, rot, NULL, &local_view_bits, NULL)) {
+  if (!ED_object_add_generic_get_opts(C, op, 'Z', loc, rot, NULL, NULL, &local_view_bits, NULL)) {
     return OPERATOR_CANCELLED;
   }
   ob = ED_object_add_type(C, OB_EMPTY, NULL, loc, rot, false, local_view_bits);
@@ -1039,7 +1163,8 @@ static int empty_drop_named_image_invoke(bContext *C, wmOperator *op, const wmEv
     ushort local_view_bits;
     float rot[3];
 
-    if (!ED_object_add_generic_get_opts(C, op, 'Z', NULL, rot, NULL, &local_view_bits, NULL)) {
+    if (!ED_object_add_generic_get_opts(
+            C, op, 'Z', NULL, rot, NULL, NULL, &local_view_bits, NULL)) {
       return OPERATOR_CANCELLED;
     }
     ob = ED_object_add_type(C, OB_EMPTY, NULL, NULL, rot, false, local_view_bits);
@@ -1126,7 +1251,7 @@ static int object_gpencil_add_exec(bContext *C, wmOperator *op)
 
   /* Note: We use 'Y' here (not 'Z'), as */
   WM_operator_view3d_unit_defaults(C, op);
-  if (!ED_object_add_generic_get_opts(C, op, 'Y', loc, rot, NULL, &local_view_bits, NULL)) {
+  if (!ED_object_add_generic_get_opts(C, op, 'Y', loc, rot, NULL, NULL, &local_view_bits, NULL)) {
     return OPERATOR_CANCELLED;
   }
   /* add new object if not currently editing a GP object,
@@ -1192,7 +1317,7 @@ static int object_gpencil_add_exec(bContext *C, wmOperator *op)
       break;
   }
 
-  /* if this is a new object, initialise default stuff (colors, etc.) */
+  /* If this is a new object, initialize default stuff (colors, etc.) */
   if (newob) {
     /* set default viewport color to black */
     copy_v3_fl(ob->color, 0.0f);
@@ -1256,7 +1381,7 @@ static int object_light_add_exec(bContext *C, wmOperator *op)
   float loc[3], rot[3];
 
   WM_operator_view3d_unit_defaults(C, op);
-  if (!ED_object_add_generic_get_opts(C, op, 'Z', loc, rot, NULL, &local_view_bits, NULL)) {
+  if (!ED_object_add_generic_get_opts(C, op, 'Z', loc, rot, NULL, NULL, &local_view_bits, NULL)) {
     return OPERATOR_CANCELLED;
   }
   ob = ED_object_add_type(C, OB_LAMP, get_light_defname(type), loc, rot, false, local_view_bits);
@@ -1322,53 +1447,58 @@ static int collection_instance_add_exec(bContext *C, wmOperator *op)
   ushort local_view_bits;
   float loc[3], rot[3];
 
-  if (RNA_struct_property_is_set(op->ptr, "name")) {
-    char name[MAX_ID_NAME - 2];
+  PropertyRNA *prop_name = RNA_struct_find_property(op->ptr, "name");
+  PropertyRNA *prop_location = RNA_struct_find_property(op->ptr, "location");
 
-    RNA_string_get(op->ptr, "name", name);
+  if (RNA_property_is_set(op->ptr, prop_name)) {
+    char name[MAX_ID_NAME - 2];
+    RNA_property_string_get(op->ptr, prop_name, name);
     collection = (Collection *)BKE_libblock_find_name(bmain, ID_GR, name);
 
-    if (0 == RNA_struct_property_is_set(op->ptr, "location")) {
+    if (!RNA_property_is_set(op->ptr, prop_location)) {
       const wmEvent *event = CTX_wm_window(C)->eventstate;
       ARegion *region = CTX_wm_region(C);
       const int mval[2] = {event->x - region->winrct.xmin, event->y - region->winrct.ymin};
       ED_object_location_from_view(C, loc);
       ED_view3d_cursor3d_position(C, mval, false, loc);
-      RNA_float_set_array(op->ptr, "location", loc);
+      RNA_property_float_set_array(op->ptr, prop_location, loc);
     }
   }
   else {
     collection = BLI_findlink(&bmain->collections, RNA_enum_get(op->ptr, "collection"));
   }
 
-  if (!ED_object_add_generic_get_opts(C, op, 'Z', loc, rot, NULL, &local_view_bits, NULL)) {
+  if (collection == NULL) {
     return OPERATOR_CANCELLED;
   }
-  if (collection) {
-    Scene *scene = CTX_data_scene(C);
-    ViewLayer *view_layer = CTX_data_view_layer(C);
 
-    /* Avoid dependency cycles. */
-    LayerCollection *active_lc = BKE_layer_collection_get_active(view_layer);
-    while (BKE_collection_find_cycle(active_lc->collection, collection)) {
-      active_lc = BKE_layer_collection_activate_parent(view_layer, active_lc);
-    }
-
-    Object *ob = ED_object_add_type(
-        C, OB_EMPTY, collection->id.name + 2, loc, rot, false, local_view_bits);
-    ob->instance_collection = collection;
-    ob->transflag |= OB_DUPLICOLLECTION;
-    id_us_plus(&collection->id);
-
-    /* works without this except if you try render right after, see: 22027 */
-    DEG_relations_tag_update(bmain);
-    DEG_id_tag_update(&scene->id, ID_RECALC_SELECT);
-    WM_event_add_notifier(C, NC_SCENE | ND_OB_ACTIVE, scene);
-
-    return OPERATOR_FINISHED;
+  if (!ED_object_add_generic_get_opts(C, op, 'Z', loc, rot, NULL, NULL, &local_view_bits, NULL)) {
+    return OPERATOR_CANCELLED;
   }
 
-  return OPERATOR_CANCELLED;
+  Scene *scene = CTX_data_scene(C);
+  ViewLayer *view_layer = CTX_data_view_layer(C);
+
+  /* Avoid dependency cycles. */
+  LayerCollection *active_lc = BKE_layer_collection_get_active(view_layer);
+  while (BKE_collection_cycle_find(active_lc->collection, collection)) {
+    active_lc = BKE_layer_collection_activate_parent(view_layer, active_lc);
+  }
+
+  Object *ob = ED_object_add_type(
+      C, OB_EMPTY, collection->id.name + 2, loc, rot, false, local_view_bits);
+  ob->instance_collection = collection;
+  ob->empty_drawsize = U.collection_instance_empty_size;
+  ob->transflag |= OB_DUPLICOLLECTION;
+  id_us_plus(&collection->id);
+
+  /* works without this except if you try render right after, see: 22027 */
+  DEG_relations_tag_update(bmain);
+  DEG_id_tag_update(&scene->id, ID_RECALC_SELECT);
+  WM_event_add_notifier(C, NC_SCENE | ND_OB_ACTIVE, scene);
+  WM_event_add_notifier(C, NC_SCENE | ND_LAYER_CONTENT, scene);
+
+  return OPERATOR_FINISHED;
 }
 
 /* only used as menu */
@@ -1402,6 +1532,89 @@ void OBJECT_OT_collection_instance_add(wmOperatorType *ot)
 /** \} */
 
 /* -------------------------------------------------------------------- */
+/** \name Add Data Instance Operator
+ *
+ * Use for dropping ID's from the outliner.
+ * \{ */
+
+static int object_data_instance_add_exec(bContext *C, wmOperator *op)
+{
+  Main *bmain = CTX_data_main(C);
+  ID *id = NULL;
+  ushort local_view_bits;
+  float loc[3], rot[3];
+
+  PropertyRNA *prop_name = RNA_struct_find_property(op->ptr, "name");
+  PropertyRNA *prop_type = RNA_struct_find_property(op->ptr, "type");
+  PropertyRNA *prop_location = RNA_struct_find_property(op->ptr, "location");
+
+  /* These shouldn't fail when created by outliner dropping as it checks the ID is valid. */
+  if (!RNA_property_is_set(op->ptr, prop_name) || !RNA_property_is_set(op->ptr, prop_type)) {
+    return OPERATOR_CANCELLED;
+  }
+  const short id_type = RNA_property_enum_get(op->ptr, prop_type);
+  char name[MAX_ID_NAME - 2];
+  RNA_property_string_get(op->ptr, prop_name, name);
+  id = BKE_libblock_find_name(bmain, id_type, name);
+  if (id == NULL) {
+    return OPERATOR_CANCELLED;
+  }
+  const int object_type = BKE_object_obdata_to_type(id);
+  if (object_type == -1) {
+    return OPERATOR_CANCELLED;
+  }
+
+  if (!RNA_property_is_set(op->ptr, prop_location)) {
+    const wmEvent *event = CTX_wm_window(C)->eventstate;
+    ARegion *region = CTX_wm_region(C);
+    const int mval[2] = {event->x - region->winrct.xmin, event->y - region->winrct.ymin};
+    ED_object_location_from_view(C, loc);
+    ED_view3d_cursor3d_position(C, mval, false, loc);
+    RNA_property_float_set_array(op->ptr, prop_location, loc);
+  }
+
+  if (!ED_object_add_generic_get_opts(C, op, 'Z', loc, rot, NULL, NULL, &local_view_bits, NULL)) {
+    return OPERATOR_CANCELLED;
+  }
+
+  Scene *scene = CTX_data_scene(C);
+
+  ED_object_add_type_with_obdata(
+      C, object_type, id->name + 2, loc, rot, false, local_view_bits, id);
+
+  /* Works without this except if you try render right after, see: T22027. */
+  DEG_relations_tag_update(bmain);
+  DEG_id_tag_update(&scene->id, ID_RECALC_SELECT);
+  WM_event_add_notifier(C, NC_SCENE | ND_OB_ACTIVE, scene);
+  WM_event_add_notifier(C, NC_SCENE | ND_LAYER_CONTENT, scene);
+
+  return OPERATOR_FINISHED;
+}
+
+void OBJECT_OT_data_instance_add(wmOperatorType *ot)
+{
+  /* identifiers */
+  ot->name = "Add Object Data Instance";
+  ot->description = "Add an object data instance";
+  ot->idname = "OBJECT_OT_data_instance_add";
+
+  /* api callbacks */
+  ot->exec = object_data_instance_add_exec;
+  ot->poll = ED_operator_objectmode;
+
+  /* flags */
+  ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
+
+  /* properties */
+  RNA_def_string(ot->srna, "name", "Name", MAX_ID_NAME - 2, "Name", "ID name to add");
+  PropertyRNA *prop = RNA_def_enum(ot->srna, "type", rna_enum_id_type_items, 0, "Type", "");
+  RNA_def_property_translation_context(prop, BLT_I18NCONTEXT_ID_ID);
+  ED_object_add_generic_props(ot, false);
+}
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
 /** \name Add Speaker Operator
  * \{ */
 
@@ -1413,7 +1626,7 @@ static int object_speaker_add_exec(bContext *C, wmOperator *op)
   float loc[3], rot[3];
   Scene *scene = CTX_data_scene(C);
 
-  if (!ED_object_add_generic_get_opts(C, op, 'Z', loc, rot, NULL, &local_view_bits, NULL)) {
+  if (!ED_object_add_generic_get_opts(C, op, 'Z', loc, rot, NULL, NULL, &local_view_bits, NULL)) {
     return OPERATOR_CANCELLED;
   }
   ob = ED_object_add_type(C, OB_SPEAKER, NULL, loc, rot, false, local_view_bits);
@@ -1465,12 +1678,20 @@ void OBJECT_OT_speaker_add(wmOperatorType *ot)
 /** \name Add Hair Operator
  * \{ */
 
+static bool object_hair_add_poll(bContext *C)
+{
+  if (!U.experimental.use_new_hair_type) {
+    return false;
+  }
+  return ED_operator_objectmode(C);
+}
+
 static int object_hair_add_exec(bContext *C, wmOperator *op)
 {
   ushort local_view_bits;
   float loc[3], rot[3];
 
-  if (!ED_object_add_generic_get_opts(C, op, 'Z', loc, rot, NULL, &local_view_bits, NULL)) {
+  if (!ED_object_add_generic_get_opts(C, op, 'Z', loc, rot, NULL, NULL, &local_view_bits, NULL)) {
     return OPERATOR_CANCELLED;
   }
   Object *object = ED_object_add_type(C, OB_HAIR, NULL, loc, rot, false, local_view_bits);
@@ -1488,7 +1709,7 @@ void OBJECT_OT_hair_add(wmOperatorType *ot)
 
   /* api callbacks */
   ot->exec = object_hair_add_exec;
-  ot->poll = ED_operator_objectmode;
+  ot->poll = object_hair_add_poll;
 
   /* flags */
   ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
@@ -1502,12 +1723,20 @@ void OBJECT_OT_hair_add(wmOperatorType *ot)
 /** \name Add Point Cloud Operator
  * \{ */
 
+static bool object_pointcloud_add_poll(bContext *C)
+{
+  if (!U.experimental.use_new_particle_system) {
+    return false;
+  }
+  return ED_operator_objectmode(C);
+}
+
 static int object_pointcloud_add_exec(bContext *C, wmOperator *op)
 {
   ushort local_view_bits;
   float loc[3], rot[3];
 
-  if (!ED_object_add_generic_get_opts(C, op, 'Z', loc, rot, NULL, &local_view_bits, NULL)) {
+  if (!ED_object_add_generic_get_opts(C, op, 'Z', loc, rot, NULL, NULL, &local_view_bits, NULL)) {
     return OPERATOR_CANCELLED;
   }
   Object *object = ED_object_add_type(C, OB_POINTCLOUD, NULL, loc, rot, false, local_view_bits);
@@ -1525,7 +1754,7 @@ void OBJECT_OT_pointcloud_add(wmOperatorType *ot)
 
   /* api callbacks */
   ot->exec = object_pointcloud_add_exec;
-  ot->poll = ED_operator_objectmode;
+  ot->poll = object_pointcloud_add_poll;
 
   /* flags */
   ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
@@ -1580,7 +1809,7 @@ static int object_delete_exec(bContext *C, wmOperator *op)
                   ob->id.name + 2);
       continue;
     }
-    else if (is_indirectly_used && ID_REAL_USERS(ob) <= 1 && ID_EXTRA_USERS(ob) == 0) {
+    if (is_indirectly_used && ID_REAL_USERS(ob) <= 1 && ID_EXTRA_USERS(ob) == 0) {
       BKE_reportf(op->reports,
                   RPT_WARNING,
                   "Cannot delete object '%s' from scene '%s', indirectly used objects need at "
@@ -1710,6 +1939,21 @@ static void copy_object_set_idnew(bContext *C)
   }
   CTX_DATA_END;
 
+#ifndef NDEBUG
+  /* Call to `BKE_libblock_relink_to_newid` above is supposed to have cleared all those flags. */
+  ID *id_iter;
+  FOREACH_MAIN_ID_BEGIN (bmain, id_iter) {
+    if (GS(id_iter->name) == ID_OB) {
+      /* Not all duplicated objects would be used by other newly duplicated data, so their flag
+       * will not always be cleared. */
+      continue;
+    }
+    BLI_assert((id_iter->tag & LIB_TAG_NEW) == 0);
+  }
+  FOREACH_MAIN_ID_END;
+#endif
+
+  BKE_main_id_tag_all(bmain, LIB_TAG_NEW, false);
   BKE_main_id_clear_newpoins(bmain);
 }
 
@@ -1738,10 +1982,10 @@ static void copy_object_set_idnew(bContext *C)
  * In other words, we consider each group of objects from a same item as being
  * the 'local group' where to check for parents.
  */
-static unsigned int dupliobject_hash(const void *ptr)
+static uint dupliobject_hash(const void *ptr)
 {
   const DupliObject *dob = ptr;
-  unsigned int hash = BLI_ghashutil_ptrhash(dob->ob);
+  uint hash = BLI_ghashutil_ptrhash(dob->ob);
 
   if (dob->type == OB_DUPLICOLLECTION) {
     for (int i = 1; (i < MAX_DUPLI_RECUR) && dob->persistent_id[i] != INT_MAX; i++) {
@@ -1760,10 +2004,10 @@ static unsigned int dupliobject_hash(const void *ptr)
  * since its a unique index and we only want to know if the group objects are from the same
  * dupli-group instance.
  */
-static unsigned int dupliobject_instancer_hash(const void *ptr)
+static uint dupliobject_instancer_hash(const void *ptr)
 {
   const DupliObject *dob = ptr;
-  unsigned int hash = BLI_ghashutil_inthash(dob->persistent_id[0]);
+  uint hash = BLI_ghashutil_inthash(dob->persistent_id[0]);
   for (int i = 1; (i < MAX_DUPLI_RECUR) && dob->persistent_id[i] != INT_MAX; i++) {
     hash ^= (dob->persistent_id[i] ^ i);
   }
@@ -1789,7 +2033,7 @@ static bool dupliobject_cmp(const void *a_, const void *b_)
       if (a->persistent_id[i] != b->persistent_id[i]) {
         return true;
       }
-      else if (a->persistent_id[i] == INT_MAX) {
+      if (a->persistent_id[i] == INT_MAX) {
         break;
       }
     }
@@ -1814,7 +2058,7 @@ static bool dupliobject_instancer_cmp(const void *a_, const void *b_)
     if (a->persistent_id[i] != b->persistent_id[i]) {
       return true;
     }
-    else if (a->persistent_id[i] == INT_MAX) {
+    if (a->persistent_id[i] == INT_MAX) {
       break;
     }
   }
@@ -2048,6 +2292,7 @@ static int object_duplicates_make_real_exec(bContext *C, wmOperator *op)
   DEG_relations_tag_update(bmain);
   WM_event_add_notifier(C, NC_SCENE, scene);
   WM_main_add_notifier(NC_OBJECT | ND_DRAW, NULL);
+  ED_outliner_select_sync_from_object_tag(C);
 
   return OPERATOR_FINISHED;
 }
@@ -2084,12 +2329,19 @@ void OBJECT_OT_duplicates_make_real(wmOperatorType *ot)
 
 static const EnumPropertyItem convert_target_items[] = {
     {OB_CURVE, "CURVE", ICON_OUTLINER_OB_CURVE, "Curve from Mesh/Text", ""},
+#ifdef WITH_PARTICLE_NODES
+    {OB_MESH, "MESH", ICON_OUTLINER_OB_MESH, "Mesh from Curve/Meta/Surf/Text/Pointcloud", ""},
+#else
     {OB_MESH, "MESH", ICON_OUTLINER_OB_MESH, "Mesh from Curve/Meta/Surf/Text", ""},
-    {OB_GPENCIL, "GPENCIL", ICON_OUTLINER_OB_GREASEPENCIL, "Grease Pencil from Curve", ""},
+#endif
+    {OB_GPENCIL, "GPENCIL", ICON_OUTLINER_OB_GREASEPENCIL, "Grease Pencil from Curve/Mesh", ""},
+#ifdef WITH_PARTICLE_NODES
+    {OB_POINTCLOUD, "POINTCLOUD", ICON_OUTLINER_OB_POINTCLOUD, "Pointcloud from Mesh", ""},
+#endif
     {0, NULL, 0, NULL, NULL},
 };
 
-static void convert_ensure_curve_cache(Depsgraph *depsgraph, Scene *scene, Object *ob)
+static void object_data_convert_ensure_curve_cache(Depsgraph *depsgraph, Scene *scene, Object *ob)
 {
   if (ob->runtime.curve_cache == NULL) {
     /* Force creation. This is normally not needed but on operator
@@ -2108,7 +2360,7 @@ static void convert_ensure_curve_cache(Depsgraph *depsgraph, Scene *scene, Objec
   }
 }
 
-static void curvetomesh(Main *bmain, Depsgraph *depsgraph, Object *ob)
+static void object_data_convert_curve_to_mesh(Main *bmain, Depsgraph *depsgraph, Object *ob)
 {
   Object *object_eval = DEG_get_evaluated_object(depsgraph, ob);
   Curve *curve = ob->data;
@@ -2141,17 +2393,22 @@ static void curvetomesh(Main *bmain, Depsgraph *depsgraph, Object *ob)
   }
 }
 
-static bool convert_poll(bContext *C)
+static bool object_convert_poll(bContext *C)
 {
   Scene *scene = CTX_data_scene(C);
   Base *base_act = CTX_data_active_base(C);
   Object *obact = base_act ? base_act->object : NULL;
 
-  return (!ID_IS_LINKED(scene) && obact && (BKE_object_is_in_editmode(obact) == false) &&
-          (base_act->flag & BASE_SELECTED) && !ID_IS_LINKED(obact));
+  if (obact == NULL || obact->data == NULL || ID_IS_LINKED(obact) ||
+      ID_IS_OVERRIDE_LIBRARY(obact) || ID_IS_OVERRIDE_LIBRARY(obact->data)) {
+    return false;
+  }
+
+  return (!ID_IS_LINKED(scene) && (BKE_object_is_in_editmode(obact) == false) &&
+          (base_act->flag & BASE_SELECTED));
 }
 
-/* Helper for convert_exec */
+/* Helper for object_convert_exec */
 static Base *duplibase_for_convert(
     Main *bmain, Depsgraph *depsgraph, Scene *scene, ViewLayer *view_layer, Base *base, Object *ob)
 {
@@ -2186,7 +2443,7 @@ static Base *duplibase_for_convert(
    * time we need to duplicate an object to convert it. Even worse, this is not 100% correct, since
    * we do not yet have duplicated obdata.
    * However, that is a safe solution for now. Proper, longer-term solution is to refactor
-   * convert_exec to:
+   * object_convert_exec to:
    *  - duplicate all data it needs to in a first loop.
    *  - do a single update.
    *  - convert data in a second loop. */
@@ -2204,7 +2461,7 @@ static Base *duplibase_for_convert(
   return basen;
 }
 
-static int convert_exec(bContext *C, wmOperator *op)
+static int object_convert_exec(bContext *C, wmOperator *op)
 {
   Main *bmain = CTX_data_main(C);
   Depsgraph *depsgraph = CTX_data_ensure_evaluated_depsgraph(C);
@@ -2217,9 +2474,17 @@ static int convert_exec(bContext *C, wmOperator *op)
   Nurb *nu;
   MetaBall *mb;
   Mesh *me;
-  Object *gpencil_ob = NULL;
+  Object *ob_gpencil = NULL;
+  PointCloud *pointcloud;
   const short target = RNA_enum_get(op->ptr, "target");
   bool keep_original = RNA_boolean_get(op->ptr, "keep_original");
+
+  const float angle = RNA_float_get(op->ptr, "angle");
+  const int thickness = RNA_int_get(op->ptr, "thickness");
+  const bool use_seams = RNA_boolean_get(op->ptr, "seams");
+  const bool use_faces = RNA_boolean_get(op->ptr, "faces");
+  const float offset = RNA_float_get(op->ptr, "offset");
+
   int a, mballConverted = 0;
   bool gpencilConverted = false;
 
@@ -2255,7 +2520,7 @@ static int convert_exec(bContext *C, wmOperator *op)
    * needed since re-evaluating single modifiers causes bugs if they depend
    * on other objects data masks too, see: T50950. */
   {
-    for (CollectionPointerLink *link = selected_editable_bases.first; link; link = link->next) {
+    LISTBASE_FOREACH (CollectionPointerLink *, link, &selected_editable_bases) {
       Base *base = link->ptr.data;
       Object *ob = base->object;
 
@@ -2282,7 +2547,7 @@ static int convert_exec(bContext *C, wmOperator *op)
     scene->customdata_mask = customdata_mask_prev;
   }
 
-  for (CollectionPointerLink *link = selected_editable_bases.first; link; link = link->next) {
+  LISTBASE_FOREACH (CollectionPointerLink *, link, &selected_editable_bases) {
     Object *newob = NULL;
     Base *base = link->ptr.data;
     Object *ob = base->object;
@@ -2296,7 +2561,7 @@ static int convert_exec(bContext *C, wmOperator *op)
       /* obdata already modified */
       if (!IS_TAGGED(ob->data)) {
         /* When 2 objects with linked data are selected, converting both
-         * would keep modifiers on all but the converted object [#26003] */
+         * would keep modifiers on all but the converted object T26003. */
         if (ob->type == OB_MESH) {
           BKE_object_free_modifiers(ob, 0); /* after derivedmesh calls! */
         }
@@ -2327,6 +2592,80 @@ static int convert_exec(bContext *C, wmOperator *op)
       BKE_mesh_to_curve(bmain, depsgraph, scene, newob);
 
       if (newob->type == OB_CURVE) {
+        BKE_object_free_modifiers(newob, 0); /* after derivedmesh calls! */
+        if (newob->rigidbody_object != NULL) {
+          ED_rigidbody_object_remove(bmain, scene, newob);
+        }
+      }
+    }
+    else if (ob->type == OB_MESH && target == OB_GPENCIL) {
+      ob->flag |= OB_DONE;
+
+      /* Create a new grease pencil object and copy transformations. */
+      ushort local_view_bits = (v3d && v3d->localvd) ? v3d->local_view_uuid : 0;
+      float loc[3], size[3], rot[3][3], eul[3];
+      float matrix[4][4];
+      mat4_to_loc_rot_size(loc, rot, size, ob->obmat);
+      mat3_to_eul(eul, rot);
+
+      ob_gpencil = ED_gpencil_add_object(C, loc, local_view_bits);
+      copy_v3_v3(ob_gpencil->loc, loc);
+      copy_v3_v3(ob_gpencil->rot, eul);
+      copy_v3_v3(ob_gpencil->scale, size);
+      unit_m4(matrix);
+      /* Set object in 3D mode. */
+      bGPdata *gpd = (bGPdata *)ob_gpencil->data;
+      gpd->draw_mode = GP_DRAWMODE_3D;
+
+      gpencilConverted |= BKE_gpencil_convert_mesh(bmain,
+                                                   depsgraph,
+                                                   scene,
+                                                   ob_gpencil,
+                                                   ob,
+                                                   angle,
+                                                   thickness,
+                                                   offset,
+                                                   matrix,
+                                                   0,
+                                                   use_seams,
+                                                   use_faces);
+
+      /* Remove unused materials. */
+      int actcol = ob_gpencil->actcol;
+      for (int slot = 1; slot <= ob_gpencil->totcol; slot++) {
+        while (slot <= ob_gpencil->totcol &&
+               !BKE_object_material_slot_used(ob_gpencil->data, slot)) {
+          ob_gpencil->actcol = slot;
+          BKE_object_material_slot_remove(CTX_data_main(C), ob_gpencil);
+
+          if (actcol >= slot) {
+            actcol--;
+          }
+        }
+      }
+      ob_gpencil->actcol = actcol;
+    }
+    else if (ob->type == OB_MESH && target == OB_POINTCLOUD) {
+      ob->flag |= OB_DONE;
+
+      if (keep_original) {
+        basen = duplibase_for_convert(bmain, depsgraph, scene, view_layer, base, NULL);
+        newob = basen->object;
+
+        /* decrement original mesh's usage count  */
+        me = newob->data;
+        id_us_min(&me->id);
+
+        /* make a new copy of the mesh */
+        newob->data = BKE_mesh_copy(bmain, me);
+      }
+      else {
+        newob = ob;
+      }
+
+      BKE_mesh_to_pointcloud(bmain, depsgraph, scene, newob);
+
+      if (newob->type == OB_POINTCLOUD) {
         BKE_object_free_modifiers(newob, 0); /* after derivedmesh calls! */
         ED_rigidbody_object_remove(bmain, scene, newob);
       }
@@ -2380,13 +2719,8 @@ static int convert_exec(bContext *C, wmOperator *op)
 
       cu = newob->data;
 
-      /* TODO(sergey): Ideally DAG will create nurbs list for a curve data
-       *               datablock, but for until we've got granular update
-       *               lets take care by selves.
-       */
-      /* XXX This may fail/crash, since BKE_vfont_to_curve()
-       * accesses evaluated data in some cases (bastien). */
-      BKE_vfont_to_curve(newob, FO_EDIT);
+      Object *ob_eval = DEG_get_evaluated_object(depsgraph, ob);
+      BKE_vfont_to_curve_ex(ob_eval, ob_eval->data, FO_EDIT, &cu->nurb, NULL, NULL, NULL, NULL);
 
       newob->type = OB_CURVE;
       cu->type = OB_CURVE;
@@ -2431,7 +2765,7 @@ static int convert_exec(bContext *C, wmOperator *op)
       if (target == OB_MESH) {
         /* No assumption should be made that the resulting objects is a mesh, as conversion can
          * fail. */
-        curvetomesh(bmain, depsgraph, newob);
+        object_data_convert_curve_to_mesh(bmain, depsgraph, newob);
         /* meshes doesn't use displist */
         BKE_object_free_curve_cache(newob);
       }
@@ -2456,7 +2790,7 @@ static int convert_exec(bContext *C, wmOperator *op)
 
         /* No assumption should be made that the resulting objects is a mesh, as conversion can
          * fail. */
-        curvetomesh(bmain, depsgraph, newob);
+        object_data_convert_curve_to_mesh(bmain, depsgraph, newob);
         /* meshes doesn't use displist */
         BKE_object_free_curve_cache(newob);
       }
@@ -2470,10 +2804,10 @@ static int convert_exec(bContext *C, wmOperator *op)
            * Nurbs Surface are not supported.
            */
           ushort local_view_bits = (v3d && v3d->localvd) ? v3d->local_view_uuid : 0;
-          gpencil_ob = ED_gpencil_add_object(C, ob->loc, local_view_bits);
-          copy_v3_v3(gpencil_ob->rot, ob->rot);
-          copy_v3_v3(gpencil_ob->scale, ob->scale);
-          BKE_gpencil_convert_curve(bmain, scene, gpencil_ob, ob, false, false, true);
+          ob_gpencil = ED_gpencil_add_object(C, ob->loc, local_view_bits);
+          copy_v3_v3(ob_gpencil->rot, ob->rot);
+          copy_v3_v3(ob_gpencil->scale, ob->scale);
+          BKE_gpencil_convert_curve(bmain, scene, ob_gpencil, ob, false, 1.0f, 0.0f);
           gpencilConverted = true;
         }
       }
@@ -2510,7 +2844,7 @@ static int convert_exec(bContext *C, wmOperator *op)
           }
         }
 
-        convert_ensure_curve_cache(depsgraph, scene, baseob);
+        object_data_convert_ensure_curve_cache(depsgraph, scene, baseob);
         BKE_mesh_from_metaball(&baseob->runtime.curve_cache->disp, newob->data);
 
         if (obact->type == OB_MBALL) {
@@ -2519,6 +2853,31 @@ static int convert_exec(bContext *C, wmOperator *op)
 
         baseob->flag |= OB_DONE;
         mballConverted = 1;
+      }
+    }
+    else if (ob->type == OB_POINTCLOUD && target == OB_MESH) {
+      ob->flag |= OB_DONE;
+
+      if (keep_original) {
+        basen = duplibase_for_convert(bmain, depsgraph, scene, view_layer, base, NULL);
+        newob = basen->object;
+
+        /* decrement original pointclouds's usage count  */
+        pointcloud = newob->data;
+        id_us_min(&pointcloud->id);
+
+        /* make a new copy of the pointcloud */
+        newob->data = BKE_pointcloud_copy(bmain, pointcloud);
+      }
+      else {
+        newob = ob;
+      }
+
+      BKE_pointcloud_to_mesh(bmain, depsgraph, scene, newob);
+
+      if (newob->type == OB_MESH) {
+        BKE_object_free_modifiers(newob, 0); /* after derivedmesh calls! */
+        ED_rigidbody_object_remove(bmain, scene, newob);
       }
     }
     else {
@@ -2543,7 +2902,12 @@ static int convert_exec(bContext *C, wmOperator *op)
     }
 
     if (!keep_original && (ob->flag & OB_DONE)) {
-      DEG_id_tag_update(&ob->id, ID_RECALC_GEOMETRY);
+      /* NOTE: Tag transform for update because object parenting to curve with path is handled
+       * differently from all other cases. Converting curve to mesh and mesh to curve will likely
+       * affect the way children are evaluated.
+       * It is not enough to tag only geometry and rely on the curve parenting relations because
+       * this relation is lost when curve is converted to mesh. */
+      DEG_id_tag_update(&ob->id, ID_RECALC_GEOMETRY | ID_RECALC_TRANSFORM);
       ((ID *)ob->data)->tag &= ~LIB_TAG_DOIT; /* flag not to convert this datablock again */
     }
   }
@@ -2574,12 +2938,12 @@ static int convert_exec(bContext *C, wmOperator *op)
       }
       FOREACH_SCENE_OBJECT_END;
     }
-    /* Remove curves converted to Grease Pencil object. */
+    /* Remove curves and meshes converted to Grease Pencil object. */
     if (gpencilConverted) {
-      FOREACH_SCENE_OBJECT_BEGIN (scene, ob_curve) {
-        if (ob_curve->type == OB_CURVE) {
-          if (ob_curve->flag & OB_DONE) {
-            ED_object_base_free_and_unlink(bmain, scene, ob_curve);
+      FOREACH_SCENE_OBJECT_BEGIN (scene, ob_delete) {
+        if ((ob_delete->type == OB_CURVE) || (ob_delete->type == OB_MESH)) {
+          if (ob_delete->flag & OB_DONE) {
+            ED_object_base_free_and_unlink(bmain, scene, ob_delete);
           }
         }
       }
@@ -2604,12 +2968,35 @@ static int convert_exec(bContext *C, wmOperator *op)
   DEG_id_tag_update(&scene->id, ID_RECALC_SELECT);
   WM_event_add_notifier(C, NC_OBJECT | ND_DRAW, scene);
   WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
+  WM_event_add_notifier(C, NC_SCENE | ND_LAYER_CONTENT, scene);
 
   return OPERATOR_FINISHED;
 }
 
+static void object_convert_ui(bContext *UNUSED(C), wmOperator *op)
+{
+  uiLayout *layout = op->layout;
+  PointerRNA ptr;
+
+  uiLayoutSetPropSep(layout, true);
+
+  RNA_pointer_create(NULL, op->type->srna, op->properties, &ptr);
+  uiItemR(layout, &ptr, "target", 0, NULL, ICON_NONE);
+  uiItemR(layout, &ptr, "keep_original", 0, NULL, ICON_NONE);
+
+  if (RNA_enum_get(&ptr, "target") == OB_GPENCIL) {
+    uiItemR(layout, &ptr, "thickness", 0, NULL, ICON_NONE);
+    uiItemR(layout, &ptr, "angle", 0, NULL, ICON_NONE);
+    uiItemR(layout, &ptr, "offset", 0, NULL, ICON_NONE);
+    uiItemR(layout, &ptr, "seams", 0, NULL, ICON_NONE);
+    uiItemR(layout, &ptr, "faces", 0, NULL, ICON_NONE);
+  }
+}
+
 void OBJECT_OT_convert(wmOperatorType *ot)
 {
+  PropertyRNA *prop;
+
   /* identifiers */
   ot->name = "Convert to";
   ot->description = "Convert selected objects to another type";
@@ -2617,8 +3004,9 @@ void OBJECT_OT_convert(wmOperatorType *ot)
 
   /* api callbacks */
   ot->invoke = WM_menu_invoke;
-  ot->exec = convert_exec;
-  ot->poll = convert_poll;
+  ot->exec = object_convert_exec;
+  ot->poll = object_convert_poll;
+  ot->ui = object_convert_ui;
 
   /* flags */
   ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
@@ -2631,6 +3019,31 @@ void OBJECT_OT_convert(wmOperatorType *ot)
                   0,
                   "Keep Original",
                   "Keep original objects instead of replacing them");
+
+  prop = RNA_def_float_rotation(ot->srna,
+                                "angle",
+                                0,
+                                NULL,
+                                DEG2RADF(0.0f),
+                                DEG2RADF(180.0f),
+                                "Threshold Angle",
+                                "Threshold to determine ends of the strokes",
+                                DEG2RADF(0.0f),
+                                DEG2RADF(180.0f));
+  RNA_def_property_float_default(prop, DEG2RADF(70.0f));
+
+  RNA_def_int(ot->srna, "thickness", 5, 1, 100, "Thickness", "", 1, 100);
+  RNA_def_boolean(ot->srna, "seams", 0, "Only Seam Edges", "Convert only seam edges");
+  RNA_def_boolean(ot->srna, "faces", 1, "Export Faces", "Export faces as filled strokes");
+  RNA_def_float_distance(ot->srna,
+                         "offset",
+                         0.01f,
+                         0.0,
+                         OBJECT_ADD_SIZE_MAXF,
+                         "Stroke Offset",
+                         "Offset strokes from fill",
+                         0.0,
+                         100.00);
 }
 
 /** \} */
@@ -2649,8 +3062,12 @@ void OBJECT_OT_convert(wmOperatorType *ot)
 /* used below, assumes id.new is correct */
 /* leaves selection of base/object unaltered */
 /* Does set ID->newid pointers. */
-static Base *object_add_duplicate_internal(
-    Main *bmain, Scene *scene, ViewLayer *view_layer, Object *ob, int dupflag)
+static Base *object_add_duplicate_internal(Main *bmain,
+                                           Scene *scene,
+                                           ViewLayer *view_layer,
+                                           Object *ob,
+                                           const eDupli_ID_Flags dupflag,
+                                           const eLibIDDuplicateFlags duplicate_options)
 {
   Base *base, *basen = NULL;
   Object *obn;
@@ -2659,7 +3076,7 @@ static Base *object_add_duplicate_internal(
     /* nothing? */
   }
   else {
-    obn = ID_NEW_SET(ob, BKE_object_duplicate(bmain, ob, dupflag));
+    obn = ID_NEW_SET(ob, BKE_object_duplicate(bmain, ob, dupflag, duplicate_options));
     DEG_id_tag_update(&obn->id, ID_RECALC_TRANSFORM | ID_RECALC_GEOMETRY);
 
     base = BKE_view_layer_base_find(view_layer, ob);
@@ -2698,19 +3115,20 @@ static Base *object_add_duplicate_internal(
  * note: caller must do DAG_relations_tag_update(bmain);
  *       this is not done automatic since we may duplicate many objects in a batch */
 Base *ED_object_add_duplicate(
-    Main *bmain, Scene *scene, ViewLayer *view_layer, Base *base, int dupflag)
+    Main *bmain, Scene *scene, ViewLayer *view_layer, Base *base, const eDupli_ID_Flags dupflag)
 {
   Base *basen;
   Object *ob;
 
-  basen = object_add_duplicate_internal(bmain, scene, view_layer, base->object, dupflag);
+  basen = object_add_duplicate_internal(
+      bmain, scene, view_layer, base->object, dupflag, LIB_ID_DUPLICATE_IS_SUBPROCESS);
   if (basen == NULL) {
     return NULL;
   }
 
   ob = basen->object;
 
-  /* link own references to the newly duplicated data [#26816] */
+  /* link own references to the newly duplicated data T26816. */
   BKE_libblock_relink_to_newid(&ob->id);
 
   /* DAG_relations_tag_update(bmain); */ /* caller must do */
@@ -2731,10 +3149,16 @@ static int duplicate_exec(bContext *C, wmOperator *op)
   Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   const bool linked = RNA_boolean_get(op->ptr, "linked");
-  int dupflag = (linked) ? 0 : U.dupflag;
+  const eDupli_ID_Flags dupflag = (linked) ? 0 : (eDupli_ID_Flags)U.dupflag;
+
+  /* We need to handle that here ourselves, because we may duplicate several objects, in which case
+   * we also want to remap pointers between those... */
+  BKE_main_id_tag_all(bmain, LIB_TAG_NEW, false);
+  BKE_main_id_clear_newpoins(bmain);
 
   CTX_DATA_BEGIN (C, Base *, base, selected_bases) {
-    Base *basen = object_add_duplicate_internal(bmain, scene, view_layer, base->object, dupflag);
+    Base *basen = object_add_duplicate_internal(
+        bmain, scene, view_layer, base->object, dupflag, LIB_ID_DUPLICATE_IS_SUBPROCESS);
 
     /* note that this is safe to do with this context iterator,
      * the list is made in advance */
@@ -2756,6 +3180,7 @@ static int duplicate_exec(bContext *C, wmOperator *op)
   }
   CTX_DATA_END;
 
+  /* Note that this will also clear newid pointers and tags. */
   copy_object_set_idnew(C);
 
   ED_outliner_select_sync_from_object_tag(C);
@@ -2764,6 +3189,7 @@ static int duplicate_exec(bContext *C, wmOperator *op)
   DEG_id_tag_update(&scene->id, ID_RECALC_COPY_ON_WRITE | ID_RECALC_SELECT);
 
   WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
+  WM_event_add_notifier(C, NC_SCENE | ND_LAYER_CONTENT, scene);
 
   return OPERATOR_FINISHED;
 }
@@ -2805,7 +3231,7 @@ void OBJECT_OT_duplicate(wmOperatorType *ot)
  * Use for drag & drop.
  * \{ */
 
-static int add_named_exec(bContext *C, wmOperator *op)
+static int object_add_named_exec(bContext *C, wmOperator *op)
 {
   wmWindow *win = CTX_wm_window(C);
   const wmEvent *event = win ? win->eventstate : NULL;
@@ -2815,7 +3241,7 @@ static int add_named_exec(bContext *C, wmOperator *op)
   Base *basen;
   Object *ob;
   const bool linked = RNA_boolean_get(op->ptr, "linked");
-  int dupflag = (linked) ? 0 : U.dupflag;
+  const eDupli_ID_Flags dupflag = (linked) ? 0 : (eDupli_ID_Flags)U.dupflag;
   char name[MAX_ID_NAME - 2];
 
   /* find object, create fake base */
@@ -2828,7 +3254,7 @@ static int add_named_exec(bContext *C, wmOperator *op)
   }
 
   /* prepare dupli */
-  basen = object_add_duplicate_internal(bmain, scene, view_layer, ob, dupflag);
+  basen = object_add_duplicate_internal(bmain, scene, view_layer, ob, dupflag, 0);
 
   if (basen == NULL) {
     BKE_report(op->reports, RPT_ERROR, "Object could not be duplicated");
@@ -2855,6 +3281,8 @@ static int add_named_exec(bContext *C, wmOperator *op)
   DEG_id_tag_update(&scene->id, ID_RECALC_SELECT);
   WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
   WM_event_add_notifier(C, NC_SCENE | ND_OB_ACTIVE, scene);
+  WM_event_add_notifier(C, NC_SCENE | ND_LAYER_CONTENT, scene);
+  ED_outliner_select_sync_from_object_tag(C);
 
   return OPERATOR_FINISHED;
 }
@@ -2867,7 +3295,7 @@ void OBJECT_OT_add_named(wmOperatorType *ot)
   ot->idname = "OBJECT_OT_add_named";
 
   /* api callbacks */
-  ot->exec = add_named_exec;
+  ot->exec = object_add_named_exec;
   ot->poll = ED_operator_objectmode;
 
   /* flags */
@@ -2888,23 +3316,22 @@ void OBJECT_OT_add_named(wmOperatorType *ot)
  *
  * \{ */
 
-static bool join_poll(bContext *C)
+static bool object_join_poll(bContext *C)
 {
   Object *ob = CTX_data_active_object(C);
 
-  if (!ob || ID_IS_LINKED(ob)) {
-    return 0;
+  if (ob == NULL || ob->data == NULL || ID_IS_LINKED(ob) || ID_IS_OVERRIDE_LIBRARY(ob) ||
+      ID_IS_OVERRIDE_LIBRARY(ob->data)) {
+    return false;
   }
 
   if (ELEM(ob->type, OB_MESH, OB_CURVE, OB_SURF, OB_ARMATURE, OB_GPENCIL)) {
     return ED_operator_screenactive(C);
   }
-  else {
-    return 0;
-  }
+  return false;
 }
 
-static int join_exec(bContext *C, wmOperator *op)
+static int object_join_exec(bContext *C, wmOperator *op)
 {
   Object *ob = CTX_data_active_object(C);
 
@@ -2912,11 +3339,11 @@ static int join_exec(bContext *C, wmOperator *op)
     BKE_report(op->reports, RPT_ERROR, "This data does not support joining in edit mode");
     return OPERATOR_CANCELLED;
   }
-  else if (BKE_object_obdata_is_libdata(ob)) {
+  if (BKE_object_obdata_is_libdata(ob)) {
     BKE_report(op->reports, RPT_ERROR, "Cannot edit external library data");
     return OPERATOR_CANCELLED;
   }
-  else if (ob->type == OB_GPENCIL) {
+  if (ob->type == OB_GPENCIL) {
     bGPdata *gpd = (bGPdata *)ob->data;
     if ((!gpd) || GPENCIL_ANY_MODE(gpd)) {
       BKE_report(op->reports, RPT_ERROR, "This data does not support joining in this mode");
@@ -2924,20 +3351,45 @@ static int join_exec(bContext *C, wmOperator *op)
     }
   }
 
+  int ret = OPERATOR_CANCELLED;
   if (ob->type == OB_MESH) {
-    return join_mesh_exec(C, op);
+    ret = ED_mesh_join_objects_exec(C, op);
   }
   else if (ELEM(ob->type, OB_CURVE, OB_SURF)) {
-    return join_curve_exec(C, op);
+    ret = ED_curve_join_objects_exec(C, op);
   }
   else if (ob->type == OB_ARMATURE) {
-    return join_armature_exec(C, op);
+    ret = ED_armature_join_objects_exec(C, op);
   }
   else if (ob->type == OB_GPENCIL) {
-    return ED_gpencil_join_objects_exec(C, op);
+    ret = ED_gpencil_join_objects_exec(C, op);
   }
 
-  return OPERATOR_CANCELLED;
+  if (ret & OPERATOR_FINISHED) {
+    /* Even though internally failure to invert is accounted for with a fallback,
+     * show a warning since the result may not be what the user expects. See T80077.
+     *
+     * Failure to invert the matrix is typically caused by zero scaled axes
+     * (which can be caused by constraints, even if the input scale isn't zero).
+     *
+     * Internally the join functions use #invert_m4_m4_safe_ortho which creates
+     * an inevitable matrix from one that has one or more degenerate axes.
+     *
+     * In most cases we don't worry about special handling for non-inevitable matrices however for
+     * joining objects there may be flat 2D objects where it's not obvious the scale is zero.
+     * In this case, using #invert_m4_m4_safe_ortho works as well as we can expect,
+     * joining the contents, flattening on the axis that's zero scaled.
+     * If the zero scale is removed, the data on this axis remains un-scaled
+     * (something that wouldn't work for #invert_m4_m4_safe). */
+    float imat_test[4][4];
+    if (!invert_m4_m4(imat_test, ob->obmat)) {
+      BKE_report(op->reports,
+                 RPT_WARNING,
+                 "Active object final transform has one or more zero scaled axes");
+    }
+  }
+
+  return ret;
 }
 
 void OBJECT_OT_join(wmOperatorType *ot)
@@ -2948,8 +3400,8 @@ void OBJECT_OT_join(wmOperatorType *ot)
   ot->idname = "OBJECT_OT_join";
 
   /* api callbacks */
-  ot->exec = join_exec;
-  ot->poll = join_poll;
+  ot->exec = object_join_exec;
+  ot->poll = object_join_poll;
 
   /* flags */
   ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
@@ -2965,17 +3417,16 @@ static bool join_shapes_poll(bContext *C)
 {
   Object *ob = CTX_data_active_object(C);
 
-  if (!ob || ID_IS_LINKED(ob)) {
-    return 0;
+  if (ob == NULL || ob->data == NULL || ID_IS_LINKED(ob) || ID_IS_OVERRIDE_LIBRARY(ob) ||
+      ID_IS_OVERRIDE_LIBRARY(ob->data)) {
+    return false;
   }
 
   /* only meshes supported at the moment */
   if (ob->type == OB_MESH) {
     return ED_operator_screenactive(C);
   }
-  else {
-    return 0;
-  }
+  return false;
 }
 
 static int join_shapes_exec(bContext *C, wmOperator *op)
@@ -2986,13 +3437,13 @@ static int join_shapes_exec(bContext *C, wmOperator *op)
     BKE_report(op->reports, RPT_ERROR, "This data does not support joining in edit mode");
     return OPERATOR_CANCELLED;
   }
-  else if (BKE_object_obdata_is_libdata(ob)) {
+  if (BKE_object_obdata_is_libdata(ob)) {
     BKE_report(op->reports, RPT_ERROR, "Cannot edit external library data");
     return OPERATOR_CANCELLED;
   }
 
   if (ob->type == OB_MESH) {
-    return join_mesh_shapes_exec(C, op);
+    return ED_mesh_shapes_join_objects_exec(C, op);
   }
 
   return OPERATOR_CANCELLED;

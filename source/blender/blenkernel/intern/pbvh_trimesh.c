@@ -1809,7 +1809,7 @@ void BKE_pbvh_build_trimesh(PBVH *bvh,
   bvh->cd_face_node_offset = cd_face_node_offset;
   bvh->tm = tm;
 
-  BKE_pbvh_topology_detail_size_set(bvh, 0.75);
+  BKE_pbvh_bmesh_detail_size_set(bvh, 0.75);
 
   bvh->type = PBVH_TRIMESH;
   bvh->tm_log = log;

@@ -43,7 +43,7 @@
 #  include <stdio.h>
 
 /* needed for some of the validation stuff... */
-#  include "BKE_animsys.h"
+#  include "BKE_anim_data.h"
 #  include "BKE_fcurve.h"
 #  include "BKE_nla.h"
 
@@ -382,7 +382,7 @@ static FCurve *rna_NlaStrip_fcurve_find(NlaStrip *strip,
   }
 
   /* Returns NULL if not found. */
-  return list_find_fcurve(&strip->fcurves, data_path, index);
+  return BKE_fcurve_find(&strip->fcurves, data_path, index);
 }
 
 static NlaStrip *rna_NlaStrip_new(ID *id,

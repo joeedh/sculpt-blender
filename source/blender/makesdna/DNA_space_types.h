@@ -22,8 +22,7 @@
  * Structs for each of space type in the user interface.
  */
 
-#ifndef __DNA_SPACE_TYPES_H__
-#define __DNA_SPACE_TYPES_H__
+#pragma once
 
 #include "DNA_color_types.h" /* for Histogram */
 #include "DNA_defs.h"
@@ -130,6 +129,13 @@ typedef enum eSpaceInfo_RptMask {
 /** \name Properties Editor
  * \{ */
 
+#
+#
+typedef struct SpaceProperties_Runtime {
+  /** For filtering properties displayed in the space. Length defined as UI_MAX_NAME_STR. */
+  char search_string[128];
+} SpaceProperties_Runtime;
+
 /* Properties Editor */
 typedef struct SpaceProperties {
   SpaceLink *next, *prev;
@@ -160,6 +166,9 @@ typedef struct SpaceProperties {
   ID *pinid;
 
   void *texuser;
+
+  /* Doesn't necessarily need to be a pointer, but runtime structs are still written to files. */
+  SpaceProperties_Runtime *runtime;
 } SpaceProperties;
 
 /* button defines (deprecated) */
@@ -212,7 +221,7 @@ typedef enum eSpaceButtons_Context {
   BCONTEXT_SHADERFX = 15,
   BCONTEXT_OUTPUT = 16,
 
-  /* always as last... */
+  /* Keep last. */
   BCONTEXT_TOT,
 } eSpaceButtons_Context;
 
@@ -285,6 +294,7 @@ typedef enum eSpaceOutliner_Flag {
   /* SO_HIDE_KEYINGSETINFO = (1 << 3), */ /* UNUSED */
   SO_SKIP_SORT_ALPHA = (1 << 4),
   SO_SYNC_SELECT = (1 << 5),
+  SO_MODE_COLUMN = (1 << 6),
 } eSpaceOutliner_Flag;
 
 /* SpaceOutliner.filter */
@@ -606,13 +616,14 @@ typedef enum eSpaceSeq_Flag {
   SEQ_DRAW_COLOR_SEPARATED = (1 << 2),
   SEQ_SHOW_SAFE_MARGINS = (1 << 3),
   SEQ_SHOW_GPENCIL = (1 << 4),
-  /* SEQ_NO_DRAW_CFRANUM = (1 << 5), DEPRECATED */
+  SEQ_SHOW_FCURVES = (1 << 5),
   SEQ_USE_ALPHA = (1 << 6),     /* use RGBA display mode for preview */
   SEQ_ALL_WAVEFORMS = (1 << 7), /* draw all waveforms */
   SEQ_NO_WAVEFORMS = (1 << 8),  /* draw no waveforms */
   SEQ_SHOW_SAFE_CENTER = (1 << 9),
   SEQ_SHOW_METADATA = (1 << 10),
   SEQ_SHOW_MARKERS = (1 << 11), /* show markers region */
+  SEQ_ZOOM_TO_FIT = (1 << 12),
 } eSpaceSeq_Flag;
 
 /* SpaceSeq.view */
@@ -801,8 +812,10 @@ typedef enum eFileSel_Action {
 } eFileSel_Action;
 
 /* sfile->params->flag */
-/* Note: short flag, also used as 16 lower bits of flags in link/append code
- *       (WM and BLO code area, see BLO_LibLinkFlags in BLO_readfile.h). */
+/**
+ * \note short flag, also used as 16 lower bits of flags in link/append code
+ * (WM and BLO code area, see #eBLOLibLinkFlags in BLO_readfile.h).
+ */
 typedef enum eFileSel_Params_Flag {
   FILE_PARAMS_FLAG_UNUSED_1 = (1 << 0), /* cleared */
   FILE_RELPATH = (1 << 1),
@@ -813,8 +826,8 @@ typedef enum eFileSel_Params_Flag {
   FILE_PARAMS_FLAG_UNUSED_6 = (1 << 6), /* cleared */
   FILE_DIRSEL_ONLY = (1 << 7),
   FILE_FILTER = (1 << 8),
-  FILE_PARAMS_FLAG_UNUSED_9 = (1 << 9), /* cleared */
-  FILE_GROUP_INSTANCE = (1 << 10),
+  FILE_OBDATA_INSTANCE = (1 << 9),
+  FILE_COLLECTION_INSTANCE = (1 << 10),
   FILE_SORT_INVERT = (1 << 11),
   FILE_HIDE_TOOL_PROPS = (1 << 12),
   FILE_CHECK_EXISTING = (1 << 13),
@@ -833,9 +846,10 @@ typedef enum eFileSel_Params_RenameFlag {
   FILE_PARAMS_RENAME_POSTSCROLL_ACTIVE = 1 << 3,
 } eFileSel_Params_RenameFlag;
 
-/* files in filesel list: file types
- * Note we could use mere values (instead of bitflags) for file types themselves,
- * but since we do not lack of bytes currently...
+/**
+ * Files in the file selector list: file types
+ * Note we could use mere values (instead of bit-flags) for file types themselves,
+ * but since we do not lack of bytes currently.
  */
 typedef enum eFileSel_File_Types {
   FILE_TYPE_BLENDER = (1 << 2),
@@ -1075,7 +1089,9 @@ typedef struct SpaceImage {
   int flag;
 
   char pixel_snap_mode;
-  char _pad2[3];
+  char _pad2[7];
+
+  float uv_opacity;
 
   int tile_grid_shape[2];
 
@@ -1145,8 +1161,9 @@ typedef enum eSpaceImage_Flag {
   SI_FLAG_UNUSED_17 = (1 << 17), /* cleared */
   SI_FLAG_UNUSED_18 = (1 << 18), /* cleared */
 
-  /* this means that the image is drawn until it reaches the view edge,
-   * in the image view, it's unrelated to the 'tile' mode for texface
+  /**
+   * This means that the image is drawn until it reaches the view edge,
+   * in the image view, it's unrelated to UDIM tiles.
    */
   SI_DRAW_TILE = (1 << 19),
   SI_SMOOTH_UV = (1 << 20),
@@ -1217,7 +1234,11 @@ typedef struct SpaceText {
 
   struct Text *text;
 
-  int top, left;
+  /** Determines at what line the top of the text is displayed. */
+  int top;
+
+  /** Determines the horizontal scroll (in columns). */
+  int left;
   char _pad1[4];
 
   short flags;
@@ -1718,7 +1739,7 @@ typedef enum eSpace_Type {
   SPACE_TOPBAR = 21,
   SPACE_STATUSBAR = 22,
 
-  SPACE_TYPE_LAST = SPACE_STATUSBAR,
+#define SPACE_TYPE_LAST SPACE_STATUSBAR
 } eSpace_Type;
 
 /* use for function args */
@@ -1727,5 +1748,3 @@ typedef enum eSpace_Type {
 #define IMG_SIZE_FALLBACK 256
 
 /** \} */
-
-#endif /* __DNA_SPACE_TYPES_H__ */

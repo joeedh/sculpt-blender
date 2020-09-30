@@ -124,6 +124,7 @@ const EnumPropertyItem rna_enum_symmetrize_direction_items[] = {
 #  include "DEG_depsgraph.h"
 
 #  include "ED_gpencil.h"
+#  include "ED_paint.h"
 #  include "ED_particle.h"
 
 static void rna_GPencil_update(Main *UNUSED(bmain), Scene *scene, PointerRNA *UNUSED(ptr))
@@ -228,7 +229,7 @@ static const EnumPropertyItem *rna_ParticleEdit_tool_itemf(bContext *C,
 #  else
   /* use this rather than PE_get_current() - because the editing cache is
    * dependent on the cache being updated which can happen after this UI
-   * draws causing a glitch [#28883] */
+   * draws causing a glitch T28883. */
   ParticleSystem *psys = psys_get_current(ob);
 #  endif
 
@@ -483,7 +484,7 @@ static void rna_ImaPaint_mode_update(bContext *C, PointerRNA *UNUSED(ptr))
 
     /* We assume that changing the current mode will invalidate the uv layers
      * so we need to refresh display. */
-    BKE_paint_proj_mesh_data_check(scene, ob, NULL, NULL, NULL, NULL);
+    ED_paint_proj_mesh_data_check(scene, ob, NULL, NULL, NULL, NULL);
     WM_main_add_notifier(NC_OBJECT | ND_DRAW, NULL);
   }
 }
@@ -495,7 +496,7 @@ static void rna_ImaPaint_stencil_update(bContext *C, PointerRNA *UNUSED(ptr))
   Object *ob = OBACT(view_layer);
 
   if (ob && ob->type == OB_MESH) {
-    BKE_paint_proj_mesh_data_check(scene, ob, NULL, NULL, NULL, NULL);
+    ED_paint_proj_mesh_data_check(scene, ob, NULL, NULL, NULL, NULL);
     WM_main_add_notifier(NC_OBJECT | ND_DRAW, NULL);
   }
 }
@@ -507,14 +508,14 @@ static void rna_ImaPaint_canvas_update(bContext *C, PointerRNA *UNUSED(ptr))
   ViewLayer *view_layer = CTX_data_view_layer(C);
   Object *ob = OBACT(view_layer);
   Object *obedit = OBEDIT_FROM_OBACT(ob);
-  bScreen *sc;
+  bScreen *screen;
   Image *ima = scene->toolsettings->imapaint.canvas;
 
-  for (sc = bmain->screens.first; sc; sc = sc->id.next) {
-    ScrArea *sa;
-    for (sa = sc->areabase.first; sa; sa = sa->next) {
+  for (screen = bmain->screens.first; screen; screen = screen->id.next) {
+    ScrArea *area;
+    for (area = screen->areabase.first; area; area = area->next) {
       SpaceLink *slink;
-      for (slink = sa->spacedata.first; slink; slink = slink->next) {
+      for (slink = area->spacedata.first; slink; slink = slink->next) {
         if (slink->spacetype == SPACE_IMAGE) {
           SpaceImage *sima = (SpaceImage *)slink;
 
@@ -527,7 +528,7 @@ static void rna_ImaPaint_canvas_update(bContext *C, PointerRNA *UNUSED(ptr))
   }
 
   if (ob && ob->type == OB_MESH) {
-    BKE_paint_proj_mesh_data_check(scene, ob, NULL, NULL, NULL, NULL);
+    ED_paint_proj_mesh_data_check(scene, ob, NULL, NULL, NULL, NULL);
     WM_main_add_notifier(NC_OBJECT | ND_DRAW, NULL);
   }
 }
@@ -615,6 +616,14 @@ static void rna_def_paint(BlenderRNA *brna)
   RNA_def_property_boolean_sdna(prop, NULL, "flags", PAINT_FAST_NAVIGATE);
   RNA_def_property_ui_text(
       prop, "Fast Navigate", "For multires, show low resolution while navigating the view");
+  RNA_def_property_update(prop, NC_SCENE | ND_TOOLSETTINGS, NULL);
+
+  prop = RNA_def_property(srna, "use_sculpt_delay_updates", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flags", PAINT_SCULPT_DELAY_UPDATES);
+  RNA_def_property_ui_text(
+      prop,
+      "Delay Viewport Updates",
+      "Update the geometry when it enters the view, providing faster view navigation");
   RNA_def_property_update(prop, NC_SCENE | ND_TOOLSETTINGS, NULL);
 
   prop = RNA_def_property(srna, "input_samples", PROP_INT, PROP_UNSIGNED);
@@ -755,12 +764,6 @@ static void rna_def_sculpt(BlenderRNA *brna)
   RNA_def_property_ui_text(prop, "Lock Z", "Disallow changes to the Z axis of vertices");
   RNA_def_property_update(prop, NC_SCENE | ND_TOOLSETTINGS, NULL);
 
-  prop = RNA_def_property(srna, "use_threaded", PROP_BOOLEAN, PROP_NONE);
-  RNA_def_property_boolean_sdna(prop, NULL, "flags", SCULPT_USE_OPENMP);
-  RNA_def_property_ui_text(
-      prop, "Use OpenMP", "Take advantage of multiple CPU cores to improve sculpting performance");
-  RNA_def_property_update(prop, NC_SCENE | ND_TOOLSETTINGS, NULL);
-
   prop = RNA_def_property(srna, "use_deform_only", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flags", SCULPT_ONLY_DEFORM);
   RNA_def_property_ui_text(prop,
@@ -814,6 +817,34 @@ static void rna_def_sculpt(BlenderRNA *brna)
                            "shading rather than flat shaded");
   RNA_def_property_flag(prop, PROP_CONTEXT_UPDATE);
   RNA_def_property_update(prop, NC_OBJECT | ND_DRAW, "rna_Sculpt_update");
+
+  prop = RNA_def_property(srna, "use_automasking_topology", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "automasking_flags", BRUSH_AUTOMASKING_TOPOLOGY);
+  RNA_def_property_ui_text(prop,
+                           "Topology Auto-masking",
+                           "Affect only vertices connected to the active vertex under the brush");
+  RNA_def_property_update(prop, NC_SCENE | ND_TOOLSETTINGS, NULL);
+
+  prop = RNA_def_property(srna, "use_automasking_face_sets", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "automasking_flags", BRUSH_AUTOMASKING_FACE_SETS);
+  RNA_def_property_ui_text(prop,
+                           "Face Sets Auto-masking",
+                           "Affect only vertices that share Face Sets with the active vertex");
+  RNA_def_property_update(prop, NC_SCENE | ND_TOOLSETTINGS, NULL);
+
+  prop = RNA_def_property(srna, "use_automasking_boundary_edges", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "automasking_flags", BRUSH_AUTOMASKING_BOUNDARY_EDGES);
+  RNA_def_property_ui_text(
+      prop, "Mesh Boundary Auto-masking", "Do not affect non manifold boundary edges");
+  RNA_def_property_update(prop, NC_SCENE | ND_TOOLSETTINGS, NULL);
+
+  prop = RNA_def_property(srna, "use_automasking_boundary_face_sets", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(
+      prop, NULL, "automasking_flags", BRUSH_AUTOMASKING_BOUNDARY_FACE_SETS);
+  RNA_def_property_ui_text(prop,
+                           "Face Sets Boundary Auto-masking",
+                           "Do not affect vertices that belong to a Face Set boundary");
+  RNA_def_property_update(prop, NC_SCENE | ND_TOOLSETTINGS, NULL);
 
   prop = RNA_def_property(srna, "symmetrize_direction", PROP_ENUM, PROP_NONE);
   RNA_def_property_enum_items(prop, rna_enum_symmetrize_direction_items);

@@ -14,18 +14,16 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __FREESTYLE_GRID_DENSITY_PROVIDER_H__
-#define __FREESTYLE_GRID_DENSITY_PROVIDER_H__
+#pragma once
 
 /** \file
  * \ingroup freestyle
  * \brief Class to define a cell grid surrounding the projected image of a scene
  */
 
-/* clang-format off */
-#include <stdexcept>
 #include <algorithm>
 #include <memory>
+#include <stdexcept>
 
 #include "AutoPtrHelper.h"
 #include "OccluderSource.h"
@@ -37,7 +35,6 @@
 #ifdef WITH_CXX_GUARDEDALLOC
 #  include "MEM_guardedalloc.h"
 #endif
-/* clang-format on */
 
 namespace Freestyle {
 
@@ -169,5 +166,3 @@ class GridDensityProviderFactory {
 };
 
 } /* namespace Freestyle */
-
-#endif  // __FREESTYLE_GRID_DENSITY_PROVIDER_H__

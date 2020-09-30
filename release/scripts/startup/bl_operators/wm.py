@@ -87,8 +87,10 @@ def context_path_validate(context, data_path):
             # One of the items in the rna path is None, just ignore this
             value = Ellipsis
         else:
-            # We have a real error in the rna path, don't ignore that
-            raise
+            # Print invalid path, but don't show error to the users and fully
+            # break the UI if the operator is bound to an event like left click.
+            print("context_path_validate error: context.%s not found (invalid keymap entry?)" % data_path)
+            value = Ellipsis
 
     return value
 
@@ -1014,10 +1016,15 @@ def _wm_doc_get_id(doc_id, do_url=True, url_prefix=""):
             else:
                 rna = "bpy.ops.%s.%s" % (class_name, class_prop)
         else:
-            # an RNA setting, common case
-            rna_class = getattr(bpy.types, class_name)
+            # An RNA setting, common case.
 
-            # detect if this is a inherited member and use that name instead
+            # Check the built-in RNA types.
+            rna_class = getattr(bpy.types, class_name, None)
+            if rna_class is None:
+                # Check class for dynamically registered types.
+                rna_class = bpy.types.PropertyGroup.bl_rna_get_subclass_py(class_name)
+
+            # Detect if this is a inherited member and use that name instead.
             rna_parent = rna_class.bl_rna
             rna_prop = rna_parent.properties.get(class_prop)
             if rna_prop:
@@ -1104,8 +1111,8 @@ class WM_OT_doc_view(Operator):
 
     doc_id: doc_id
     if bpy.app.version_cycle in {"release", "rc", "beta"}:
-        _prefix = ("https://docs.blender.org/api/%d.%d%s" %
-                   (bpy.app.version[0], bpy.app.version[1], bpy.app.version_char))
+        _prefix = ("https://docs.blender.org/api/%d.%d" %
+                   (bpy.app.version[0], bpy.app.version[1]))
     else:
         _prefix = ("https://docs.blender.org/api/master")
 
@@ -1161,7 +1168,7 @@ rna_max = FloatProperty(
 
 rna_use_soft_limits = BoolProperty(
     name="Use Soft Limits",
-    description="Limits the Property Value slider to a range, values outside the range must be inputed numerically",
+    description="Limits the Property Value slider to a range, values outside the range must be inputted numerically",
 )
 
 rna_is_overridable_library = BoolProperty(
@@ -1229,7 +1236,7 @@ class WM_OT_properties_edit(Operator):
     def get_value_eval(self):
         try:
             value_eval = eval(self.value)
-            # assert else None -> None, not "None", see [#33431]
+            # assert else None -> None, not "None", see T33431.
             assert(type(value_eval) in {str, float, int, bool, tuple, list})
         except:
             value_eval = self.value
@@ -1239,7 +1246,7 @@ class WM_OT_properties_edit(Operator):
     def get_default_eval(self):
         try:
             default_eval = eval(self.default)
-            # assert else None -> None, not "None", see [#33431]
+            # assert else None -> None, not "None", see T33431.
             assert(type(default_eval) in {str, float, int, bool, tuple, list})
         except:
             default_eval = self.default
@@ -1269,21 +1276,19 @@ class WM_OT_properties_edit(Operator):
 
         # First remove
         item = eval("context.%s" % data_path)
+
+        if (item.id_data and item.id_data.override_library and item.id_data.override_library.reference):
+            self.report({'ERROR'}, "Cannot edit properties from override data")
+            return {'CANCELLED'}
+
         prop_type_old = type(item[prop_old])
 
         rna_idprop_ui_prop_clear(item, prop_old)
-        exec_str = "del item[%r]" % prop_old
-        # print(exec_str)
-        exec(exec_str)
+        del item[prop_old]
 
         # Reassign
-        exec_str = "item[%r] = %s" % (prop, repr(value_eval))
-        # print(exec_str)
-        exec(exec_str)
-
-        exec_str = "item.property_overridable_library_set('[\"%s\"]', %s)" % (prop, self.is_overridable_library)
-        exec(exec_str)
-
+        item[prop] = value_eval
+        item.property_overridable_library_set('["%s"]' % prop, self.is_overridable_library)
         rna_idprop_ui_prop_update(item, prop)
 
         self._last_prop[:] = [prop]
@@ -1342,8 +1347,8 @@ class WM_OT_properties_edit(Operator):
                     for nt in adt.nla_tracks:
                         _update_strips(nt.strips)
 
-        # otherwise existing buttons which reference freed
-        # memory may crash blender [#26510]
+        # Otherwise existing buttons which reference freed
+        # memory may crash Blender T26510.
         # context.area.tag_redraw()
         for win in context.window_manager.windows:
             for area in win.screen.areas:
@@ -1368,9 +1373,14 @@ class WM_OT_properties_edit(Operator):
 
         item = eval("context.%s" % data_path)
 
+        if (item.id_data and item.id_data.override_library and item.id_data.override_library.reference):
+            self.report({'ERROR'}, "Cannot edit properties from override data")
+            return {'CANCELLED'}
+
         # retrieve overridable static
-        exec_str = "item.is_property_overridable_library('[\"%s\"]')" % (self.property)
-        self.is_overridable_library = bool(eval(exec_str))
+        is_overridable = item.is_property_overridable_library('["%s"]' % self.property)
+        self.is_overridable_library = bool(is_overridable)
+
 
         # default default value
         prop_type, is_array = rna_idprop_value_item_type(self.get_value_eval())
@@ -1443,6 +1453,10 @@ class WM_OT_properties_edit(Operator):
         )
 
         layout = self.layout
+
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+
         layout.prop(self, "property")
         layout.prop(self, "value")
 
@@ -1450,22 +1464,21 @@ class WM_OT_properties_edit(Operator):
         proptype, is_array = rna_idprop_value_item_type(value)
 
         row = layout.row()
-        row.enabled = proptype in {int, float}
+        row.enabled = proptype in {int, float, str}
         row.prop(self, "default")
 
-        row = layout.row(align=True)
-        row.prop(self, "min")
-        row.prop(self, "max")
+        col = layout.column(align=True)
+        col.prop(self, "min")
+        col.prop(self, "max")
 
-        row = layout.row()
-        row.prop(self, "use_soft_limits")
-        if bpy.app.use_override_library:
-            row.prop(self, "is_overridable_library")
+        col = layout.column()
+        col.prop(self, "is_overridable_library")
+        col.prop(self, "use_soft_limits")
 
-        row = layout.row(align=True)
-        row.enabled = self.use_soft_limits
-        row.prop(self, "soft_min", text="Soft Min")
-        row.prop(self, "soft_max", text="Soft Max")
+        col = layout.column(align=True)
+        col.enabled = self.use_soft_limits
+        col.prop(self, "soft_min", text="Soft Min")
+        col.prop(self, "soft_max", text="Max")
         layout.prop(self, "description")
 
         if is_array and proptype == float:
@@ -1487,6 +1500,10 @@ class WM_OT_properties_add(Operator):
 
         data_path = self.data_path
         item = eval("context.%s" % data_path)
+
+        if (item.id_data and item.id_data.override_library and item.id_data.override_library.reference):
+            self.report({'ERROR'}, "Cannot add properties to override data")
+            return {'CANCELLED'}
 
         def unique_name(names):
             prop = "prop"
@@ -1540,6 +1557,11 @@ class WM_OT_properties_remove(Operator):
         )
         data_path = self.data_path
         item = eval("context.%s" % data_path)
+
+        if (item.id_data and item.id_data.override_library and item.id_data.override_library.reference):
+            self.report({'ERROR'}, "Cannot remove properties from override data")
+            return {'CANCELLED'}
+
         prop = self.property
         rna_idprop_ui_prop_update(item, prop)
         del item[prop]
@@ -1690,7 +1712,7 @@ class WM_OT_tool_set_by_id(Operator):
                 tool_settings.workspace_tool_type = 'FALLBACK'
             return {'FINISHED'}
         else:
-            self.report({'WARNING'}, f"Tool {self.name!r:s} not found for space {space_type!r:s}.")
+            self.report({'WARNING'}, "Tool %r not found for space %r." % (self.name, space_type))
             return {'CANCELLED'}
 
 
@@ -2209,8 +2231,8 @@ class WM_OT_batch_rename(Operator):
             elif ty == 'STRIP':
                 chars = action.strip_chars
                 chars_strip = (
-                    "{:s}{:s}{:s}"
-                ).format(
+                    "%s%s%s"
+                ) % (
                     string.punctuation if 'PUNCT' in chars else "",
                     string.digits if 'DIGIT' in chars else "",
                     " " if 'SPACE' in chars else "",
@@ -2275,7 +2297,7 @@ class WM_OT_batch_rename(Operator):
         split.prop(self, "data_type", text="")
 
         split = layout.split(factor=0.5)
-        split.label(text="Rename {:d} {:s}:".format(len(self._data[0]), self._data[2]))
+        split.label(text="Rename %d %s:" % (len(self._data[0]), self._data[2]))
         split.row().prop(self, "data_source", expand=True)
 
         for action in self.actions:
@@ -2390,7 +2412,7 @@ class WM_OT_batch_rename(Operator):
                 change_len += 1
             total_len += 1
 
-        self.report({'INFO'}, "Renamed {:d} of {:d} {:s}".format(change_len, total_len, descr))
+        self.report({'INFO'}, "Renamed %d of %d %s" % (change_len, total_len, descr))
 
         return {'FINISHED'}
 
@@ -2423,7 +2445,14 @@ class WM_MT_splash(Menu):
 
         col = split.column()
 
-        col.label()
+        sub = col.split(factor=0.35)
+        row = sub.row()
+        row.alignment = 'RIGHT'
+        row.label(text="Language")
+        prefs = context.preferences
+        sub.prop(prefs.view, "language", text="")
+
+        col.separator()
 
         sub = col.split(factor=0.35)
         row = sub.row()
@@ -2465,14 +2494,6 @@ class WM_MT_splash(Menu):
             label = "Blender Dark"
         sub.menu("USERPREF_MT_interface_theme_presets", text=label)
 
-        # We need to make switching to a language easier first
-        #sub = col.split(factor=0.35)
-        #row = sub.row()
-        #row.alignment = 'RIGHT'
-        # row.label(text="Language:")
-        #prefs = context.preferences
-        #sub.prop(prefs.system, "language", text="")
-
         # Keep height constant
         if not has_select_mouse:
             col.label()
@@ -2484,8 +2505,8 @@ class WM_MT_splash(Menu):
         row = layout.row()
 
         sub = row.row()
-        if bpy.types.PREFERENCES_OT_copy_prev.poll(context):
-            old_version = bpy.types.PREFERENCES_OT_copy_prev.previous_version()
+        old_version = bpy.types.PREFERENCES_OT_copy_prev.previous_version()
+        if bpy.types.PREFERENCES_OT_copy_prev.poll(context) and old_version:
             sub.operator("preferences.copy_prev", text="Load %d.%d Settings" % old_version)
             sub.operator("wm.save_userpref", text="Save New Settings")
         else:
@@ -2554,6 +2575,36 @@ class WM_MT_splash(Menu):
 
         layout.separator()
         layout.separator()
+
+
+class WM_MT_splash_about(Menu):
+    bl_label = "About"
+
+    def draw(self, context):
+
+        layout = self.layout
+        layout.operator_context = 'EXEC_DEFAULT'
+
+        layout.label(text="Blender is free software")
+        layout.label(text="Licensed under the GNU General Public License")
+        layout.separator()
+        layout.separator()
+
+        split = layout.split()
+        split.emboss = 'PULLDOWN_MENU'
+        split.scale_y = 1.3
+
+        col1 = split.column()
+
+        col1.operator("wm.url_open_preset", text="Release Notes", icon='URL').type = 'RELEASE_NOTES'
+        col1.operator("wm.url_open_preset", text="Credits", icon='URL').type = 'CREDITS'
+        col1.operator("wm.url_open", text="License", icon='URL').url = "https://www.blender.org/about/license/"
+
+        col2 = split.column()
+
+        col2.operator("wm.url_open_preset", text="Blender Website", icon='URL').type = 'BLENDER'
+        col2.operator("wm.url_open", text="Blender Store", icon='URL').url = "https://store.blender.org"
+        col2.operator("wm.url_open_preset", text="Development Fund", icon='FUND').type = 'FUND'
 
 
 class WM_OT_drop_blend_file(Operator):
@@ -2625,4 +2676,5 @@ classes = (
     BatchRenameAction,
     WM_OT_batch_rename,
     WM_MT_splash,
+    WM_MT_splash_about,
 )

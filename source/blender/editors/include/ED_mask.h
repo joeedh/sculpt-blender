@@ -21,8 +21,7 @@
  * \ingroup editors
  */
 
-#ifndef __ED_MASK_H__
-#define __ED_MASK_H__
+#pragma once
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,22 +42,25 @@ void ED_keymap_mask(struct wmKeyConfig *keyconf);
 void ED_operatormacros_mask(void);
 
 /* mask_query.c */
-void ED_mask_get_size(struct ScrArea *sa, int *width, int *height);
-void ED_mask_zoom(struct ScrArea *sa, struct ARegion *region, float *zoomx, float *zoomy);
-void ED_mask_get_aspect(struct ScrArea *sa, struct ARegion *region, float *aspx, float *aspy);
+void ED_mask_get_size(struct ScrArea *area, int *width, int *height);
+void ED_mask_zoom(struct ScrArea *area, struct ARegion *region, float *zoomx, float *zoomy);
+void ED_mask_get_aspect(struct ScrArea *area, struct ARegion *region, float *aspx, float *aspy);
 
-void ED_mask_pixelspace_factor(struct ScrArea *sa,
+void ED_mask_pixelspace_factor(struct ScrArea *area,
                                struct ARegion *region,
                                float *scalex,
                                float *scaley);
-void ED_mask_mouse_pos(struct ScrArea *sa, struct ARegion *region, const int mval[2], float co[2]);
+void ED_mask_mouse_pos(struct ScrArea *area,
+                       struct ARegion *region,
+                       const int mval[2],
+                       float co[2]);
 
 void ED_mask_point_pos(
-    struct ScrArea *sa, struct ARegion *region, float x, float y, float *xr, float *yr);
+    struct ScrArea *area, struct ARegion *region, float x, float y, float *xr, float *yr);
 void ED_mask_point_pos__reverse(
-    struct ScrArea *sa, struct ARegion *region, float x, float y, float *xr, float *yr);
+    struct ScrArea *area, struct ARegion *region, float x, float y, float *xr, float *yr);
 
-void ED_mask_cursor_location_get(struct ScrArea *sa, float cursor[2]);
+void ED_mask_cursor_location_get(struct ScrArea *area, float cursor[2]);
 bool ED_mask_selected_minmax(const struct bContext *C, float min[2], float max[2]);
 
 /* mask_draw.c */
@@ -89,8 +91,8 @@ bool ED_mask_layer_shape_auto_key_select(struct Mask *mask, const int frame);
 /* ----------- Mask AnimEdit API ------------------ */
 bool ED_masklayer_frames_looper(struct MaskLayer *mask_layer,
                                 struct Scene *scene,
-                                short (*mask_layer_shape_cb)(struct MaskLayerShape *,
-                                                             struct Scene *));
+                                bool (*mask_layer_shape_cb)(struct MaskLayerShape *,
+                                                            struct Scene *));
 void ED_masklayer_make_cfra_list(struct MaskLayer *mask_layer, ListBase *elems, bool onlysel);
 
 bool ED_masklayer_frame_select_check(struct MaskLayer *mask_layer);
@@ -122,5 +124,3 @@ void mirror_masklayer_frames(struct MaskLayer *mask_layer, short mode);
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __ED_MASK_H__ */

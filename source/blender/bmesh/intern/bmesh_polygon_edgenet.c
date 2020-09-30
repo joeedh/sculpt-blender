@@ -449,9 +449,7 @@ static bool bm_face_split_edgenet_find_loop(BMVert *v_init,
     *r_face_verts_len = i;
     return (i > 2) ? true : false;
   }
-  else {
-    return false;
-  }
+  return false;
 }
 
 /**
@@ -496,7 +494,7 @@ bool BM_face_split_edgenet(BMesh *bm,
   }
 
   /* These arrays used to be stack memory, however they can be
-   * large for single faces with complex edgenets, see: T65980. */
+   * large for single faces with complex edge-nets, see: T65980. */
 
   /* over-alloc (probably 2-4 is only used in most cases), for the biggest-fan */
   edge_order = MEM_mallocN(sizeof(*edge_order) * edge_order_len, __func__);
@@ -1217,9 +1215,7 @@ static bool bm_vert_partial_connect_check_overlap(const int *remap,
   if (UNLIKELY((remap[v_a_index] == v_b_index) || (remap[v_b_index] == v_a_index))) {
     return true;
   }
-  else {
-    return false;
-  }
+  return false;
 }
 
 #endif /* USE_PARTIAL_CONNECT */
@@ -1242,7 +1238,8 @@ bool BM_face_split_edgenet_connect_islands(BMesh *bm,
                                            uint *r_edge_net_new_len)
 {
   /* -------------------------------------------------------------------- */
-  /* This function has 2 main parts.
+  /**
+   * This function has 2 main parts.
    *
    * - Check if there are any holes.
    * - Connect the holes with edges (if any are found).
@@ -1653,8 +1650,8 @@ finally:
     {
       struct TempVertPair *tvp = temp_vert_pairs.list;
       do {
-        /* we must _never_ create connections here
-         * (inface the islands can't have a connection at all) */
+        /* We must _never_ create connections here
+         * (in case the islands can't have a connection at all). */
         BLI_assert(BM_edge_exists(tvp->v_orig, tvp->v_temp) == NULL);
       } while ((tvp = tvp->next));
     }

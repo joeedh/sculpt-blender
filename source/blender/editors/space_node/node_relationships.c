@@ -30,7 +30,7 @@
 #include "BLI_easing.h"
 #include "BLI_math.h"
 
-#include "BKE_animsys.h"
+#include "BKE_anim_data.h"
 #include "BKE_context.h"
 #include "BKE_lib_id.h"
 #include "BKE_main.h"
@@ -76,10 +76,9 @@ static bool ntree_check_nodes_connected_dfs(bNodeTree *ntree, bNode *from, bNode
       if (link->tonode == to) {
         return true;
       }
-      else {
-        if (ntree_check_nodes_connected_dfs(ntree, link->tonode, to)) {
-          return true;
-        }
+
+      if (ntree_check_nodes_connected_dfs(ntree, link->tonode, to)) {
+        return true;
       }
     }
   }
@@ -191,9 +190,7 @@ static int sort_nodes_locx(const void *a, const void *b)
   if (node1->locx > node2->locx) {
     return 1;
   }
-  else {
-    return 0;
-  }
+  return 0;
 }
 
 static bool socket_is_available(bNodeTree *UNUSED(ntree), bNodeSocket *sock, const bool allow_used)
@@ -252,6 +249,12 @@ static bNodeSocket *best_socket_output(bNodeTree *ntree,
     if (sock->type == sock_target->type) {
       return sock;
     }
+  }
+
+  /* Always allow linking to an reroute node. The socket type of the reroute sockets might change
+   * after the link has been created. */
+  if (node->type == NODE_REROUTE) {
+    return node->outputs.first;
   }
 
   return NULL;
@@ -319,7 +322,7 @@ static void snode_autoconnect(Main *bmain,
   ListBase *nodelist = MEM_callocN(sizeof(ListBase), "items_list");
   bNodeListItem *nli;
   bNode *node;
-  int i, numlinks = 0;
+  int numlinks = 0;
 
   for (node = ntree->nodes.first; node; node = node->next) {
     if (node->flag & NODE_SELECT) {
@@ -373,7 +376,7 @@ static void snode_autoconnect(Main *bmain,
       /* no selected inputs, connect by finding suitable match */
       int num_inputs = BLI_listbase_count(&node_to->inputs);
 
-      for (i = 0; i < num_inputs; i++) {
+      for (int i = 0; i < num_inputs; i++) {
 
         /* find the best guess input socket */
         sock_to = best_socket_input(ntree, node_to, i, replace);
@@ -466,7 +469,7 @@ static int node_link_viewer(const bContext *C, bNode *tonode)
 
   if (tonode) {
     /* Find a selected socket that overrides the socket to connect to */
-    for (bNodeSocket *sock2 = tonode->outputs.first; sock2; sock2 = sock2->next) {
+    LISTBASE_FOREACH (bNodeSocket *, sock2, &tonode->outputs) {
       if (!nodeSocketIsHidden(sock2) && sock2->flag & SELECT) {
         sock = sock2;
         break;
@@ -666,6 +669,8 @@ static void node_link_exit(bContext *C, wmOperator *op, bool apply_links)
     }
   }
   ntree->is_updating = false;
+
+  do_tag_update |= ED_node_is_simulation(snode);
 
   ntreeUpdateTree(bmain, ntree);
   snode_notify(C, snode);
@@ -921,9 +926,7 @@ static int node_link_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 
     return OPERATOR_RUNNING_MODAL;
   }
-  else {
-    return OPERATOR_CANCELLED | OPERATOR_PASS_THROUGH;
-  }
+  return OPERATOR_CANCELLED | OPERATOR_PASS_THROUGH;
 }
 
 static void node_link_cancel(bContext *C, wmOperator *op)
@@ -1001,15 +1004,13 @@ void NODE_OT_link_make(wmOperatorType *ot)
 }
 
 /* ********************** Cut Link operator ***************** */
-static bool cut_links_intersect(bNodeLink *link, float mcoords[][2], int tot)
+static bool cut_links_intersect(bNodeLink *link, const float mcoords[][2], int tot)
 {
   float coord_array[NODE_LINK_RESOL + 1][2];
-  int i, b;
 
   if (node_link_bezier_points(NULL, NULL, link, coord_array, NODE_LINK_RESOL)) {
-
-    for (i = 0; i < tot - 1; i++) {
-      for (b = 0; b < NODE_LINK_RESOL; b++) {
+    for (int i = 0; i < tot - 1; i++) {
+      for (int b = 0; b < NODE_LINK_RESOL; b++) {
         if (isect_seg_seg_v2(mcoords[i], mcoords[i + 1], coord_array[b], coord_array[b + 1]) > 0) {
           return 1;
         }
@@ -1069,6 +1070,8 @@ static int cut_links_exec(bContext *C, wmOperator *op)
       }
     }
 
+    do_tag_update |= ED_node_is_simulation(snode);
+
     if (found) {
       ntreeUpdateTree(CTX_data_main(C), snode->edittree);
       snode_notify(C, snode);
@@ -1078,9 +1081,8 @@ static int cut_links_exec(bContext *C, wmOperator *op)
 
       return OPERATOR_FINISHED;
     }
-    else {
-      return OPERATOR_CANCELLED;
-    }
+
+    return OPERATOR_CANCELLED;
   }
 
   return OPERATOR_CANCELLED | OPERATOR_PASS_THROUGH;
@@ -1446,9 +1448,12 @@ void NODE_OT_detach(wmOperatorType *ot)
 /* *********************  automatic node insert on dragging ******************* */
 
 /* prevent duplicate testing code below */
-static bool ed_node_link_conditions(ScrArea *sa, bool test, SpaceNode **r_snode, bNode **r_select)
+static bool ed_node_link_conditions(ScrArea *area,
+                                    bool test,
+                                    SpaceNode **r_snode,
+                                    bNode **r_select)
 {
-  SpaceNode *snode = sa ? sa->spacedata.first : NULL;
+  SpaceNode *snode = area ? area->spacedata.first : NULL;
   bNode *node, *select = NULL;
   bNodeLink *link;
 
@@ -1456,7 +1461,7 @@ static bool ed_node_link_conditions(ScrArea *sa, bool test, SpaceNode **r_snode,
   *r_select = NULL;
 
   /* no unlucky accidents */
-  if (sa == NULL || sa->spacetype != SPACE_NODE) {
+  if (area == NULL || area->spacetype != SPACE_NODE) {
     return false;
   }
 
@@ -1470,9 +1475,7 @@ static bool ed_node_link_conditions(ScrArea *sa, bool test, SpaceNode **r_snode,
       if (select) {
         break;
       }
-      else {
-        select = node;
-      }
+      select = node;
     }
   }
   /* only one selected */
@@ -1501,14 +1504,14 @@ static bool ed_node_link_conditions(ScrArea *sa, bool test, SpaceNode **r_snode,
 }
 
 /* test == 0, clear all intersect flags */
-void ED_node_link_intersect_test(ScrArea *sa, int test)
+void ED_node_link_intersect_test(ScrArea *area, int test)
 {
   bNode *select;
   SpaceNode *snode;
   bNodeLink *link, *selink = NULL;
   float dist_best = FLT_MAX;
 
-  if (!ed_node_link_conditions(sa, test, &snode, &select)) {
+  if (!ed_node_link_conditions(area, test, &snode, &select)) {
     return;
   }
 
@@ -1531,11 +1534,10 @@ void ED_node_link_intersect_test(ScrArea *sa, int test)
 
     if (node_link_bezier_points(NULL, NULL, link, coord_array, NODE_LINK_RESOL)) {
       float dist = FLT_MAX;
-      int i;
 
       /* loop over link coords to find shortest dist to
        * upper left node edge of a intersected line segment */
-      for (i = 0; i < NODE_LINK_RESOL; i++) {
+      for (int i = 0; i < NODE_LINK_RESOL; i++) {
         /* check if the node rect intersetcts the line from this point to next one */
         if (BLI_rctf_isect_segment(&select->totr, coord_array[i], coord_array[i + 1])) {
           /* store the shortest distance to the upper left edge
@@ -1619,8 +1621,8 @@ static void node_parent_offset_apply(NodeInsertOfsData *data, bNode *parent, con
 
   node_offset_apply(parent, offset_x);
 
-  /* flag all childs as offset to prevent them from being offset
-   * separately (they've already moved with the parent) */
+  /* Flag all children as offset to prevent them from being offset
+   * separately (they've already moved with the parent). */
   for (node = data->ntree->nodes.first; node; node = node->next) {
     if (nodeIsChildOf(parent, node)) {
       /* NODE_TEST is used to flag nodes that shouldn't be offset (again) */
@@ -1654,7 +1656,7 @@ static bool node_link_insert_offset_frame_chain_cb(bNode *fromnode,
 }
 
 /**
- * Applies NodeInsertOfsData.offset_x to all childs of \a parent
+ * Applies #NodeInsertOfsData.offset_x to all children of \a parent.
  */
 static void node_link_insert_offset_frame_chains(const bNodeTree *ntree,
                                                  const bNode *parent,
@@ -1919,14 +1921,14 @@ void NODE_OT_insert_offset(wmOperatorType *ot)
 }
 
 /* assumes link with NODE_LINKFLAG_HILITE set */
-void ED_node_link_insert(Main *bmain, ScrArea *sa)
+void ED_node_link_insert(Main *bmain, ScrArea *area)
 {
   bNode *node, *select;
   SpaceNode *snode;
   bNodeLink *link;
   bNodeSocket *sockto;
 
-  if (!ed_node_link_conditions(sa, true, &snode, &select)) {
+  if (!ed_node_link_conditions(area, true, &snode, &select)) {
     return;
   }
 

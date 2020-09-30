@@ -243,7 +243,7 @@ static void seq_disk_cache_get_files(SeqDiskCache *disk_cache, char *path)
     if (is_dir && !FILENAME_IS_CURRPAR(file)) {
       char subpath[FILE_MAX];
       BLI_strncpy(subpath, fl->path, sizeof(subpath));
-      BLI_add_slash(subpath);
+      BLI_path_slash_ensure(subpath);
       seq_disk_cache_get_files(disk_cache, subpath);
     }
 
@@ -439,12 +439,12 @@ static void seq_disk_cache_delete_invalid_files(SeqDiskCache *disk_cache,
   DiskCacheFile *next_file, *cache_file = disk_cache->files.first;
   char cache_dir[FILE_MAX];
   seq_disk_cache_get_dir(disk_cache, scene, seq, cache_dir, sizeof(cache_dir));
-  BLI_add_slash(cache_dir);
+  BLI_path_slash_ensure(cache_dir);
 
   while (cache_file) {
     next_file = cache_file->next;
     if (cache_file->cache_type & invalidate_types) {
-      if (strcmp(cache_dir, cache_file->dir) == 0) {
+      if (STREQ(cache_dir, cache_file->dir)) {
         int cfra_start = seq_cache_frame_index_to_cfra(seq, cache_file->start_frame);
         if (cfra_start > range_start && cfra_start <= range_end) {
           seq_disk_cache_delete_file(disk_cache, cache_file);
@@ -483,10 +483,9 @@ static size_t deflate_imbuf_to_file(ImBuf *ibuf,
     return BLI_gzip_mem_to_file_at_pos(
         ibuf->rect, header_entry->size_raw, file, header_entry->offset, level);
   }
-  else {
-    return BLI_gzip_mem_to_file_at_pos(
-        ibuf->rect_float, header_entry->size_raw, file, header_entry->offset, level);
-  }
+
+  return BLI_gzip_mem_to_file_at_pos(
+      ibuf->rect_float, header_entry->size_raw, file, header_entry->offset, level);
 }
 
 static size_t inflate_file_to_imbuf(ImBuf *ibuf, FILE *file, DiskCacheHeaderEntry *header_entry)
@@ -495,10 +494,9 @@ static size_t inflate_file_to_imbuf(ImBuf *ibuf, FILE *file, DiskCacheHeaderEntr
     return BLI_ungzip_file_to_mem_at_pos(
         ibuf->rect, header_entry->size_raw, file, header_entry->offset);
   }
-  else {
-    return BLI_ungzip_file_to_mem_at_pos(
-        ibuf->rect_float, header_entry->size_raw, file, header_entry->offset);
-  }
+
+  return BLI_ungzip_file_to_mem_at_pos(
+      ibuf->rect_float, header_entry->size_raw, file, header_entry->offset);
 }
 
 static void seq_disk_cache_read_header(FILE *file, DiskCacheHeader *header)
@@ -1153,7 +1151,8 @@ void BKE_sequencer_cache_cleanup(Scene *scene)
 void BKE_sequencer_cache_cleanup_sequence(Scene *scene,
                                           Sequence *seq,
                                           Sequence *seq_changed,
-                                          int invalidate_types)
+                                          int invalidate_types,
+                                          bool force_seq_changed_range)
 {
   SeqCache *cache = seq_cache_get_from_scene(scene);
   if (!cache) {
@@ -1169,12 +1168,14 @@ void BKE_sequencer_cache_cleanup_sequence(Scene *scene,
   int range_start = seq_changed->startdisp;
   int range_end = seq_changed->enddisp;
 
-  if (seq->startdisp > range_start) {
-    range_start = seq->startdisp;
-  }
+  if (!force_seq_changed_range) {
+    if (seq->startdisp > range_start) {
+      range_start = seq->startdisp;
+    }
 
-  if (seq->enddisp < range_end) {
-    range_end = seq->enddisp;
+    if (seq->enddisp < range_end) {
+      range_end = seq->enddisp;
+    }
   }
 
   int invalidate_composite = invalidate_types & SEQ_CACHE_STORE_FINAL_OUT;
@@ -1214,12 +1215,21 @@ void BKE_sequencer_cache_cleanup_sequence(Scene *scene,
 struct ImBuf *BKE_sequencer_cache_get(
     const SeqRenderData *context, Sequence *seq, float cfra, int type, bool skip_disk_cache)
 {
+
+  if (context->skip_cache || context->is_proxy_render || !seq) {
+    return NULL;
+  }
+
   Scene *scene = context->scene;
 
   if (context->is_prefetch_render) {
     context = BKE_sequencer_prefetch_get_original_context(context);
     scene = context->scene;
     seq = BKE_sequencer_prefetch_get_original_sequence(seq, scene);
+  }
+
+  if (!seq) {
+    return NULL;
   }
 
   if (!scene->ed->cache) {
@@ -1284,15 +1294,18 @@ bool BKE_sequencer_cache_put_if_possible(const SeqRenderData *context,
     seq = BKE_sequencer_prefetch_get_original_sequence(seq, scene);
   }
 
+  if (!seq) {
+    return false;
+  }
+
   if (BKE_sequencer_cache_recycle_item(scene)) {
     BKE_sequencer_cache_put(context, seq, cfra, type, ibuf, cost, skip_disk_cache);
     return true;
   }
-  else {
-    seq_cache_set_temp_cache_linked(scene, scene->ed->cache->last_key);
-    scene->ed->cache->last_key = NULL;
-    return false;
-  }
+
+  seq_cache_set_temp_cache_linked(scene, scene->ed->cache->last_key);
+  scene->ed->cache->last_key = NULL;
+  return false;
 }
 
 void BKE_sequencer_cache_put(const SeqRenderData *context,
@@ -1303,16 +1316,17 @@ void BKE_sequencer_cache_put(const SeqRenderData *context,
                              float cost,
                              bool skip_disk_cache)
 {
+  if (i == NULL || context->skip_cache || context->is_proxy_render || !seq) {
+    return;
+  }
+
   Scene *scene = context->scene;
 
   if (context->is_prefetch_render) {
     context = BKE_sequencer_prefetch_get_original_context(context);
     scene = context->scene;
     seq = BKE_sequencer_prefetch_get_original_sequence(seq, scene);
-  }
-
-  if (i == NULL || context->skip_cache || context->is_proxy_render || !seq) {
-    return;
+    BLI_assert(seq != NULL);
   }
 
   /* Prevent reinserting, it breaks cache key linking. */

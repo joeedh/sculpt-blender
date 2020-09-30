@@ -42,6 +42,7 @@
 #include "DNA_brush_types.h"
 #include "DNA_userdef_types.h"
 
+#include "BLI_listbase.h"
 #include "BLI_math.h"
 #include "BLI_rect.h"
 #include "BLI_string.h"
@@ -62,7 +63,7 @@
 #include "BLT_translation.h"
 
 #ifdef WITH_PYTHON
-#  include "BPY_extern.h"
+#  include "BPY_extern_run.h"
 #endif
 
 #include "ED_screen.h"
@@ -166,7 +167,6 @@ static void ui_tooltip_region_draw_cb(const bContext *UNUSED(C), ARegion *region
 
   float background_color[3];
   float tone_bg;
-  int i;
 
   wmOrtho2_region_pixelspace(region);
 
@@ -203,7 +203,7 @@ static void ui_tooltip_region_draw_cb(const bContext *UNUSED(C), ARegion *region
   bbox.xmin += 0.5f * pad_px; /* add padding to the text */
   bbox.ymax -= 0.25f * pad_px;
 
-  for (i = 0; i < data->fields_len; i++) {
+  for (int i = 0; i < data->fields_len; i++) {
     const uiTooltipField *field = &data->fields[i];
     const uiTooltipField *field_next = (i + 1) != data->fields_len ? &data->fields[i + 1] : NULL;
 
@@ -220,8 +220,8 @@ static void ui_tooltip_region_draw_cb(const bContext *UNUSED(C), ARegion *region
 
       /* offset to the end of the last line */
       if (field->text_suffix) {
-        float xofs = field->geom.x_pos;
-        float yofs = data->lineh * (field->geom.lines - 1);
+        const float xofs = field->geom.x_pos;
+        const float yofs = data->lineh * (field->geom.lines - 1);
         bbox.xmin += xofs;
         bbox.ymax -= yofs;
 
@@ -318,7 +318,7 @@ static bool ui_tooltip_data_append_from_keymap(bContext *C, uiTooltipData *data,
   const int fields_len_init = data->fields_len;
   char buf[512];
 
-  for (wmKeyMapItem *kmi = keymap->items.first; kmi; kmi = kmi->next) {
+  LISTBASE_FOREACH (wmKeyMapItem *, kmi, &keymap->items) {
     wmOperatorType *ot = WM_operatortype_find(kmi->idname, true);
     if (ot != NULL) {
       /* Tip */
@@ -393,15 +393,15 @@ static uiTooltipData *ui_tooltip_data_from_tool(bContext *C, uiBut *but, bool is
   bool has_valid_context = true;
   const char *has_valid_context_error = IFACE_("Unsupported context");
   {
-    ScrArea *sa = CTX_wm_area(C);
-    if (sa == NULL) {
+    ScrArea *area = CTX_wm_area(C);
+    if (area == NULL) {
       has_valid_context = false;
     }
     else {
       PropertyRNA *prop = RNA_struct_find_property(but->opptr, "space_type");
       if (RNA_property_is_set(but->opptr, prop)) {
         const int space_type_prop = RNA_property_enum_get(but->opptr, prop);
-        if (space_type_prop != sa->spacetype) {
+        if (space_type_prop != area->spacetype) {
           has_valid_context = false;
         }
       }
@@ -432,7 +432,7 @@ static uiTooltipData *ui_tooltip_data_from_tool(bContext *C, uiBut *but, bool is
     if (has_valid_context == false) {
       expr_result = BLI_strdup(has_valid_context_error);
     }
-    else if (BPY_execute_string_as_string(C, expr_imports, expr, true, &expr_result)) {
+    else if (BPY_run_string_as_string(C, expr_imports, expr, __func__, &expr_result)) {
       if (STREQ(expr_result, "")) {
         MEM_freeN(expr_result);
         expr_result = NULL;
@@ -489,7 +489,7 @@ static uiTooltipData *ui_tooltip_data_from_tool(bContext *C, uiBut *but, bool is
     if (has_valid_context == false) {
       expr_result = BLI_strdup(has_valid_context_error);
     }
-    else if (BPY_execute_string_as_string(C, expr_imports, expr, true, &expr_result)) {
+    else if (BPY_run_string_as_string(C, expr_imports, expr, __func__, &expr_result)) {
       if (STREQ(expr_result, ".")) {
         MEM_freeN(expr_result);
         expr_result = NULL;
@@ -540,7 +540,7 @@ static uiTooltipData *ui_tooltip_data_from_tool(bContext *C, uiBut *but, bool is
     }
 
     if (shortcut == NULL) {
-      ePaintMode paint_mode = BKE_paintmode_get_active_from_context(C);
+      const ePaintMode paint_mode = BKE_paintmode_get_active_from_context(C);
       const char *tool_attr = BKE_paint_get_tool_prop_id_from_paintmode(paint_mode);
       if (tool_attr != NULL) {
         const EnumPropertyItem *items = BKE_paint_get_tool_enum_from_paintmode(paint_mode);
@@ -593,10 +593,10 @@ static uiTooltipData *ui_tooltip_data_from_tool(bContext *C, uiBut *but, bool is
         if (has_valid_context == false) {
           shortcut = BLI_strdup(has_valid_context_error);
         }
-        else if (BPY_execute_string_as_intptr(C, expr_imports, expr, true, &expr_result)) {
+        else if (BPY_run_string_as_intptr(C, expr_imports, expr, __func__, &expr_result)) {
           if (expr_result != 0) {
             wmKeyMap *keymap = (wmKeyMap *)expr_result;
-            for (wmKeyMapItem *kmi = keymap->items.first; kmi; kmi = kmi->next) {
+            LISTBASE_FOREACH (wmKeyMapItem *, kmi, &keymap->items) {
               if (STREQ(kmi->idname, but->optype->idname)) {
                 char tool_id_test[MAX_NAME];
                 RNA_string_get(kmi->ptr, "name", tool_id_test);
@@ -657,8 +657,8 @@ static uiTooltipData *ui_tooltip_data_from_tool(bContext *C, uiBut *but, bool is
       if (has_valid_context == false) {
         /* pass */
       }
-      else if (BPY_execute_string_as_string_and_size(
-                   C, expr_imports, expr, true, &expr_result, &expr_result_len)) {
+      else if (BPY_run_string_as_string_and_size(
+                   C, expr_imports, expr, __func__, &expr_result, &expr_result_len)) {
         /* pass. */
       }
     }
@@ -735,7 +735,7 @@ static uiTooltipData *ui_tooltip_data_from_tool(bContext *C, uiBut *but, bool is
     if (has_valid_context == false) {
       /* pass */
     }
-    else if (BPY_execute_string_as_intptr(C, expr_imports, expr, true, &expr_result)) {
+    else if (BPY_run_string_as_intptr(C, expr_imports, expr, __func__, &expr_result)) {
       if (expr_result != 0) {
         {
           uiTooltipField *field = text_field_add(data,
@@ -755,16 +755,14 @@ static uiTooltipData *ui_tooltip_data_from_tool(bContext *C, uiBut *but, bool is
     }
   }
 #else
-  UNUSED_VARS(is_label);
+  UNUSED_VARS(is_label, has_valid_context, has_valid_context_error);
 #endif /* WITH_PYTHON */
 
   if (data->fields_len == 0) {
     MEM_freeN(data);
     return NULL;
   }
-  else {
-    return data;
-  }
+  return data;
 }
 
 static uiTooltipData *ui_tooltip_data_from_button(bContext *C, uiBut *but)
@@ -885,7 +883,7 @@ static uiTooltipData *ui_tooltip_data_from_button(bContext *C, uiBut *but)
   }
 
   if (but->rnaprop) {
-    int unit_type = UI_but_unit_type_get(but);
+    const int unit_type = UI_but_unit_type_get(but);
 
     if (unit_type == PROP_UNIT_ROTATION) {
       if (RNA_property_type(but->rnaprop) == PROP_FLOAT) {
@@ -922,7 +920,7 @@ static uiTooltipData *ui_tooltip_data_from_button(bContext *C, uiBut *but)
                                                    .style = UI_TIP_STYLE_NORMAL,
                                                    .color_id = UI_TIP_LC_NORMAL,
                                                });
-        field->text = BLI_sprintfN(TIP_("Library: %s"), id->lib->name);
+        field->text = BLI_sprintfN(TIP_("Library: %s"), id->lib->filepath);
       }
     }
   }
@@ -1044,9 +1042,7 @@ static uiTooltipData *ui_tooltip_data_from_button(bContext *C, uiBut *but)
     MEM_freeN(data);
     return NULL;
   }
-  else {
-    return data;
-  }
+  return data;
 }
 
 static uiTooltipData *ui_tooltip_data_from_gizmo(bContext *C, wmGizmo *gz)
@@ -1078,7 +1074,7 @@ static uiTooltipData *ui_tooltip_data_from_gizmo(bContext *C, wmGizmo *gz)
                                 NULL;
       if (gzop != NULL) {
         /* Description */
-        char *info = WM_operatortype_description(C, gzop->type, &gzop->ptr);
+        char *info = WM_operatortype_description_or_name(C, gzop->type, &gzop->ptr);
 
         if (info != NULL) {
           char *text = info;
@@ -1143,9 +1139,7 @@ static uiTooltipData *ui_tooltip_data_from_gizmo(bContext *C, wmGizmo *gz)
     MEM_freeN(data);
     return NULL;
   }
-  else {
-    return data;
-  }
+  return data;
 }
 
 static ARegion *ui_tooltip_create_with_data(bContext *C,
@@ -1391,7 +1385,7 @@ static ARegion *ui_tooltip_create_with_data(bContext *C,
   }
 
   /* adds subwindow */
-  ED_region_floating_initialize(region);
+  ED_region_floating_init(region);
 
   /* notify change and redraw */
   ED_region_tag_redraw(region);
@@ -1450,11 +1444,12 @@ ARegion *UI_tooltip_create_from_button(bContext *C, ARegion *butregion, uiBut *b
   }
   else {
     init_position[0] = BLI_rctf_cent_x(&but->rect);
-    init_position[1] = but->rect.ymin - (UI_POPUP_MARGIN / 2);
+    init_position[1] = but->rect.ymin;
     if (butregion) {
       ui_block_to_window_fl(butregion, but->block, &init_position[0], &init_position[1]);
       init_position[0] = win->eventstate->x;
     }
+    init_position[1] -= (UI_POPUP_MARGIN / 2);
   }
 
   ARegion *region = ui_tooltip_create_with_data(
@@ -1480,9 +1475,9 @@ ARegion *UI_tooltip_create_from_gizmo(bContext *C, wmGizmo *gz)
   return ui_tooltip_create_with_data(C, data, init_position, NULL, aspect);
 }
 
-void UI_tooltip_free(bContext *C, bScreen *sc, ARegion *region)
+void UI_tooltip_free(bContext *C, bScreen *screen, ARegion *region)
 {
-  ui_region_temp_remove(C, sc, region);
+  ui_region_temp_remove(C, screen, region);
 }
 
 /** \} */

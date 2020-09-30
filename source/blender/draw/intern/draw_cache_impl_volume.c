@@ -27,6 +27,7 @@
 
 #include "MEM_guardedalloc.h"
 
+#include "BLI_listbase.h"
 #include "BLI_math_base.h"
 #include "BLI_math_vector.h"
 #include "BLI_utildefines.h"
@@ -60,6 +61,9 @@ typedef struct VolumeBatchCache {
     GPUVertBuf *pos_nor_in_order;
     GPUBatch *batch;
   } face_wire;
+
+  /* Surface for selection */
+  GPUBatch *selection_surface;
 
   /* settings to determine if cache is invalid */
   bool is_dirty;
@@ -123,7 +127,7 @@ static void volume_batch_cache_clear(Volume *volume)
     return;
   }
 
-  for (DRWVolumeGrid *grid = cache->grids.first; grid; grid = grid->next) {
+  LISTBASE_FOREACH (DRWVolumeGrid *, grid, &cache->grids) {
     MEM_SAFE_FREE(grid->name);
     DRW_TEXTURE_FREE_SAFE(grid->texture);
   }
@@ -131,6 +135,7 @@ static void volume_batch_cache_clear(Volume *volume)
 
   GPU_VERTBUF_DISCARD_SAFE(cache->face_wire.pos_nor_in_order);
   GPU_BATCH_DISCARD_SAFE(cache->face_wire.batch);
+  GPU_BATCH_DISCARD_SAFE(cache->selection_surface);
 }
 
 void DRW_volume_batch_cache_free(Volume *volume)
@@ -162,7 +167,7 @@ static void drw_volume_wireframe_cb(
   GPU_vertbuf_attr_fill_stride(cache->face_wire.pos_nor_in_order, nor_id, 0, &packed_normal);
 
   /* Create wiredata. */
-  GPUVertBuf *vbo_wiredata = MEM_callocN(sizeof(GPUVertBuf), __func__);
+  GPUVertBuf *vbo_wiredata = GPU_vertbuf_calloc();
   DRW_vertbuf_create_wiredata(vbo_wiredata, totvert);
 
   if (volume->display.wireframe_type == VOLUME_WIREFRAME_POINTS) {
@@ -206,6 +211,49 @@ GPUBatch *DRW_volume_batch_cache_get_wireframes_face(Volume *volume)
   }
 
   return cache->face_wire.batch;
+}
+
+static void drw_volume_selection_surface_cb(
+    void *userdata, float (*verts)[3], int (*tris)[3], int totvert, int tottris)
+{
+  Volume *volume = userdata;
+  VolumeBatchCache *cache = volume->batch_cache;
+
+  static GPUVertFormat format = {0};
+  static uint pos_id;
+  if (format.attr_len == 0) {
+    pos_id = GPU_vertformat_attr_add(&format, "pos", GPU_COMP_F32, 3, GPU_FETCH_FLOAT);
+  }
+
+  /* Create vertex buffer. */
+  GPUVertBuf *vbo_surface = GPU_vertbuf_create_with_format(&format);
+  GPU_vertbuf_data_alloc(vbo_surface, totvert);
+  GPU_vertbuf_attr_fill(vbo_surface, pos_id, verts);
+
+  /* Create index buffer. */
+  GPUIndexBufBuilder elb;
+  GPU_indexbuf_init(&elb, GPU_PRIM_TRIS, tottris, totvert);
+  for (int i = 0; i < tottris; i++) {
+    GPU_indexbuf_add_tri_verts(&elb, UNPACK3(tris[i]));
+  }
+  GPUIndexBuf *ibo_surface = GPU_indexbuf_build(&elb);
+
+  cache->selection_surface = GPU_batch_create_ex(
+      GPU_PRIM_TRIS, vbo_surface, ibo_surface, GPU_BATCH_OWNS_VBO | GPU_BATCH_OWNS_INDEX);
+}
+
+GPUBatch *DRW_volume_batch_cache_get_selection_surface(Volume *volume)
+{
+  VolumeBatchCache *cache = volume_batch_cache_get(volume);
+  if (cache->selection_surface == NULL) {
+    VolumeGrid *volume_grid = BKE_volume_grid_active_get(volume);
+    if (volume_grid == NULL) {
+      return NULL;
+    }
+    BKE_volume_grid_selection_surface(
+        volume, volume_grid, drw_volume_selection_surface_cb, volume);
+  }
+  return cache->selection_surface;
 }
 
 static DRWVolumeGrid *volume_grid_cache_get(Volume *volume,
@@ -257,16 +305,12 @@ static DRWVolumeGrid *volume_grid_cache_get(Volume *volume,
     BKE_volume_grid_dense_voxels(volume, grid, dense_min, dense_max, voxels);
 
     /* Create GPU texture. */
-    cache_grid->texture = GPU_texture_create_3d(resolution[0],
-                                                resolution[1],
-                                                resolution[2],
-                                                (channels == 3) ? GPU_RGB16F : GPU_R16F,
-                                                voxels,
-                                                NULL);
+    eGPUTextureFormat format = (channels == 3) ? GPU_RGB16F : GPU_R16F;
+    cache_grid->texture = GPU_texture_create_3d(
+        "volume_grid", UNPACK3(resolution), 1, format, GPU_DATA_FLOAT, voxels);
 
-    GPU_texture_bind(cache_grid->texture, 0);
-    GPU_texture_swizzle_channel_auto(cache_grid->texture, channels);
-    GPU_texture_unbind(cache_grid->texture);
+    GPU_texture_swizzle_set(cache_grid->texture, (channels == 3) ? "rgb1" : "rrr1");
+    GPU_texture_wrap_mode(cache_grid->texture, false, false);
 
     MEM_freeN(voxels);
 

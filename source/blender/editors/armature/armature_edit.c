@@ -54,6 +54,7 @@
 #include "WM_types.h"
 
 #include "ED_armature.h"
+#include "ED_outliner.h"
 #include "ED_screen.h"
 #include "ED_view3d.h"
 
@@ -139,7 +140,16 @@ void ED_armature_origin_set(
     mul_m4_v3(ob->imat, cent);
   }
   else {
-    if (around == V3D_AROUND_CENTER_MEDIAN) {
+    if (around == V3D_AROUND_CENTER_BOUNDS) {
+      float min[3], max[3];
+      INIT_MINMAX(min, max);
+      for (ebone = arm->edbo->first; ebone; ebone = ebone->next) {
+        minmax_v3v3_v3(min, max, ebone->head);
+        minmax_v3v3_v3(min, max, ebone->tail);
+      }
+      mid_v3_v3v3(cent, min, max);
+    }
+    else { /* #V3D_AROUND_CENTER_MEDIAN. */
       int total = 0;
       zero_v3(cent);
       for (ebone = arm->edbo->first; ebone; ebone = ebone->next) {
@@ -150,15 +160,6 @@ void ED_armature_origin_set(
       if (total) {
         mul_v3_fl(cent, 1.0f / (float)total);
       }
-    }
-    else {
-      float min[3], max[3];
-      INIT_MINMAX(min, max);
-      for (ebone = arm->edbo->first; ebone; ebone = ebone->next) {
-        minmax_v3v3_v3(min, max, ebone->head);
-        minmax_v3v3_v3(min, max, ebone->tail);
-      }
-      mid_v3_v3v3(cent, min, max);
     }
   }
 
@@ -499,7 +500,7 @@ static int armature_roll_clear_exec(bContext *C, wmOperator *op)
     bArmature *arm = ob->data;
     bool changed = false;
 
-    for (EditBone *ebone = arm->edbo->first; ebone; ebone = ebone->next) {
+    LISTBASE_FOREACH (EditBone *, ebone, arm->edbo) {
       if (EBONE_VISIBLE(arm, ebone) && EBONE_EDITABLE(ebone)) {
         /* Roll func is a callback which assumes that all is well. */
         ebone->roll = roll;
@@ -508,7 +509,7 @@ static int armature_roll_clear_exec(bContext *C, wmOperator *op)
     }
 
     if (arm->flag & ARM_MIRROR_EDIT) {
-      for (EditBone *ebone = arm->edbo->first; ebone; ebone = ebone->next) {
+      LISTBASE_FOREACH (EditBone *, ebone, arm->edbo) {
         if ((EBONE_VISIBLE(arm, ebone) && EBONE_EDITABLE(ebone)) == 0) {
           EditBone *ebone_mirr = ED_armature_ebone_get_mirrored(arm->edbo, ebone);
           if (ebone_mirr && (EBONE_VISIBLE(arm, ebone_mirr) && EBONE_EDITABLE(ebone_mirr))) {
@@ -727,7 +728,8 @@ static int armature_fill_bones_exec(bContext *C, wmOperator *op)
     BKE_report(op->reports, RPT_ERROR, "No joints selected");
     return OPERATOR_CANCELLED;
   }
-  else if (mixed_object_error) {
+
+  if (mixed_object_error) {
     BKE_report(op->reports, RPT_ERROR, "Bones for different objects selected");
     BLI_freelistN(&points);
     return OPERATOR_CANCELLED;
@@ -929,9 +931,9 @@ static int armature_switch_direction_exec(bContext *C, wmOperator *UNUSED(op))
     /* ensure that mirror bones will also be operated on */
     armature_tag_select_mirrored(arm);
 
-    /* clear BONE_TRANSFORM flags
-     * - used to prevent duplicate/canceling operations from occurring [#34123]
-     * - BONE_DONE cannot be used here as that's already used for mirroring
+    /* Clear BONE_TRANSFORM flags
+     * - Used to prevent duplicate/canceling operations from occurring T34123.
+     * - #BONE_DONE cannot be used here as that's already used for mirroring.
      */
     armature_clear_swap_done_flags(arm);
 
@@ -947,7 +949,7 @@ static int armature_switch_direction_exec(bContext *C, wmOperator *UNUSED(op))
          */
         parent = ebo->parent;
 
-        /* skip bone if already handled... [#34123] */
+        /* skip bone if already handled, see T34123. */
         if ((ebo->flag & BONE_TRANSFORM) == 0) {
           /* only if selected and editable */
           if (EBONE_VISIBLE(arm, ebo) && EBONE_EDITABLE(ebo)) {
@@ -1092,7 +1094,8 @@ static int armature_align_bones_exec(bContext *C, wmOperator *op)
     BKE_report(op->reports, RPT_ERROR, "Operation requires an active bone");
     return OPERATOR_CANCELLED;
   }
-  else if (arm->flag & ARM_MIRROR_EDIT) {
+
+  if (arm->flag & ARM_MIRROR_EDIT) {
     /* For X-Axis Mirror Editing option, we may need a mirror copy of actbone
      * - if there's a mirrored copy of selbone, try to find a mirrored copy of actbone
      *   (i.e.  selbone="child.L" and actbone="parent.L", find "child.R" and "parent.R").
@@ -1189,13 +1192,13 @@ static int armature_split_exec(bContext *C, wmOperator *UNUSED(op))
     Object *ob = objects[ob_index];
     bArmature *arm = ob->data;
 
-    for (EditBone *bone = arm->edbo->first; bone; bone = bone->next) {
+    LISTBASE_FOREACH (EditBone *, bone, arm->edbo) {
       if (bone->parent && (bone->flag & BONE_SELECTED) != (bone->parent->flag & BONE_SELECTED)) {
         bone->parent = NULL;
         bone->flag &= ~BONE_CONNECTED;
       }
     }
-    for (EditBone *bone = arm->edbo->first; bone; bone = bone->next) {
+    LISTBASE_FOREACH (EditBone *, bone, arm->edbo) {
       ED_armature_ebone_select_set(bone, (bone->flag & BONE_SELECTED) != 0);
     }
 
@@ -1283,6 +1286,7 @@ static int armature_delete_selected_exec(bContext *C, wmOperator *UNUSED(op))
       BKE_pose_tag_recalc(CTX_data_main(C), obedit->pose);
       WM_event_add_notifier(C, NC_OBJECT | ND_BONE_SELECT, obedit);
       DEG_id_tag_update(&arm->id, ID_RECALC_SELECT);
+      ED_outliner_select_sync_from_edit_bone_tag(C);
     }
   }
   MEM_freeN(objects);
@@ -1458,6 +1462,7 @@ static int armature_dissolve_selected_exec(bContext *C, wmOperator *UNUSED(op))
       ED_armature_edit_refresh_layer_used(arm);
       WM_event_add_notifier(C, NC_OBJECT | ND_BONE_SELECT, obedit);
       DEG_id_tag_update(&arm->id, ID_RECALC_SELECT);
+      ED_outliner_select_sync_from_edit_bone_tag(C);
     }
   }
   MEM_freeN(objects);
@@ -1508,7 +1513,7 @@ static int armature_hide_exec(bContext *C, wmOperator *op)
     bArmature *arm = obedit->data;
     bool changed = false;
 
-    for (EditBone *ebone = arm->edbo->first; ebone; ebone = ebone->next) {
+    LISTBASE_FOREACH (EditBone *, ebone, arm->edbo) {
       if (EBONE_VISIBLE(arm, ebone)) {
         if ((ebone->flag & BONE_SELECTED) != invert) {
           ebone->flag &= ~(BONE_TIPSEL | BONE_SELECTED | BONE_ROOTSEL);
@@ -1567,7 +1572,7 @@ static int armature_reveal_exec(bContext *C, wmOperator *op)
     bArmature *arm = obedit->data;
     bool changed = false;
 
-    for (EditBone *ebone = arm->edbo->first; ebone; ebone = ebone->next) {
+    LISTBASE_FOREACH (EditBone *, ebone, arm->edbo) {
       if (arm->layer & ebone->layer) {
         if (ebone->flag & BONE_HIDDEN_A) {
           if (!(ebone->flag & BONE_UNSELECTABLE)) {

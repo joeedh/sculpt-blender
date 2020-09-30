@@ -57,7 +57,7 @@
 
 /* ******************** default callbacks for nla space ***************** */
 
-static SpaceLink *nla_new(const ScrArea *sa, const Scene *scene)
+static SpaceLink *nla_create(const ScrArea *area, const Scene *scene)
 {
   ARegion *region;
   SpaceNla *snla;
@@ -105,7 +105,7 @@ static SpaceLink *nla_new(const ScrArea *sa, const Scene *scene)
   region->regiontype = RGN_TYPE_WINDOW;
 
   region->v2d.tot.xmin = (float)(SFRA - 10);
-  region->v2d.tot.ymin = (float)(-sa->winy) / 3.0f;
+  region->v2d.tot.ymin = (float)(-area->winy) / 3.0f;
   region->v2d.tot.xmax = (float)(EFRA + 10);
   region->v2d.tot.ymax = 0.0f;
 
@@ -120,7 +120,7 @@ static SpaceLink *nla_new(const ScrArea *sa, const Scene *scene)
   region->v2d.minzoom = 0.01f;
   region->v2d.maxzoom = 50;
   region->v2d.scroll = (V2D_SCROLL_BOTTOM | V2D_SCROLL_HORIZONTAL_HANDLES);
-  region->v2d.scroll |= (V2D_SCROLL_RIGHT);
+  region->v2d.scroll |= V2D_SCROLL_RIGHT;
   region->v2d.keepzoom = V2D_LOCKZOOM_Y;
   region->v2d.keepofs = V2D_KEEPOFS_Y;
   region->v2d.align = V2D_ALIGN_NO_POS_Y;
@@ -141,9 +141,9 @@ static void nla_free(SpaceLink *sl)
 }
 
 /* spacetype; init callback */
-static void nla_init(struct wmWindowManager *wm, ScrArea *sa)
+static void nla_init(struct wmWindowManager *wm, ScrArea *area)
 {
-  SpaceNla *snla = (SpaceNla *)sa->spacedata.first;
+  SpaceNla *snla = (SpaceNla *)area->spacedata.first;
 
   /* init dopesheet data if non-existent (i.e. for old files) */
   if (snla->ads == NULL) {
@@ -151,7 +151,7 @@ static void nla_init(struct wmWindowManager *wm, ScrArea *sa)
     snla->ads->source = (ID *)WM_window_get_active_scene(wm->winactive);
   }
 
-  ED_area_tag_refresh(sa);
+  ED_area_tag_refresh(area);
 }
 
 static SpaceLink *nla_duplicate(SpaceLink *sl)
@@ -191,11 +191,9 @@ static void nla_channel_region_draw(const bContext *C, ARegion *region)
 {
   bAnimContext ac;
   View2D *v2d = &region->v2d;
-  View2DScrollers *scrollers;
 
   /* clear and setup matrix */
   UI_ThemeClearColor(TH_BACK);
-  GPU_clear(GPU_COLOR_BIT);
 
   UI_view2d_view_ortho(v2d);
 
@@ -211,9 +209,7 @@ static void nla_channel_region_draw(const bContext *C, ARegion *region)
   UI_view2d_view_restore(C);
 
   /* scrollers */
-  scrollers = UI_view2d_scrollers_calc(v2d, NULL);
-  UI_view2d_scrollers_draw(v2d, scrollers);
-  UI_view2d_scrollers_free(scrollers);
+  UI_view2d_scrollers_draw(v2d, NULL);
 }
 
 /* add handlers, stuff you only do once or on area/region changes */
@@ -237,12 +233,10 @@ static void nla_main_region_draw(const bContext *C, ARegion *region)
   Scene *scene = CTX_data_scene(C);
   bAnimContext ac;
   View2D *v2d = &region->v2d;
-  View2DScrollers *scrollers;
   short cfra_flag = 0;
 
   /* clear and setup matrix */
   UI_ThemeClearColor(TH_BACK);
-  GPU_clear(GPU_COLOR_BIT);
 
   UI_view2d_view_ortho(v2d);
 
@@ -263,13 +257,10 @@ static void nla_main_region_draw(const bContext *C, ARegion *region)
     UI_view2d_text_cache_draw(region);
   }
 
-  UI_view2d_view_ortho(v2d);
-
   /* current frame */
   if (snla->flag & SNLA_DRAWTIME) {
     cfra_flag |= DRAWCFRA_UNIT_SECONDS;
   }
-  ANIM_draw_cfra(C, v2d, cfra_flag);
 
   /* markers */
   UI_view2d_view_orthoSpecial(region, v2d, 1);
@@ -290,11 +281,20 @@ static void nla_main_region_draw(const bContext *C, ARegion *region)
   UI_view2d_view_restore(C);
 
   ED_time_scrub_draw(region, scene, snla->flag & SNLA_DRAWTIME, true);
+}
+
+static void nla_main_region_draw_overlay(const bContext *C, ARegion *region)
+{
+  /* draw entirely, view changes should be handled here */
+  const SpaceNla *snla = CTX_wm_space_nla(C);
+  const Scene *scene = CTX_data_scene(C);
+  View2D *v2d = &region->v2d;
+
+  /* scrubbing region */
+  ED_time_scrub_draw_current_frame(region, scene, snla->flag & SNLA_DRAWTIME, true);
 
   /* scrollers */
-  scrollers = UI_view2d_scrollers_calc(v2d, NULL);
-  UI_view2d_scrollers_draw(v2d, scrollers);
-  UI_view2d_scrollers_free(scrollers);
+  UI_view2d_scrollers_draw(v2d, NULL);
 }
 
 /* add handlers, stuff you only do once or on area/region changes */
@@ -325,7 +325,7 @@ static void nla_buttons_region_draw(const bContext *C, ARegion *region)
 }
 
 static void nla_region_listener(wmWindow *UNUSED(win),
-                                ScrArea *UNUSED(sa),
+                                ScrArea *UNUSED(area),
                                 ARegion *region,
                                 wmNotifier *wmn,
                                 const Scene *UNUSED(scene))
@@ -365,7 +365,7 @@ static void nla_region_listener(wmWindow *UNUSED(win),
 }
 
 static void nla_main_region_listener(wmWindow *UNUSED(win),
-                                     ScrArea *UNUSED(sa),
+                                     ScrArea *UNUSED(area),
                                      ARegion *region,
                                      wmNotifier *wmn,
                                      const Scene *UNUSED(scene))
@@ -427,12 +427,12 @@ static void nla_main_region_message_subscribe(const struct bContext *UNUSED(C),
                                               struct WorkSpace *UNUSED(workspace),
                                               struct Scene *scene,
                                               struct bScreen *screen,
-                                              struct ScrArea *sa,
+                                              struct ScrArea *area,
                                               struct ARegion *region,
                                               struct wmMsgBus *mbus)
 {
   PointerRNA ptr;
-  RNA_pointer_create(&screen->id, &RNA_SpaceNLA, sa->spacedata.first, &ptr);
+  RNA_pointer_create(&screen->id, &RNA_SpaceNLA, area->spacedata.first, &ptr);
 
   wmMsgSubscribeValue msg_sub_value_region_tag_redraw = {
       .owner = region,
@@ -466,7 +466,7 @@ static void nla_main_region_message_subscribe(const struct bContext *UNUSED(C),
 }
 
 static void nla_channel_region_listener(wmWindow *UNUSED(win),
-                                        ScrArea *UNUSED(sa),
+                                        ScrArea *UNUSED(area),
                                         ARegion *region,
                                         wmNotifier *wmn,
                                         const Scene *UNUSED(scene))
@@ -512,12 +512,12 @@ static void nla_channel_region_message_subscribe(const struct bContext *UNUSED(C
                                                  struct WorkSpace *UNUSED(workspace),
                                                  struct Scene *UNUSED(scene),
                                                  struct bScreen *screen,
-                                                 struct ScrArea *sa,
+                                                 struct ScrArea *area,
                                                  struct ARegion *region,
                                                  struct wmMsgBus *mbus)
 {
   PointerRNA ptr;
-  RNA_pointer_create(&screen->id, &RNA_SpaceNLA, sa->spacedata.first, &ptr);
+  RNA_pointer_create(&screen->id, &RNA_SpaceNLA, area->spacedata.first, &ptr);
 
   wmMsgSubscribeValue msg_sub_value_region_tag_redraw = {
       .owner = region,
@@ -543,24 +543,27 @@ static void nla_channel_region_message_subscribe(const struct bContext *UNUSED(C
 }
 
 /* editor level listener */
-static void nla_listener(wmWindow *UNUSED(win), ScrArea *sa, wmNotifier *wmn, Scene *UNUSED(scene))
+static void nla_listener(wmWindow *UNUSED(win),
+                         ScrArea *area,
+                         wmNotifier *wmn,
+                         Scene *UNUSED(scene))
 {
   /* context changes */
   switch (wmn->category) {
     case NC_ANIMATION:
       // TODO: filter specific types of changes?
-      ED_area_tag_refresh(sa);
+      ED_area_tag_refresh(area);
       break;
     case NC_SCENE:
 #if 0
       switch (wmn->data) {
         case ND_OB_ACTIVE:
         case ND_OB_SELECT:
-          ED_area_tag_refresh(sa);
+          ED_area_tag_refresh(area);
           break;
       }
 #endif
-      ED_area_tag_refresh(sa);
+      ED_area_tag_refresh(area);
       break;
     case NC_OBJECT:
       switch (wmn->data) {
@@ -568,19 +571,19 @@ static void nla_listener(wmWindow *UNUSED(win), ScrArea *sa, wmNotifier *wmn, Sc
           /* do nothing */
           break;
         default:
-          ED_area_tag_refresh(sa);
+          ED_area_tag_refresh(area);
           break;
       }
       break;
     case NC_SPACE:
       if (wmn->data == ND_SPACE_NLA) {
-        ED_area_tag_redraw(sa);
+        ED_area_tag_redraw(area);
       }
       break;
   }
 }
 
-static void nla_id_remap(ScrArea *UNUSED(sa), SpaceLink *slink, ID *old_id, ID *new_id)
+static void nla_id_remap(ScrArea *UNUSED(area), SpaceLink *slink, ID *old_id, ID *new_id)
 {
   SpaceNla *snla = (SpaceNla *)slink;
 
@@ -603,7 +606,7 @@ void ED_spacetype_nla(void)
   st->spaceid = SPACE_NLA;
   strncpy(st->name, "NLA", BKE_ST_MAXNAME);
 
-  st->new = nla_new;
+  st->create = nla_create;
   st->free = nla_free;
   st->init = nla_init;
   st->duplicate = nla_duplicate;
@@ -617,6 +620,7 @@ void ED_spacetype_nla(void)
   art->regionid = RGN_TYPE_WINDOW;
   art->init = nla_main_region_init;
   art->draw = nla_main_region_draw;
+  art->draw_overlay = nla_main_region_draw_overlay;
   art->listener = nla_main_region_listener;
   art->message_subscribe = nla_main_region_message_subscribe;
   art->keymapflag = ED_KEYMAP_VIEW2D | ED_KEYMAP_ANIMATION | ED_KEYMAP_FRAMES;

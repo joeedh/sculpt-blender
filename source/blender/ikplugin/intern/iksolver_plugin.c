@@ -412,8 +412,8 @@ static void execute_posetree(struct Depsgraph *depsgraph,
      * segment's basis. otherwise rotation limits do not work on the
      * local transform of the segment itself. */
     copy_m4_m4(rootmat, pchan->parent->pose_mat);
-    /* However, we do not want to get (i.e. reverse) parent's scale, as it generates [#31008]
-     * kind of nasty bugs... */
+    /* However, we do not want to get (i.e. reverse) parent's scale,
+     * as it generates T31008 kind of nasty bugs. */
     normalize_m4(rootmat);
   }
   else {
@@ -452,21 +452,20 @@ static void execute_posetree(struct Depsgraph *depsgraph,
         /* don't solve IK when we are setting the pole angle */
         break;
       }
-      else {
-        mul_m4_m4m4(goal, goalinv, rootmat);
-        copy_v3_v3(polepos, goal[3]);
-        poleconstrain = 1;
 
-        /* for pole targets, we blend the result of the ik solver
-         * instead of the target position, otherwise we can't get
-         * a smooth transition */
-        resultblend = 1;
-        resultinf = target->con->enforce;
+      mul_m4_m4m4(goal, goalinv, rootmat);
+      copy_v3_v3(polepos, goal[3]);
+      poleconstrain = 1;
 
-        if (data->flag & CONSTRAINT_IK_GETANGLE) {
-          poleangledata = data;
-          data->flag &= ~CONSTRAINT_IK_GETANGLE;
-        }
+      /* for pole targets, we blend the result of the ik solver
+       * instead of the target position, otherwise we can't get
+       * a smooth transition */
+      resultblend = 1;
+      resultinf = target->con->enforce;
+
+      if (data->flag & CONSTRAINT_IK_GETANGLE) {
+        poleangledata = data;
+        data->flag &= ~CONSTRAINT_IK_GETANGLE;
       }
     }
 
@@ -584,8 +583,8 @@ static void free_posetree(PoseTree *tree)
   MEM_freeN(tree);
 }
 
-///----------------------------------------
-/// Plugin API for legacy iksolver
+/* ------------------------------
+ * Plugin API for legacy iksolver */
 
 void iksolver_initialize_tree(struct Depsgraph *UNUSED(depsgraph),
                               struct Scene *UNUSED(scene),
@@ -654,7 +653,7 @@ void iksolver_release_tree(struct Scene *UNUSED(scene), struct Object *ob, float
 
 void iksolver_clear_data(bPose *pose)
 {
-  for (bPoseChannel *pchan = pose->chanbase.first; pchan; pchan = pchan->next) {
+  LISTBASE_FOREACH (bPoseChannel *, pchan, &pose->chanbase) {
     if ((pchan->flag & POSE_IKTREE) == 0) {
       continue;
     }

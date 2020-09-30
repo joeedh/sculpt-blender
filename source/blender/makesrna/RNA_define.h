@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __RNA_DEFINE_H__
-#define __RNA_DEFINE_H__
+#pragma once
 
 /** \file
  * \ingroup RNA
@@ -50,6 +49,7 @@ void RNA_free(BlenderRNA *brna);
 void RNA_define_verify_sdna(bool verify);
 void RNA_define_animate_sdna(bool animate);
 void RNA_define_fallback_property_update(int noteflag, const char *updatefunc);
+void RNA_define_lib_overridable(const bool make_overridable);
 
 void RNA_init(void);
 void RNA_exit(void);
@@ -76,7 +76,7 @@ void RNA_def_struct_identifier_no_struct_map(StructRNA *srna, const char *identi
 void RNA_def_struct_identifier(BlenderRNA *brna, StructRNA *srna, const char *identifier);
 void RNA_def_struct_ui_text(StructRNA *srna, const char *name, const char *description);
 void RNA_def_struct_ui_icon(StructRNA *srna, int icon);
-void RNA_struct_free_extension(StructRNA *srna, ExtensionRNA *ext);
+void RNA_struct_free_extension(StructRNA *srna, ExtensionRNA *rna_ext);
 void RNA_struct_free(BlenderRNA *brna, StructRNA *srna);
 
 void RNA_def_struct_translation_context(StructRNA *srna, const char *context);
@@ -509,7 +509,8 @@ int RNA_def_property_free_identifier(StructOrFunctionRNA *cont_, const char *ide
 const char *RNA_property_typename(PropertyType type);
 #define IS_DNATYPE_FLOAT_COMPAT(_str) (strcmp(_str, "float") == 0 || strcmp(_str, "double") == 0)
 #define IS_DNATYPE_INT_COMPAT(_str) \
-  (strcmp(_str, "int") == 0 || strcmp(_str, "short") == 0 || strcmp(_str, "char") == 0)
+  (strcmp(_str, "int") == 0 || strcmp(_str, "short") == 0 || strcmp(_str, "char") == 0 || \
+   strcmp(_str, "uchar") == 0 || strcmp(_str, "ushort") == 0)
 #define IS_DNATYPE_BOOLEAN_COMPAT(_str) \
   (IS_DNATYPE_INT_COMPAT(_str) || strcmp(_str, "int64_t") == 0 || strcmp(_str, "uint64_t") == 0)
 
@@ -530,5 +531,3 @@ extern const float rna_default_scale_3d[3];
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __RNA_DEFINE_H__ */

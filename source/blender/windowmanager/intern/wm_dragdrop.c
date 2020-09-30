@@ -39,7 +39,6 @@
 #include "BKE_context.h"
 #include "BKE_idtype.h"
 
-#include "GPU_glew.h"
 #include "GPU_shader.h"
 #include "GPU_state.h"
 #include "GPU_viewport.h"
@@ -204,7 +203,7 @@ static const char *dropbox_active(bContext *C,
     if (handler_base->type == WM_HANDLER_TYPE_DROPBOX) {
       wmEventHandler_Dropbox *handler = (wmEventHandler_Dropbox *)handler_base;
       if (handler->dropboxes) {
-        for (wmDropBox *drop = handler->dropboxes->first; drop; drop = drop->next) {
+        LISTBASE_FOREACH (wmDropBox *, drop, handler->dropboxes) {
           const char *tooltip = NULL;
           if (drop->poll(C, drag, event, &tooltip)) {
             /* XXX Doing translation here might not be ideal, but later we have no more
@@ -222,7 +221,7 @@ static const char *dropbox_active(bContext *C,
 static const char *wm_dropbox_active(bContext *C, wmDrag *drag, const wmEvent *event)
 {
   wmWindow *win = CTX_wm_window(C);
-  ScrArea *sa = CTX_wm_area(C);
+  ScrArea *area = CTX_wm_area(C);
   ARegion *region = CTX_wm_region(C);
   const char *name;
 
@@ -231,7 +230,7 @@ static const char *wm_dropbox_active(bContext *C, wmDrag *drag, const wmEvent *e
     return name;
   }
 
-  name = dropbox_active(C, &sa->handlers, drag, event);
+  name = dropbox_active(C, &area->handlers, drag, event);
   if (name) {
     return name;
   }
@@ -290,14 +289,14 @@ void wm_drags_check_ops(bContext *C, const wmEvent *event)
 void WM_drag_add_ID(wmDrag *drag, ID *id, ID *from_parent)
 {
   /* Don't drag the same ID twice. */
-  for (wmDragID *drag_id = drag->ids.first; drag_id; drag_id = drag_id->next) {
+  LISTBASE_FOREACH (wmDragID *, drag_id, &drag->ids) {
     if (drag_id->id == id) {
       if (drag_id->from_parent == NULL) {
         drag_id->from_parent = from_parent;
       }
       return;
     }
-    else if (GS(drag_id->id->name) != GS(id->name)) {
+    if (GS(drag_id->id->name) != GS(id->name)) {
       BLI_assert(!"All dragged IDs must have the same type");
       return;
     }
@@ -356,7 +355,7 @@ static const char *wm_drag_name(wmDrag *drag)
       if (single) {
         return id->name + 2;
       }
-      else if (id) {
+      if (id) {
         return BKE_idtype_idcode_to_name_plural(GS(id->name));
       }
       break;
@@ -401,8 +400,8 @@ void wm_drags_draw(bContext *C, wmWindow *win, rcti *rect)
     rect->ymin = rect->ymax = cursory;
   }
 
-  /* XXX todo, multiline drag draws... but maybe not, more types mixed wont work well */
-  GPU_blend(true);
+  /* Should we support multi-line drag draws? Maybe not, more types mixed wont work well. */
+  GPU_blend(GPU_BLEND_ALPHA);
   for (drag = wm->drags.first; drag; drag = drag->next) {
     const uchar text_col[] = {255, 255, 255, 255};
     int iconsize = UI_DPI_ICON_SIZE;
@@ -424,9 +423,8 @@ void wm_drags_draw(bContext *C, wmWindow *win, rcti *rect)
                                y,
                                drag->imb->x,
                                drag->imb->y,
-                               GL_RGBA,
-                               GL_UNSIGNED_BYTE,
-                               GL_NEAREST,
+                               GPU_RGBA8,
+                               false,
                                drag->imb->rect,
                                drag->scale,
                                drag->scale,
@@ -497,5 +495,5 @@ void wm_drags_draw(bContext *C, wmWindow *win, rcti *rect)
       }
     }
   }
-  GPU_blend(false);
+  GPU_blend(GPU_BLEND_NONE);
 }

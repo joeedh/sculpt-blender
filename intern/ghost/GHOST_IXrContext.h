@@ -18,8 +18,7 @@
  * \ingroup GHOST
  */
 
-#ifndef __GHOST_IXRCONTEXT_H__
-#define __GHOST_IXRCONTEXT_H__
+#pragma once
 
 #include "GHOST_Types.h"
 
@@ -37,6 +36,6 @@ class GHOST_IXrContext {
   virtual void setGraphicsContextBindFuncs(GHOST_XrGraphicsContextBindFn bind_fn,
                                            GHOST_XrGraphicsContextUnbindFn unbind_fn) = 0;
   virtual void setDrawViewFunc(GHOST_XrDrawViewFn draw_view_fn) = 0;
-};
 
-#endif  // __GHOST_IXRCONTEXT_H__
+  virtual bool needsUpsideDownDrawing() const = 0;
+};

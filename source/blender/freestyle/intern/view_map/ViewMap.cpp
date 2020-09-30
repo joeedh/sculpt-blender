@@ -19,15 +19,13 @@
  * \brief Classes to define a View Map (ViewVertex, ViewEdge, etc.)
  */
 
-/* clang-format off */
 #include <float.h>
 
 #include "ViewMap.h"
-#include "ViewMapIterators.h"
 #include "ViewMapAdvancedIterators.h"
+#include "ViewMapIterators.h"
 
 #include "../geometry/GeomUtils.h"
-/* clang-format on */
 
 namespace Freestyle {
 
@@ -325,18 +323,16 @@ static bool ViewEdgeComp(ViewVertex::directedViewEdge &dve1, ViewVertex::directe
     if (v2.y() < 0) {
       return true;
     }
-    else {
-      return (v1.x() > v2.x());
-    }
+
+    return (v1.x() > v2.x());
   }
-  else {
-    if (v2.y() > 0) {
-      return false;
-    }
-    else {
-      return (v1.x() < v2.x());
-    }
+
+  if (v2.y() > 0) {
+    return false;
   }
+
+  return (v1.x() < v2.x());
+
   return false;
 }
 

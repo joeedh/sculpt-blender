@@ -122,48 +122,52 @@ template<class T> void Grid<T>::swap(Grid<T> &other)
   mData = dswap;
 }
 
-template<class T> void Grid<T>::load(string name)
+template<class T> int Grid<T>::load(string name)
 {
   if (name.find_last_of('.') == string::npos)
     errMsg("file '" + name + "' does not have an extension");
   string ext = name.substr(name.find_last_of('.'));
   if (ext == ".raw")
-    readGridRaw(name, this);
+    return readGridRaw(name, this);
   else if (ext == ".uni")
-    readGridUni(name, this);
+    return readGridUni(name, this);
   else if (ext == ".vol")
-    readGridVol(name, this);
+    return readGridVol(name, this);
   else if (ext == ".npz")
-    readGridNumpy(name, this);
-#if OPENVDB == 1
-  else if (ext == ".vdb")
-    readGridVDB(name, this);
-#endif  // OPENVDB==1
+    return readGridNumpy(name, this);
+  else if (ext == ".vdb") {
+    std::vector<PbClass *> grids;
+    grids.push_back(this);
+    return readObjectsVDB(name, &grids);
+  }
   else
     errMsg("file '" + name + "' filetype not supported");
+  return 0;
 }
 
-template<class T> void Grid<T>::save(string name)
+template<class T> int Grid<T>::save(string name)
 {
   if (name.find_last_of('.') == string::npos)
     errMsg("file '" + name + "' does not have an extension");
   string ext = name.substr(name.find_last_of('.'));
   if (ext == ".raw")
-    writeGridRaw(name, this);
+    return writeGridRaw(name, this);
   else if (ext == ".uni")
-    writeGridUni(name, this);
+    return writeGridUni(name, this);
   else if (ext == ".vol")
-    writeGridVol(name, this);
-#if OPENVDB == 1
-  else if (ext == ".vdb")
-    writeGridVDB(name, this);
-#endif  // OPENVDB==1
+    return writeGridVol(name, this);
   else if (ext == ".npz")
-    writeGridNumpy(name, this);
+    return writeGridNumpy(name, this);
+  else if (ext == ".vdb") {
+    std::vector<PbClass *> grids;
+    grids.push_back(this);
+    return writeObjectsVDB(name, &grids);
+  }
   else if (ext == ".txt")
-    writeGridTxt(name, this);
+    return writeGridTxt(name, this);
   else
     errMsg("file '" + name + "' filetype not supported");
+  return 0;
 }
 
 //******************************************************************************
@@ -853,6 +857,147 @@ template<class T> struct knPermuteAxes : public KernelBase {
   int axis2;
 };
 
+struct knJoinVec : public KernelBase {
+  knJoinVec(Grid<Vec3> &a, const Grid<Vec3> &b, bool keepMax)
+      : KernelBase(&a, 0), a(a), b(b), keepMax(keepMax)
+  {
+    runMessage();
+    run();
+  }
+  inline void op(IndexInt idx, Grid<Vec3> &a, const Grid<Vec3> &b, bool keepMax) const
+  {
+    Real a1 = normSquare(a[idx]);
+    Real b1 = normSquare(b[idx]);
+    a[idx] = (keepMax) ? max(a1, b1) : min(a1, b1);
+  }
+  inline Grid<Vec3> &getArg0()
+  {
+    return a;
+  }
+  typedef Grid<Vec3> type0;
+  inline const Grid<Vec3> &getArg1()
+  {
+    return b;
+  }
+  typedef Grid<Vec3> type1;
+  inline bool &getArg2()
+  {
+    return keepMax;
+  }
+  typedef bool type2;
+  void runMessage()
+  {
+    debMsg("Executing kernel knJoinVec ", 3);
+    debMsg("Kernel range"
+               << " x " << maxX << " y " << maxY << " z " << minZ << " - " << maxZ << " ",
+           4);
+  };
+  void operator()(const tbb::blocked_range<IndexInt> &__r) const
+  {
+    for (IndexInt idx = __r.begin(); idx != (IndexInt)__r.end(); idx++)
+      op(idx, a, b, keepMax);
+  }
+  void run()
+  {
+    tbb::parallel_for(tbb::blocked_range<IndexInt>(0, size), *this);
+  }
+  Grid<Vec3> &a;
+  const Grid<Vec3> &b;
+  bool keepMax;
+};
+struct knJoinInt : public KernelBase {
+  knJoinInt(Grid<int> &a, const Grid<int> &b, bool keepMax)
+      : KernelBase(&a, 0), a(a), b(b), keepMax(keepMax)
+  {
+    runMessage();
+    run();
+  }
+  inline void op(IndexInt idx, Grid<int> &a, const Grid<int> &b, bool keepMax) const
+  {
+    a[idx] = (keepMax) ? max(a[idx], b[idx]) : min(a[idx], b[idx]);
+  }
+  inline Grid<int> &getArg0()
+  {
+    return a;
+  }
+  typedef Grid<int> type0;
+  inline const Grid<int> &getArg1()
+  {
+    return b;
+  }
+  typedef Grid<int> type1;
+  inline bool &getArg2()
+  {
+    return keepMax;
+  }
+  typedef bool type2;
+  void runMessage()
+  {
+    debMsg("Executing kernel knJoinInt ", 3);
+    debMsg("Kernel range"
+               << " x " << maxX << " y " << maxY << " z " << minZ << " - " << maxZ << " ",
+           4);
+  };
+  void operator()(const tbb::blocked_range<IndexInt> &__r) const
+  {
+    for (IndexInt idx = __r.begin(); idx != (IndexInt)__r.end(); idx++)
+      op(idx, a, b, keepMax);
+  }
+  void run()
+  {
+    tbb::parallel_for(tbb::blocked_range<IndexInt>(0, size), *this);
+  }
+  Grid<int> &a;
+  const Grid<int> &b;
+  bool keepMax;
+};
+struct knJoinReal : public KernelBase {
+  knJoinReal(Grid<Real> &a, const Grid<Real> &b, bool keepMax)
+      : KernelBase(&a, 0), a(a), b(b), keepMax(keepMax)
+  {
+    runMessage();
+    run();
+  }
+  inline void op(IndexInt idx, Grid<Real> &a, const Grid<Real> &b, bool keepMax) const
+  {
+    a[idx] = (keepMax) ? max(a[idx], b[idx]) : min(a[idx], b[idx]);
+  }
+  inline Grid<Real> &getArg0()
+  {
+    return a;
+  }
+  typedef Grid<Real> type0;
+  inline const Grid<Real> &getArg1()
+  {
+    return b;
+  }
+  typedef Grid<Real> type1;
+  inline bool &getArg2()
+  {
+    return keepMax;
+  }
+  typedef bool type2;
+  void runMessage()
+  {
+    debMsg("Executing kernel knJoinReal ", 3);
+    debMsg("Kernel range"
+               << " x " << maxX << " y " << maxY << " z " << minZ << " - " << maxZ << " ",
+           4);
+  };
+  void operator()(const tbb::blocked_range<IndexInt> &__r) const
+  {
+    for (IndexInt idx = __r.begin(); idx != (IndexInt)__r.end(); idx++)
+      op(idx, a, b, keepMax);
+  }
+  void run()
+  {
+    tbb::parallel_for(tbb::blocked_range<IndexInt>(0, size), *this);
+  }
+  Grid<Real> &a;
+  const Grid<Real> &b;
+  bool keepMax;
+};
+
 template<class T> Grid<T> &Grid<T>::safeDivide(const Grid<T> &a)
 {
   knGridSafeDiv<T>(*this, a);
@@ -927,6 +1072,18 @@ void Grid<T>::permuteAxesCopyToGrid(int axis0, int axis1, int axis2, Grid<T> &ou
                 sizeTarget[axis2] == size[2],
             "Permuted grids must have the same dimensions!");
   knPermuteAxes<T>(*this, out, axis0, axis1, axis2);
+}
+template<> void Grid<Vec3>::join(const Grid<Vec3> &a, bool keepMax)
+{
+  knJoinVec(*this, a, keepMax);
+}
+template<> void Grid<int>::join(const Grid<int> &a, bool keepMax)
+{
+  knJoinInt(*this, a, keepMax);
+}
+template<> void Grid<Real>::join(const Grid<Real> &a, bool keepMax)
+{
+  knJoinReal(*this, a, keepMax);
 }
 
 template<> Real Grid<Real>::getMax() const

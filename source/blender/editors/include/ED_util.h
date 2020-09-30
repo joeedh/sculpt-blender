@@ -21,8 +21,7 @@
  * \ingroup editors
  */
 
-#ifndef __ED_UTIL_H__
-#define __ED_UTIL_H__
+#pragma once
 
 #include "BLI_compiler_attrs.h"
 
@@ -48,7 +47,7 @@ bool ED_editors_flush_edits_for_object(struct Main *bmain, struct Object *ob);
 bool ED_editors_flush_edits_ex(struct Main *bmain, bool for_render, bool check_needs_flush);
 bool ED_editors_flush_edits(struct Main *bmain);
 
-void ED_spacedata_id_remap(struct ScrArea *sa,
+void ED_spacedata_id_remap(struct ScrArea *area,
                            struct SpaceLink *sl,
                            struct ID *old_id,
                            struct ID *new_id);
@@ -71,5 +70,3 @@ void unpack_menu(struct bContext *C,
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __ED_UTIL_H__ */

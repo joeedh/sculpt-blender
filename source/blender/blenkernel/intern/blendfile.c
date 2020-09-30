@@ -76,7 +76,7 @@
 static bool clean_paths_visit_cb(void *UNUSED(userdata), char *path_dst, const char *path_src)
 {
   strcpy(path_dst, path_src);
-  BLI_path_native_slash(path_dst);
+  BLI_path_slash_native(path_dst);
   return !STREQ(path_dst, path_src);
 }
 
@@ -88,7 +88,7 @@ static void clean_paths(Main *main)
   BKE_bpath_traverse_main(main, clean_paths_visit_cb, BKE_BPATH_TRAVERSE_SKIP_MULTIFILE, NULL);
 
   for (scene = main->scenes.first; scene; scene = scene->id.next) {
-    BLI_path_native_slash(scene->r.pic);
+    BLI_path_slash_native(scene->r.pic);
   }
 }
 
@@ -201,6 +201,27 @@ static void setup_app_data(bContext *C,
     SWAP(ListBase, bmain->workspaces, bfd->main->workspaces);
     SWAP(ListBase, bmain->screens, bfd->main->screens);
 
+    /* In case of actual new file reading without loading UI, we need to regenerate the session
+     * uuid of the UI-related datablocks we are keeping from previous session, otherwise their uuid
+     * will collide with some generated for newly read data. */
+    if (mode != LOAD_UNDO) {
+      ID *id;
+      FOREACH_MAIN_LISTBASE_ID_BEGIN (&bfd->main->wm, id) {
+        BKE_lib_libblock_session_uuid_renew(id);
+      }
+      FOREACH_MAIN_LISTBASE_ID_END;
+
+      FOREACH_MAIN_LISTBASE_ID_BEGIN (&bfd->main->workspaces, id) {
+        BKE_lib_libblock_session_uuid_renew(id);
+      }
+      FOREACH_MAIN_LISTBASE_ID_END;
+
+      FOREACH_MAIN_LISTBASE_ID_BEGIN (&bfd->main->screens, id) {
+        BKE_lib_libblock_session_uuid_renew(id);
+      }
+      FOREACH_MAIN_LISTBASE_ID_END;
+    }
+
     /* we re-use current window and screen */
     win = CTX_wm_window(C);
     curscreen = CTX_wm_screen(C);
@@ -257,9 +278,6 @@ static void setup_app_data(bContext *C,
   /* free G_MAIN Main database */
   //  CTX_wm_manager_set(C, NULL);
   BKE_blender_globals_clear();
-
-  /* clear old property update cache, in case some old references are left dangling */
-  RNA_property_update_cache_free();
 
   bmain = G_MAIN = bfd->main;
   bfd->main = NULL;
@@ -345,7 +363,7 @@ static void setup_app_data(bContext *C,
     wmWindowManager *wm = bmain->wm.first;
 
     if (wm) {
-      for (wmWindow *win = wm->windows.first; win; win = win->next) {
+      LISTBASE_FOREACH (wmWindow *, win, &wm->windows) {
         if (win->scene && win->scene != curscene) {
           BKE_scene_set_background(bmain, win->scene);
         }
@@ -395,10 +413,11 @@ static void setup_app_blend_file_data(bContext *C,
   }
 }
 
-static int handle_subversion_warning(Main *main, ReportList *reports)
+static bool handle_subversion_warning(Main *main, ReportList *reports)
 {
-  if (main->minversionfile > BLENDER_VERSION ||
-      (main->minversionfile == BLENDER_VERSION && main->minsubversionfile > BLENDER_SUBVERSION)) {
+  if (main->minversionfile > BLENDER_FILE_VERSION ||
+      (main->minversionfile == BLENDER_FILE_VERSION &&
+       main->minsubversionfile > BLENDER_FILE_SUBVERSION)) {
     BKE_reportf(reports,
                 RPT_ERROR,
                 "File written by newer Blender binary (%d.%d), expect loss of data!",
@@ -406,7 +425,7 @@ static int handle_subversion_warning(Main *main, ReportList *reports)
                 main->minsubversionfile);
   }
 
-  return 1;
+  return true;
 }
 
 int BKE_blendfile_read(bContext *C,
@@ -424,7 +443,7 @@ int BKE_blendfile_read(bContext *C,
 
   bfd = BLO_read_from_file(filepath, params->skip_flags, reports);
   if (bfd) {
-    if (0 == handle_subversion_warning(bfd->main, reports)) {
+    if (!handle_subversion_warning(bfd->main, reports)) {
       BKE_main_free(bfd->main);
       MEM_freeN(bfd);
       bfd = NULL;
@@ -627,7 +646,13 @@ bool BKE_blendfile_userdef_write(const char *filepath, ReportList *reports)
   Main *mainb = MEM_callocN(sizeof(Main), "empty main");
   bool ok = false;
 
-  if (BLO_write_file(mainb, filepath, G_FILE_USERPREFS, reports, NULL)) {
+  if (BLO_write_file(mainb,
+                     filepath,
+                     0,
+                     &(const struct BlendFileWriteParams){
+                         .use_userdef = true,
+                     },
+                     reports)) {
     ok = true;
   }
 
@@ -749,7 +774,7 @@ WorkspaceConfigFileData *BKE_blendfile_workspace_config_read(const char *filepat
 
 bool BKE_blendfile_workspace_config_write(Main *bmain, const char *filepath, ReportList *reports)
 {
-  int fileflags = G.fileflags & ~(G_FILE_NO_UI | G_FILE_HISTORY);
+  const int fileflags = G.fileflags & ~G_FILE_NO_UI;
   bool retval = false;
 
   BKE_blendfile_write_partial_begin(bmain);
@@ -758,7 +783,8 @@ bool BKE_blendfile_workspace_config_write(Main *bmain, const char *filepath, Rep
     BKE_blendfile_write_partial_tag_ID(&workspace->id, true);
   }
 
-  if (BKE_blendfile_write_partial(bmain, filepath, fileflags, reports)) {
+  if (BKE_blendfile_write_partial(
+          bmain, filepath, fileflags, BLO_WRITE_PATH_REMAP_NONE, reports)) {
     retval = true;
   }
 
@@ -810,11 +836,13 @@ static void blendfile_write_partial_cb(void *UNUSED(handle), Main *UNUSED(bmain)
 }
 
 /**
+ * \param remap_mode: Choose the kind of path remapping or none #eBLO_WritePathRemap.
  * \return Success.
  */
 bool BKE_blendfile_write_partial(Main *bmain_src,
                                  const char *filepath,
                                  const int write_flags,
+                                 const int remap_mode,
                                  ReportList *reports)
 {
   Main *bmain_dst = MEM_callocN(sizeof(Main), "copybuffer");
@@ -856,12 +884,18 @@ bool BKE_blendfile_write_partial(Main *bmain_src,
    * This happens because id_sort_by_name does not take into account
    * string case or the library name, so the order is not strictly
    * defined for two linked data-blocks with the same name! */
-  if (write_flags & G_FILE_RELATIVE_REMAP) {
+  if (remap_mode != BLO_WRITE_PATH_REMAP_NONE) {
     path_list_backup = BKE_bpath_list_backup(bmain_dst, path_list_flag);
   }
 
   /* save the buffer */
-  retval = BLO_write_file(bmain_dst, filepath, write_flags, reports, NULL);
+  retval = BLO_write_file(bmain_dst,
+                          filepath,
+                          write_flags,
+                          &(const struct BlendFileWriteParams){
+                              .remap_mode = remap_mode,
+                          },
+                          reports);
 
   if (path_list_backup) {
     BKE_bpath_list_restore(bmain_dst, path_list_flag, path_list_backup);

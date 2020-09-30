@@ -25,6 +25,9 @@
 
 #include "MEM_guardedalloc.h"
 
+/* Allow using deprecated functionality for .blend file I/O. */
+#define DNA_DEPRECATED_ALLOW
+
 #include "DNA_anim_types.h"
 #include "DNA_defaults.h"
 #include "DNA_light_types.h"
@@ -37,16 +40,21 @@
 #include "BLI_math.h"
 #include "BLI_utildefines.h"
 
-#include "BKE_animsys.h"
+#include "BKE_anim_data.h"
 #include "BKE_colortools.h"
 #include "BKE_icons.h"
 #include "BKE_idtype.h"
 #include "BKE_lib_id.h"
+#include "BKE_lib_query.h"
 #include "BKE_light.h"
 #include "BKE_main.h"
 #include "BKE_node.h"
 
 #include "BLT_translation.h"
+
+#include "DEG_depsgraph.h"
+
+#include "BLO_read_write.h"
 
 static void light_init_data(ID *id)
 {
@@ -56,18 +64,7 @@ static void light_init_data(ID *id)
   MEMCPY_STRUCT_AFTER(la, DNA_struct_default_get(Light), id);
 
   la->curfalloff = BKE_curvemapping_add(1, 0.0f, 1.0f, 1.0f, 0.0f);
-  BKE_curvemapping_initialize(la->curfalloff);
-}
-
-Light *BKE_light_add(Main *bmain, const char *name)
-{
-  Light *la;
-
-  la = BKE_libblock_alloc(bmain, ID_LA, name, 0);
-
-  light_init_data(&la->id);
-
-  return la;
+  BKE_curvemapping_init(la->curfalloff);
 }
 
 /**
@@ -99,6 +96,120 @@ static void light_copy_data(Main *bmain, ID *id_dst, const ID *id_src, const int
   else {
     la_dst->preview = NULL;
   }
+}
+
+static void light_free_data(ID *id)
+{
+  Light *la = (Light *)id;
+
+  BKE_curvemapping_free(la->curfalloff);
+
+  /* is no lib link block, but light extension */
+  if (la->nodetree) {
+    ntreeFreeEmbeddedTree(la->nodetree);
+    MEM_freeN(la->nodetree);
+    la->nodetree = NULL;
+  }
+
+  BKE_previewimg_free(&la->preview);
+  BKE_icon_id_delete(&la->id);
+  la->id.icon_id = 0;
+}
+
+static void light_foreach_id(ID *id, LibraryForeachIDData *data)
+{
+  Light *lamp = (Light *)id;
+  if (lamp->nodetree) {
+    /* nodetree **are owned by IDs**, treat them as mere sub-data and not real ID! */
+    BKE_library_foreach_ID_embedded(data, (ID **)&lamp->nodetree);
+  }
+}
+
+static void light_blend_write(BlendWriter *writer, ID *id, const void *id_address)
+{
+  Light *la = (Light *)id;
+  if (la->id.us > 0 || BLO_write_is_undo(writer)) {
+    /* write LibData */
+    BLO_write_id_struct(writer, Light, id_address, &la->id);
+    BKE_id_blend_write(writer, &la->id);
+
+    if (la->adt) {
+      BKE_animdata_blend_write(writer, la->adt);
+    }
+
+    if (la->curfalloff) {
+      BKE_curvemapping_blend_write(writer, la->curfalloff);
+    }
+
+    /* Node-tree is integral part of lights, no libdata. */
+    if (la->nodetree) {
+      BLO_write_struct(writer, bNodeTree, la->nodetree);
+      ntreeBlendWrite(writer, la->nodetree);
+    }
+
+    BKE_previewimg_blend_write(writer, la->preview);
+  }
+}
+
+static void light_blend_read_data(BlendDataReader *reader, ID *id)
+{
+  Light *la = (Light *)id;
+  BLO_read_data_address(reader, &la->adt);
+  BKE_animdata_blend_read_data(reader, la->adt);
+
+  BLO_read_data_address(reader, &la->curfalloff);
+  if (la->curfalloff) {
+    BKE_curvemapping_blend_read(reader, la->curfalloff);
+  }
+
+  BLO_read_data_address(reader, &la->preview);
+  BKE_previewimg_blend_read(reader, la->preview);
+}
+
+static void light_blend_read_lib(BlendLibReader *reader, ID *id)
+{
+  Light *la = (Light *)id;
+  BLO_read_id_address(reader, la->id.lib, &la->ipo);  // XXX deprecated - old animation system
+}
+
+static void light_blend_read_expand(BlendExpander *expander, ID *id)
+{
+  Light *la = (Light *)id;
+  BLO_expand(expander, la->ipo);  // XXX deprecated - old animation system
+}
+
+IDTypeInfo IDType_ID_LA = {
+    .id_code = ID_LA,
+    .id_filter = FILTER_ID_LA,
+    .main_listbase_index = INDEX_ID_LA,
+    .struct_size = sizeof(Light),
+    .name = "Light",
+    .name_plural = "lights",
+    .translation_context = BLT_I18NCONTEXT_ID_LIGHT,
+    .flags = 0,
+
+    .init_data = light_init_data,
+    .copy_data = light_copy_data,
+    .free_data = light_free_data,
+    .make_local = NULL,
+    .foreach_id = light_foreach_id,
+    .foreach_cache = NULL,
+
+    .blend_write = light_blend_write,
+    .blend_read_data = light_blend_read_data,
+    .blend_read_lib = light_blend_read_lib,
+    .blend_read_expand = light_blend_read_expand,
+};
+
+Light *BKE_light_add(Main *bmain, const char *name)
+{
+  Light *la;
+
+  la = BKE_libblock_alloc(bmain, ID_LA, name, 0);
+
+  light_init_data(&la->id);
+
+  return la;
 }
 
 Light *BKE_light_copy(Main *bmain, const Light *la)
@@ -135,41 +246,7 @@ Light *BKE_light_localize(Light *la)
   return lan;
 }
 
-static void light_make_local(Main *bmain, ID *id, const int flags)
+void BKE_light_eval(struct Depsgraph *depsgraph, Light *la)
 {
-  BKE_lib_id_make_local_generic(bmain, id, flags);
+  DEG_debug_print_eval(depsgraph, __func__, la->id.name, la);
 }
-
-static void light_free_data(ID *id)
-{
-  Light *la = (Light *)id;
-
-  BKE_curvemapping_free(la->curfalloff);
-
-  /* is no lib link block, but light extension */
-  if (la->nodetree) {
-    ntreeFreeNestedTree(la->nodetree);
-    MEM_freeN(la->nodetree);
-    la->nodetree = NULL;
-  }
-
-  BKE_previewimg_free(&la->preview);
-  BKE_icon_id_delete(&la->id);
-  la->id.icon_id = 0;
-}
-
-IDTypeInfo IDType_ID_LA = {
-    .id_code = ID_LA,
-    .id_filter = FILTER_ID_LA,
-    .main_listbase_index = INDEX_ID_LA,
-    .struct_size = sizeof(Light),
-    .name = "Light",
-    .name_plural = "lights",
-    .translation_context = BLT_I18NCONTEXT_ID_LIGHT,
-    .flags = 0,
-
-    .init_data = light_init_data,
-    .copy_data = light_copy_data,
-    .free_data = light_free_data,
-    .make_local = light_make_local,
-};

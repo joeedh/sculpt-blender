@@ -174,12 +174,14 @@ static void ringsel_finish(bContext *C, wmOperator *op)
     if (lcd->do_cut) {
       const bool is_macro = (op->opm != NULL);
       /* a single edge (rare, but better support) */
-      const bool is_single = (BM_edge_is_wire(lcd->eed));
-      const int seltype = is_single ? SUBDIV_SELECT_INNER : SUBDIV_SELECT_LOOPCUT;
+      const bool is_edge_wire = BM_edge_is_wire(lcd->eed);
+      const bool is_single = is_edge_wire || !BM_edge_is_any_face_len_test(lcd->eed, 4);
+      const int seltype = is_edge_wire ? SUBDIV_SELECT_INNER :
+                                         is_single ? SUBDIV_SELECT_NONE : SUBDIV_SELECT_LOOPCUT;
 
       /* Enable gridfill, so that intersecting loopcut works as one would expect.
        * Note though that it will break edgeslide in this specific case.
-       * See [#31939]. */
+       * See T31939. */
       BM_mesh_esubdivide(em->bm,
                          BM_ELEM_SELECT,
                          smoothness,
@@ -372,7 +374,8 @@ static int loopcut_init(bContext *C, wmOperator *op, const wmEvent *event)
   if (is_interactive) {
     for (uint base_index = 0; base_index < bases_len; base_index++) {
       Object *ob_iter = bases[base_index]->object;
-      if (modifiers_isDeformedByLattice(ob_iter) || modifiers_isDeformedByArmature(ob_iter)) {
+      if (BKE_modifiers_is_deformed_by_lattice(ob_iter) ||
+          BKE_modifiers_is_deformed_by_armature(ob_iter)) {
         BKE_report(
             op->reports, RPT_WARNING, "Loop cut does not work well on deformed edit mesh display");
         break;
@@ -450,11 +453,10 @@ static int loopcut_init(bContext *C, wmOperator *op, const wmEvent *event)
              "hold Alt for smooth"));
     return OPERATOR_RUNNING_MODAL;
   }
-  else {
-    ringsel_finish(C, op);
-    ringsel_exit(C, op);
-    return OPERATOR_FINISHED;
-  }
+
+  ringsel_finish(C, op);
+  ringsel_exit(C, op);
+  return OPERATOR_FINISHED;
 }
 
 static int ringcut_invoke(bContext *C, wmOperator *op, const wmEvent *event)
@@ -514,6 +516,10 @@ static int loopcut_finish(RingSelOpData *lcd, bContext *C, wmOperator *op)
 
 static int loopcut_modal(bContext *C, wmOperator *op, const wmEvent *event)
 {
+  if (event->type == NDOF_MOTION) {
+    return OPERATOR_PASS_THROUGH;
+  }
+
   RingSelOpData *lcd = op->customdata;
   float cuts = lcd->cuts;
   float smoothness = lcd->smoothness;
@@ -605,7 +611,8 @@ static int loopcut_modal(bContext *C, wmOperator *op, const wmEvent *event)
         }
         handled = true;
         break;
-      case MOUSEMOVE: /* mouse moved somewhere to select another loop */
+      case MOUSEMOVE: {
+        /* mouse moved somewhere to select another loop */
 
         /* This is normally disabled for all modal operators.
          * This is an exception since mouse movement doesn't relate to numeric input.
@@ -614,14 +621,16 @@ static int loopcut_modal(bContext *C, wmOperator *op, const wmEvent *event)
 #if 0
         if (!has_numinput)
 #endif
-      {
-        lcd->vc.mval[0] = event->mval[0];
-        lcd->vc.mval[1] = event->mval[1];
-        loopcut_mouse_move(lcd, (int)lcd->cuts);
+        {
+          lcd->vc.mval[0] = event->mval[0];
+          lcd->vc.mval[1] = event->mval[1];
+          loopcut_mouse_move(lcd, (int)lcd->cuts);
 
-        ED_region_tag_redraw(lcd->region);
-        handled = true;
-      } break;
+          ED_region_tag_redraw(lcd->region);
+          handled = true;
+        }
+        break;
+      }
     }
 
     /* Modal numinput inactive, try to handle numeric inputs last... */

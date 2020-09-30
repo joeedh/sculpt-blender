@@ -17,14 +17,14 @@
  * All rights reserved.
  */
 
-#ifndef __BKE_CONTEXT_H__
-#define __BKE_CONTEXT_H__
+#pragma once
 
 /** \file
  * \ingroup bke
  */
 
 #include "DNA_listBase.h"
+#include "DNA_object_enums.h"
 #include "RNA_types.h"
 
 #ifdef __cplusplus
@@ -65,8 +65,6 @@ struct bPoseChannel;
 struct bScreen;
 struct wmWindow;
 struct wmWindowManager;
-
-#include "DNA_object_enums.h"
 
 /* Structs */
 
@@ -140,7 +138,14 @@ bool CTX_py_init_get(bContext *C);
 void CTX_py_init_set(bContext *C, bool value);
 
 void *CTX_py_dict_get(const bContext *C);
-void CTX_py_dict_set(bContext *C, void *value);
+void *CTX_py_dict_get_orig(const bContext *C);
+
+struct bContext_PyState {
+  void *py_context;
+  void *py_context_orig;
+};
+void CTX_py_state_push(bContext *C, struct bContext_PyState *pystate, void *value);
+void CTX_py_state_pop(bContext *C, struct bContext_PyState *pystate);
 
 /* Window Manager Context */
 
@@ -178,7 +183,7 @@ struct SpaceTopBar *CTX_wm_space_topbar(const bContext *C);
 void CTX_wm_manager_set(bContext *C, struct wmWindowManager *wm);
 void CTX_wm_window_set(bContext *C, struct wmWindow *win);
 void CTX_wm_screen_set(bContext *C, struct bScreen *screen); /* to be removed */
-void CTX_wm_area_set(bContext *C, struct ScrArea *sa);
+void CTX_wm_area_set(bContext *C, struct ScrArea *area);
 void CTX_wm_region_set(bContext *C, struct ARegion *region);
 void CTX_wm_menu_set(bContext *C, struct ARegion *menu);
 void CTX_wm_gizmo_group_set(bContext *C, struct wmGizmoGroup *gzgroup);
@@ -217,7 +222,7 @@ void CTX_data_pointer_set(bContextDataResult *result, struct ID *id, StructRNA *
 void CTX_data_id_list_add(bContextDataResult *result, struct ID *id);
 void CTX_data_list_add(bContextDataResult *result, struct ID *id, StructRNA *type, void *data);
 
-void CTX_data_dir_set(bContextDataResult *result, const char **member);
+void CTX_data_dir_set(bContextDataResult *result, const char **dir);
 
 void CTX_data_type_set(struct bContextDataResult *result, short type);
 short CTX_data_type_get(struct bContextDataResult *result);
@@ -264,7 +269,7 @@ enum eContextObjectMode CTX_data_mode_enum_ex(const struct Object *obedit,
 enum eContextObjectMode CTX_data_mode_enum(const bContext *C);
 
 void CTX_data_main_set(bContext *C, struct Main *bmain);
-void CTX_data_scene_set(bContext *C, struct Scene *bmain);
+void CTX_data_scene_set(bContext *C, struct Scene *scene);
 
 int CTX_data_selected_editable_objects(const bContext *C, ListBase *list);
 int CTX_data_selected_editable_bases(const bContext *C, ListBase *list);
@@ -313,6 +318,8 @@ int CTX_data_visible_gpencil_layers(const bContext *C, ListBase *list);
 int CTX_data_editable_gpencil_layers(const bContext *C, ListBase *list);
 int CTX_data_editable_gpencil_strokes(const bContext *C, ListBase *list);
 
+bool CTX_wm_interface_locked(const bContext *C);
+
 /* Gets pointer to the dependency graph.
  * If it doesn't exist yet, it will be allocated.
  *
@@ -344,6 +351,4 @@ struct Depsgraph *CTX_data_depsgraph_on_load(const bContext *C);
 
 #ifdef __cplusplus
 }
-#endif
-
 #endif

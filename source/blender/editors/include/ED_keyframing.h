@@ -21,8 +21,10 @@
  * \ingroup editors
  */
 
-#ifndef __ED_KEYFRAMING_H__
-#define __ED_KEYFRAMING_H__
+#pragma once
+
+#include "DNA_anim_types.h"
+#include "RNA_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,6 +37,7 @@ struct Scene;
 
 struct KeyingSet;
 
+struct AnimationEvalContext;
 struct BezTriple;
 struct FCurve;
 struct bAction;
@@ -49,9 +52,6 @@ struct PointerRNA;
 struct PropertyRNA;
 
 struct NlaKeyframingContext;
-
-#include "DNA_anim_types.h"
-#include "RNA_types.h"
 
 /* ************ Keyframing Management **************** */
 
@@ -105,8 +105,11 @@ int insert_bezt_fcurve(struct FCurve *fcu, const struct BezTriple *bezt, eInsert
  *  already exists. It will insert a keyframe using the current value being keyframed.
  *  Returns the index at which a keyframe was added (or -1 if failed)
  */
-int insert_vert_fcurve(
-    struct FCurve *fcu, float x, float y, eBezTriple_KeyframeType keytype, eInsertKeyFlags flag);
+int insert_vert_fcurve(struct FCurve *fcu,
+                       float x,
+                       float y,
+                       eBezTriple_KeyframeType keyframe_type,
+                       eInsertKeyFlags flag);
 
 /* -------- */
 
@@ -118,7 +121,7 @@ bool insert_keyframe_direct(struct ReportList *reports,
                             struct PointerRNA ptr,
                             struct PropertyRNA *prop,
                             struct FCurve *fcu,
-                            float cfra,
+                            const struct AnimationEvalContext *anim_eval_context,
                             eBezTriple_KeyframeType keytype,
                             struct NlaKeyframingContext *nla,
                             eInsertKeyFlags flag);
@@ -136,7 +139,7 @@ int insert_keyframe(struct Main *bmain,
                     const char group[],
                     const char rna_path[],
                     int array_index,
-                    float cfra,
+                    const struct AnimationEvalContext *anim_eval_context,
                     eBezTriple_KeyframeType keytype,
                     struct ListBase *nla_cache,
                     eInsertKeyFlags flag);
@@ -198,7 +201,7 @@ typedef struct KeyingSetInfo {
   cbKeyingSet_Generate generate;
 
   /* RNA integration */
-  struct ExtensionRNA ext;
+  struct ExtensionRNA rna_ext;
 } KeyingSetInfo;
 
 /* -------- */
@@ -266,7 +269,7 @@ int ANIM_scene_get_keyingset_index(struct Scene *scene, struct KeyingSet *ks);
 
 /* Get Keying Set to use for Auto-Keyframing some transforms */
 struct KeyingSet *ANIM_get_keyingset_for_autokeying(const struct Scene *scene,
-                                                    const char *tranformKSName);
+                                                    const char *transformKSName);
 
 /* Dynamically populate an enum of Keying Sets */
 const struct EnumPropertyItem *ANIM_keying_sets_enum_itemf(struct bContext *C,
@@ -430,14 +433,14 @@ void ANIM_copy_as_driver(struct ID *target_id, const char *target_path, const ch
 /* Auto-Keying macros for use by various tools */
 /* check if auto-keyframing is enabled (per scene takes precedence) */
 #define IS_AUTOKEY_ON(scene) \
-  ((scene) ? (scene->toolsettings->autokey_mode & AUTOKEY_ON) : (U.autokey_mode & AUTOKEY_ON))
+  ((scene) ? ((scene)->toolsettings->autokey_mode & AUTOKEY_ON) : (U.autokey_mode & AUTOKEY_ON))
 /* check the mode for auto-keyframing (per scene takes precedence)  */
 #define IS_AUTOKEY_MODE(scene, mode) \
-  ((scene) ? (scene->toolsettings->autokey_mode == AUTOKEY_MODE_##mode) : \
+  ((scene) ? ((scene)->toolsettings->autokey_mode == AUTOKEY_MODE_##mode) : \
              (U.autokey_mode == AUTOKEY_MODE_##mode))
 /* check if a flag is set for auto-keyframing (per scene takes precedence) */
 #define IS_AUTOKEY_FLAG(scene, flag) \
-  ((scene) ? ((scene->toolsettings->autokey_flag & AUTOKEY_FLAG_##flag) || \
+  ((scene) ? (((scene)->toolsettings->autokey_flag & AUTOKEY_FLAG_##flag) || \
               (U.autokey_flag & AUTOKEY_FLAG_##flag)) : \
              (U.autokey_flag & AUTOKEY_FLAG_##flag))
 
@@ -458,7 +461,7 @@ bool fcurve_frame_has_keyframe(struct FCurve *fcu, float frame, short filter);
 bool fcurve_is_changed(struct PointerRNA ptr,
                        struct PropertyRNA *prop,
                        struct FCurve *fcu,
-                       float frame);
+                       const struct AnimationEvalContext *anim_eval_context);
 
 /**
  * Main Keyframe Checking API call:
@@ -515,5 +518,3 @@ bool ED_autokeyframe_property(struct bContext *C,
 #ifdef __cplusplus
 }
 #endif
-
-#endif /*  __ED_KEYFRAMING_H__ */

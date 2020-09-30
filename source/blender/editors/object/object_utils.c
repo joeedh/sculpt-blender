@@ -28,6 +28,7 @@
 #include "DNA_object_types.h"
 #include "DNA_scene_types.h"
 
+#include "BLI_listbase.h"
 #include "BLI_math.h"
 #include "BLI_utildefines.h"
 
@@ -130,20 +131,18 @@ bool ED_object_calc_active_center(Object *ob, const bool select_only, float r_ce
     }
     return false;
   }
-  else if (ob->mode & OB_MODE_POSE) {
+  if (ob->mode & OB_MODE_POSE) {
     if (ED_object_calc_active_center_for_posemode(ob, select_only, r_center)) {
       mul_m4_v3(ob->obmat, r_center);
       return true;
     }
     return false;
   }
-  else {
-    if (!select_only || (ob->base_flag & BASE_SELECTED)) {
-      copy_v3_v3(r_center, ob->obmat[3]);
-      return true;
-    }
-    return false;
+  if (!select_only || (ob->base_flag & BASE_SELECTED)) {
+    copy_v3_v3(r_center, ob->obmat[3]);
+    return true;
   }
+  return false;
 }
 
 /** \} */
@@ -193,7 +192,7 @@ void ED_object_xform_skip_child_container_item_ensure_from_array(
     BLI_gset_add(objects_in_transdata, ob);
   }
 
-  for (Base *base = view_layer->object_bases.first; base; base = base->next) {
+  LISTBASE_FOREACH (Base *, base, &view_layer->object_bases) {
     Object *ob = base->object;
     if (ob->parent != NULL) {
       if (!BLI_gset_haskey(objects_in_transdata, ob)) {
@@ -223,7 +222,7 @@ void ED_object_xform_skip_child_container_item_ensure_from_array(
     }
   }
 
-  for (Base *base = view_layer->object_bases.first; base; base = base->next) {
+  LISTBASE_FOREACH (Base *, base, &view_layer->object_bases) {
     Object *ob = base->object;
 
     if (BLI_gset_haskey(objects_in_transdata, ob)) {

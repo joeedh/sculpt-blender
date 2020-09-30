@@ -45,7 +45,7 @@
 
 /* ******************** default callbacks for userpref space ***************** */
 
-static SpaceLink *userpref_new(const ScrArea *area, const Scene *UNUSED(scene))
+static SpaceLink *userpref_create(const ScrArea *area, const Scene *UNUSED(scene))
 {
   ARegion *region;
   SpaceUserPref *spref;
@@ -97,7 +97,7 @@ static void userpref_free(SpaceLink *UNUSED(sl))
 }
 
 /* spacetype; init callback */
-static void userpref_init(struct wmWindowManager *UNUSED(wm), ScrArea *UNUSED(sa))
+static void userpref_init(struct wmWindowManager *UNUSED(wm), ScrArea *UNUSED(area))
 {
 }
 
@@ -115,7 +115,7 @@ static void userpref_main_region_init(wmWindowManager *wm, ARegion *region)
 {
   /* do not use here, the properties changed in userprefs do a system-wide refresh,
    * then scroller jumps back */
-  /*  region->v2d.flag &= ~V2D_IS_INITIALISED; */
+  /*  region->v2d.flag &= ~V2D_IS_INIT; */
 
   region->v2d.scroll = V2D_SCROLL_RIGHT | V2D_SCROLL_VERTICAL_HIDE;
 
@@ -141,8 +141,7 @@ static void userpref_main_region_layout(const bContext *C, ARegion *region)
     BLI_str_tolower_ascii(id_lower, strlen(id_lower));
   }
 
-  ED_region_panels_layout_ex(
-      C, region, &region->type->paneltypes, contexts, U.space_data.section_active, true, NULL);
+  ED_region_panels_layout_ex(C, region, &region->type->paneltypes, contexts, NULL);
 }
 
 static void userpref_operatortypes(void)
@@ -185,7 +184,7 @@ static void userpref_execute_region_init(wmWindowManager *wm, ARegion *region)
 }
 
 static void userpref_main_region_listener(wmWindow *UNUSED(win),
-                                          ScrArea *UNUSED(sa),
+                                          ScrArea *UNUSED(area),
                                           ARegion *UNUSED(region),
                                           wmNotifier *UNUSED(wmn),
                                           const Scene *UNUSED(scene))
@@ -194,7 +193,7 @@ static void userpref_main_region_listener(wmWindow *UNUSED(win),
 }
 
 static void userpref_header_listener(wmWindow *UNUSED(win),
-                                     ScrArea *UNUSED(sa),
+                                     ScrArea *UNUSED(area),
                                      ARegion *UNUSED(region),
                                      wmNotifier *UNUSED(wmn),
                                      const Scene *UNUSED(scene))
@@ -209,7 +208,7 @@ static void userpref_header_listener(wmWindow *UNUSED(win),
 }
 
 static void userpref_navigation_region_listener(wmWindow *UNUSED(win),
-                                                ScrArea *UNUSED(sa),
+                                                ScrArea *UNUSED(area),
                                                 ARegion *UNUSED(region),
                                                 wmNotifier *UNUSED(wmn),
                                                 const Scene *UNUSED(scene))
@@ -218,7 +217,7 @@ static void userpref_navigation_region_listener(wmWindow *UNUSED(win),
 }
 
 static void userpref_execute_region_listener(wmWindow *UNUSED(win),
-                                             ScrArea *UNUSED(sa),
+                                             ScrArea *UNUSED(area),
                                              ARegion *UNUSED(region),
                                              wmNotifier *UNUSED(wmn),
                                              const Scene *UNUSED(scene))
@@ -235,7 +234,7 @@ void ED_spacetype_userpref(void)
   st->spaceid = SPACE_USERPREF;
   strncpy(st->name, "Userpref", BKE_ST_MAXNAME);
 
-  st->new = userpref_new;
+  st->create = userpref_create;
   st->free = userpref_free;
   st->init = userpref_init;
   st->duplicate = userpref_duplicate;

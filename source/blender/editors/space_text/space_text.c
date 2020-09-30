@@ -53,7 +53,7 @@
 
 /* ******************** default callbacks for text space ***************** */
 
-static SpaceLink *text_new(const ScrArea *UNUSED(area), const Scene *UNUSED(scene))
+static SpaceLink *text_create(const ScrArea *UNUSED(area), const Scene *UNUSED(scene))
 {
   ARegion *region;
   SpaceText *stext;
@@ -107,7 +107,7 @@ static void text_free(SpaceLink *sl)
 }
 
 /* spacetype; init callback */
-static void text_init(struct wmWindowManager *UNUSED(wm), ScrArea *UNUSED(sa))
+static void text_init(struct wmWindowManager *UNUSED(wm), ScrArea *UNUSED(area))
 {
 }
 
@@ -123,11 +123,11 @@ static SpaceLink *text_duplicate(SpaceLink *sl)
 }
 
 static void text_listener(wmWindow *UNUSED(win),
-                          ScrArea *sa,
+                          ScrArea *area,
                           wmNotifier *wmn,
                           Scene *UNUSED(scene))
 {
-  SpaceText *st = sa->spacedata.first;
+  SpaceText *st = area->spacedata.first;
 
   /* context changes */
   switch (wmn->category) {
@@ -141,14 +141,14 @@ static void text_listener(wmWindow *UNUSED(win),
 
       switch (wmn->data) {
         case ND_DISPLAY:
-          ED_area_tag_redraw(sa);
+          ED_area_tag_redraw(area);
           break;
         case ND_CURSOR:
           if (st->text && st->text == wmn->reference) {
-            text_scroll_to_cursor__area(st, sa, true);
+            text_scroll_to_cursor__area(st, area, true);
           }
 
-          ED_area_tag_redraw(sa);
+          ED_area_tag_redraw(area);
           break;
       }
 
@@ -159,15 +159,15 @@ static void text_listener(wmWindow *UNUSED(win),
             text_update_edited(st->text);
           }
 
-          ED_area_tag_redraw(sa);
+          ED_area_tag_redraw(area);
           ATTR_FALLTHROUGH; /* fall down to tag redraw */
         case NA_ADDED:
         case NA_REMOVED:
-          ED_area_tag_redraw(sa);
+          ED_area_tag_redraw(area);
           break;
         case NA_SELECTED:
           if (st->text && st->text == wmn->reference) {
-            text_scroll_to_cursor__area(st, sa, true);
+            text_scroll_to_cursor__area(st, area, true);
           }
 
           break;
@@ -176,7 +176,7 @@ static void text_listener(wmWindow *UNUSED(win),
       break;
     case NC_SPACE:
       if (wmn->data == ND_SPACE_TEXT) {
-        ED_area_tag_redraw(sa);
+        ED_area_tag_redraw(area);
       }
       break;
   }
@@ -256,7 +256,7 @@ static int text_context(const bContext *C, const char *member, bContextDataResul
     CTX_data_dir_set(result, text_context_dir);
     return 1;
   }
-  else if (CTX_data_equals(member, "edit_text")) {
+  if (CTX_data_equals(member, "edit_text")) {
     if (st->text != NULL) {
       CTX_data_id_pointer_set(result, &st->text->id);
     }
@@ -296,7 +296,6 @@ static void text_main_region_draw(const bContext *C, ARegion *region)
 
   /* clear and setup matrix */
   UI_ThemeClearColor(TH_BACK);
-  GPU_clear(GPU_COLOR_BIT);
 
   // UI_view2d_view_ortho(v2d);
 
@@ -309,9 +308,9 @@ static void text_main_region_draw(const bContext *C, ARegion *region)
   /* scrollers? */
 }
 
-static void text_cursor(wmWindow *win, ScrArea *sa, ARegion *region)
+static void text_cursor(wmWindow *win, ScrArea *area, ARegion *region)
 {
-  SpaceText *st = sa->spacedata.first;
+  SpaceText *st = area->spacedata.first;
   int wmcursor = WM_CURSOR_TEXT_EDIT;
 
   if (st->text && BLI_rcti_isect_pt(&st->runtime.scroll_region_handle,
@@ -413,14 +412,14 @@ static void text_properties_region_draw(const bContext *C, ARegion *region)
   if (st->flags & ST_FIND_ACTIVATE) {
     if (UI_textbutton_activate_rna(C, region, st, "find_text")) {
       /* if the panel was already open we need to do another redraw */
-      ScrArea *sa = CTX_wm_area(C);
-      WM_event_add_notifier(C, NC_SPACE | ND_SPACE_TEXT, sa);
+      ScrArea *area = CTX_wm_area(C);
+      WM_event_add_notifier(C, NC_SPACE | ND_SPACE_TEXT, area);
     }
     st->flags &= ~ST_FIND_ACTIVATE;
   }
 }
 
-static void text_id_remap(ScrArea *UNUSED(sa), SpaceLink *slink, ID *old_id, ID *new_id)
+static void text_id_remap(ScrArea *UNUSED(area), SpaceLink *slink, ID *old_id, ID *new_id)
 {
   SpaceText *stext = (SpaceText *)slink;
 
@@ -445,7 +444,7 @@ void ED_spacetype_text(void)
   st->spaceid = SPACE_TEXT;
   strncpy(st->name, "Text", BKE_ST_MAXNAME);
 
-  st->new = text_new;
+  st->create = text_create;
   st->free = text_free;
   st->init = text_init;
   st->duplicate = text_duplicate;

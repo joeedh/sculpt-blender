@@ -36,7 +36,7 @@ void GPENCIL_antialiasing_init(struct GPENCIL_Data *vedata)
 
   const float *size = DRW_viewport_size_get();
   const float *sizeinv = DRW_viewport_invert_size_get();
-  float metrics[4] = {sizeinv[0], sizeinv[1], size[0], size[1]};
+  const float metrics[4] = {sizeinv[0], sizeinv[1], size[0], size[1]};
 
   if (pd->simplify_antialias) {
     /* No AA fallback. */
@@ -56,35 +56,16 @@ void GPENCIL_antialiasing_init(struct GPENCIL_Data *vedata)
   }
 
   if (txl->smaa_search_tx == NULL) {
-    txl->smaa_search_tx = GPU_texture_create_nD(SEARCHTEX_WIDTH,
-                                                SEARCHTEX_HEIGHT,
-                                                0,
-                                                2,
-                                                searchTexBytes,
-                                                GPU_R8,
-                                                GPU_DATA_UNSIGNED_BYTE,
-                                                0,
-                                                false,
-                                                NULL);
+    txl->smaa_search_tx = GPU_texture_create_2d(
+        "smaa_search", SEARCHTEX_WIDTH, SEARCHTEX_HEIGHT, 1, GPU_R8, NULL);
+    GPU_texture_update(txl->smaa_search_tx, GPU_DATA_UNSIGNED_BYTE, searchTexBytes);
 
-    txl->smaa_area_tx = GPU_texture_create_nD(AREATEX_WIDTH,
-                                              AREATEX_HEIGHT,
-                                              0,
-                                              2,
-                                              areaTexBytes,
-                                              GPU_RG8,
-                                              GPU_DATA_UNSIGNED_BYTE,
-                                              0,
-                                              false,
-                                              NULL);
+    txl->smaa_area_tx = GPU_texture_create_2d(
+        "smaa_area", AREATEX_WIDTH, AREATEX_HEIGHT, 1, GPU_RG8, NULL);
+    GPU_texture_update(txl->smaa_area_tx, GPU_DATA_UNSIGNED_BYTE, areaTexBytes);
 
-    GPU_texture_bind(txl->smaa_search_tx, 0);
     GPU_texture_filter_mode(txl->smaa_search_tx, true);
-    GPU_texture_unbind(txl->smaa_search_tx);
-
-    GPU_texture_bind(txl->smaa_area_tx, 0);
     GPU_texture_filter_mode(txl->smaa_area_tx, true);
-    GPU_texture_unbind(txl->smaa_area_tx);
   }
 
   {
@@ -115,6 +96,8 @@ void GPENCIL_antialiasing_init(struct GPENCIL_Data *vedata)
     DRW_shgroup_uniform_texture(grp, "colorTex", pd->color_tx);
     DRW_shgroup_uniform_texture(grp, "revealTex", pd->reveal_tx);
     DRW_shgroup_uniform_vec4_copy(grp, "viewportMetrics", metrics);
+    DRW_shgroup_uniform_float_copy(
+        grp, "lumaWeight", pd->scene->grease_pencil_settings.smaa_threshold);
 
     DRW_shgroup_clear_framebuffer(grp, GPU_COLOR_BIT, 0, 0, 0, 0, 0.0f, 0x0);
     DRW_shgroup_call_procedural_triangles(grp, NULL, 1);

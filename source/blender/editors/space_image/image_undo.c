@@ -60,8 +60,6 @@
 #include "ED_undo.h"
 #include "ED_util.h"
 
-#include "GPU_draw.h"
-
 #include "WM_api.h"
 
 static CLG_LogRef LOG = {"ed.image.undo"};
@@ -145,7 +143,7 @@ static void ptile_free_list(ListBase *paint_tiles)
 
 static void ptile_invalidate_list(ListBase *paint_tiles)
 {
-  for (PaintTile *ptile = paint_tiles->first; ptile; ptile = ptile->next) {
+  LISTBASE_FOREACH (PaintTile *, ptile, paint_tiles) {
     ptile->valid = false;
   }
 }
@@ -159,7 +157,7 @@ void *ED_image_paint_tile_find(ListBase *paint_tiles,
                                ushort **r_mask,
                                bool validate)
 {
-  for (PaintTile *ptile = paint_tiles->first; ptile; ptile = ptile->next) {
+  LISTBASE_FOREACH (PaintTile *, ptile, paint_tiles) {
     if (ptile->x_tile == x_tile && ptile->y_tile == y_tile) {
       if (ptile->image == image && ptile->ibuf == ibuf && ptile->iuser.tile == iuser->tile) {
         if (r_mask) {
@@ -225,9 +223,9 @@ void *ED_image_paint_tile_push(ListBase *paint_tiles,
                                         "PaintTile.mask");
   }
 
-  ptile->rect.pt = MEM_mapallocN((ibuf->rect_float ? sizeof(float[4]) : sizeof(char[4])) *
-                                     square_i(ED_IMAGE_UNDO_TILE_SIZE),
-                                 "PaintTile.rect");
+  ptile->rect.pt = MEM_callocN((ibuf->rect_float ? sizeof(float[4]) : sizeof(char[4])) *
+                                   square_i(ED_IMAGE_UNDO_TILE_SIZE),
+                               "PaintTile.rect");
 
   ptile->use_float = has_float;
   ptile->valid = true;
@@ -267,7 +265,7 @@ static void ptile_restore_runtime_list(ListBase *paint_tiles)
 {
   ImBuf *tmpibuf = imbuf_alloc_temp_tile();
 
-  for (PaintTile *ptile = paint_tiles->first; ptile; ptile = ptile->next) {
+  LISTBASE_FOREACH (PaintTile *, ptile, paint_tiles) {
     Image *image = ptile->image;
     ImBuf *ibuf = BKE_image_acquire_ibuf(image, &ptile->iuser, NULL);
     const bool has_float = (ibuf->rect_float != NULL);
@@ -295,7 +293,8 @@ static void ptile_restore_runtime_list(ListBase *paint_tiles)
       SWAP(uint *, ptile->rect.uint, tmpibuf->rect);
     }
 
-    GPU_free_image(image); /* force OpenGL reload (maybe partial update will operate better?) */
+    BKE_image_free_gputextures(
+        image); /* force OpenGL reload (maybe partial update will operate better?) */
     if (ibuf->rect_float) {
       ibuf->userflags |= IB_RECT_INVALID; /* force recreate of char rect */
     }
@@ -542,7 +541,7 @@ static void uhandle_restore_list(ListBase *undo_handles, bool use_init)
 {
   ImBuf *tmpibuf = imbuf_alloc_temp_tile();
 
-  for (UndoImageHandle *uh = undo_handles->first; uh; uh = uh->next) {
+  LISTBASE_FOREACH (UndoImageHandle *, uh, undo_handles) {
     /* Tiles only added to second set of tiles. */
     Image *image = uh->image_ref.ptr;
 
@@ -552,7 +551,7 @@ static void uhandle_restore_list(ListBase *undo_handles, bool use_init)
       continue;
     }
     bool changed = false;
-    for (UndoImageBuf *ubuf_iter = uh->buffers.first; ubuf_iter; ubuf_iter = ubuf_iter->next) {
+    LISTBASE_FOREACH (UndoImageBuf *, ubuf_iter, &uh->buffers) {
       UndoImageBuf *ubuf = use_init ? ubuf_iter : ubuf_iter->post;
       ubuf_ensure_compat_ibuf(ubuf, ibuf);
 
@@ -570,7 +569,7 @@ static void uhandle_restore_list(ListBase *undo_handles, bool use_init)
 
     if (changed) {
       BKE_image_mark_dirty(image, ibuf);
-      GPU_free_image(image); /* force OpenGL reload */
+      BKE_image_free_gputextures(image); /* force OpenGL reload */
 
       if (ibuf->rect_float) {
         ibuf->userflags |= IB_RECT_INVALID; /* force recreate of char rect */
@@ -611,7 +610,7 @@ static UndoImageBuf *uhandle_lookup_ubuf(UndoImageHandle *uh,
                                          const Image *UNUSED(image),
                                          const char *ibuf_name)
 {
-  for (UndoImageBuf *ubuf = uh->buffers.first; ubuf; ubuf = ubuf->next) {
+  LISTBASE_FOREACH (UndoImageBuf *, ubuf, &uh->buffers) {
     if (STREQ(ubuf->ibuf_name, ibuf_name)) {
       return ubuf;
     }
@@ -643,7 +642,7 @@ static UndoImageHandle *uhandle_lookup_by_name(ListBase *undo_handles,
                                                const Image *image,
                                                int tile_number)
 {
-  for (UndoImageHandle *uh = undo_handles->first; uh; uh = uh->next) {
+  LISTBASE_FOREACH (UndoImageHandle *, uh, undo_handles) {
     if (STREQ(image->id.name + 2, uh->image_ref.name + 2) && uh->iuser.tile == tile_number) {
       return uh;
     }
@@ -653,7 +652,7 @@ static UndoImageHandle *uhandle_lookup_by_name(ListBase *undo_handles,
 
 static UndoImageHandle *uhandle_lookup(ListBase *undo_handles, const Image *image, int tile_number)
 {
-  for (UndoImageHandle *uh = undo_handles->first; uh; uh = uh->next) {
+  LISTBASE_FOREACH (UndoImageHandle *, uh, undo_handles) {
     if (image == uh->image_ref.ptr && uh->iuser.tile == tile_number) {
       return uh;
     }
@@ -667,7 +666,7 @@ static UndoImageHandle *uhandle_add(ListBase *undo_handles, Image *image, ImageU
   UndoImageHandle *uh = MEM_callocN(sizeof(*uh), __func__);
   uh->image_ref.ptr = image;
   uh->iuser = *iuser;
-  BLI_assert(uh->iuser.scene == NULL);
+  uh->iuser.scene = NULL;
   uh->iuser.ok = 1;
   BLI_addtail(undo_handles, uh);
   return uh;
@@ -733,9 +732,9 @@ static bool image_undosys_poll(bContext *C)
 {
   Object *obact = CTX_data_active_object(C);
 
-  ScrArea *sa = CTX_wm_area(C);
-  if (sa && (sa->spacetype == SPACE_IMAGE)) {
-    SpaceImage *sima = (SpaceImage *)sa->spacedata.first;
+  ScrArea *area = CTX_wm_area(C);
+  if (area && (area->spacetype == SPACE_IMAGE)) {
+    SpaceImage *sima = (SpaceImage *)area->spacedata.first;
     if ((obact && (obact->mode & OB_MODE_TEXTURE_PAINT)) || (sima->mode == SI_MODE_PAINT)) {
       return true;
     }
@@ -799,8 +798,8 @@ static bool image_undosys_step_encode(struct bContext *C,
     }
     BLI_listbase_clear(&us->paint_tiles);
 
-    for (UndoImageHandle *uh = us->handles.first; uh; uh = uh->next) {
-      for (UndoImageBuf *ubuf_pre = uh->buffers.first; ubuf_pre; ubuf_pre = ubuf_pre->next) {
+    LISTBASE_FOREACH (UndoImageHandle *, uh, &us->handles) {
+      LISTBASE_FOREACH (UndoImageBuf *, ubuf_pre, &uh->buffers) {
 
         ImBuf *ibuf = BKE_image_acquire_ibuf(uh->image_ref.ptr, &uh->iuser, NULL);
 
@@ -958,7 +957,7 @@ static void image_undosys_step_decode(
   }
 
   if (us->paint_mode == PAINT_MODE_TEXTURE_3D) {
-    ED_object_mode_set(C, OB_MODE_TEXTURE_PAINT);
+    ED_object_mode_set_ex(C, OB_MODE_TEXTURE_PAINT, false, NULL);
   }
 
   /* Refresh texture slots. */
@@ -979,7 +978,7 @@ static void image_undosys_foreach_ID_ref(UndoStep *us_p,
                                          void *user_data)
 {
   ImageUndoStep *us = (ImageUndoStep *)us_p;
-  for (UndoImageHandle *uh = us->handles.first; uh; uh = uh->next) {
+  LISTBASE_FOREACH (UndoImageHandle *, uh, &us->handles) {
     foreach_ID_ref_fn(user_data, ((UndoRefID *)&uh->image_ref));
   }
 }
@@ -1005,6 +1004,14 @@ void ED_image_undosys_type(UndoType *ut)
 
 /* -------------------------------------------------------------------- */
 /** \name Utilities
+ *
+ * \note image undo exposes #ED_image_undo_push_begin, #ED_image_undo_push_end
+ * which must be called by the operator directly.
+ *
+ * Unlike most other undo stacks this is needed:
+ * - So we can always access the state before the image was painted onto,
+ *   which is needed if previous undo states aren't image-type.
+ * - So operators can access the pixel-data before the stroke was applied, at run-time.
  * \{ */
 
 ListBase *ED_image_paint_tile_list_get(void)
@@ -1042,6 +1049,10 @@ static ImageUndoStep *image_undo_push_begin(const char *name, int paint_mode)
   return us;
 }
 
+/**
+ * The caller is responsible for running #ED_image_undo_push_end,
+ * failure to do so causes an invalid state for the undo system.
+ */
 void ED_image_undo_push_begin(const char *name, int paint_mode)
 {
   image_undo_push_begin(name, paint_mode);
@@ -1083,6 +1094,7 @@ void ED_image_undo_push_end(void)
 {
   UndoStack *ustack = ED_undo_stack_get();
   BKE_undosys_step_push(ustack, NULL, NULL);
+  BKE_undosys_stack_limit_steps_and_memory_defaults(ustack);
   WM_file_tag_modified();
 }
 

@@ -27,6 +27,7 @@
 #include "DNA_userdef_types.h"
 #include "DNA_windowmanager_types.h"
 
+#include "BLI_listbase.h"
 #include "BLI_utildefines.h"
 
 #include "BKE_context.h"
@@ -216,7 +217,6 @@ wmKeyMap *WM_keymap_guess_opname(const bContext *C, const char *opname)
    *     FLUID_OT
    *     TEXTURE_OT
    *     UI_OT
-   *     VIEW2D_OT
    *     WORLD_OT
    */
 
@@ -343,6 +343,10 @@ wmKeyMap *WM_keymap_guess_opname(const bContext *C, const char *opname)
         break;
     }
   }
+  /* General 2D View, not bound to a specific spacetype. */
+  else if (STRPREFIX(opname, "VIEW2D_OT")) {
+    km = WM_keymap_find_all(wm, "View2D", 0, 0);
+  }
   /* Image Editor */
   else if (STRPREFIX(opname, "IMAGE_OT")) {
     km = WM_keymap_find_all(wm, "Image", sl->spacetype, 0);
@@ -378,7 +382,25 @@ wmKeyMap *WM_keymap_guess_opname(const bContext *C, const char *opname)
   }
   /* Animation Generic - after channels */
   else if (STRPREFIX(opname, "ANIM_OT")) {
-    km = WM_keymap_find_all(wm, "Animation", 0, 0);
+    if (sl->spacetype == SPACE_VIEW3D) {
+      switch (CTX_data_mode_enum(C)) {
+        case CTX_MODE_OBJECT:
+          km = WM_keymap_find_all(wm, "Object Mode", 0, 0);
+          break;
+        case CTX_MODE_POSE:
+          km = WM_keymap_find_all(wm, "Pose", 0, 0);
+          break;
+        default:
+          break;
+      }
+      if (km && !WM_keymap_poll((bContext *)C, km)) {
+        km = NULL;
+      }
+    }
+
+    if (!km) {
+      km = WM_keymap_find_all(wm, "Animation", 0, 0);
+    }
   }
   /* Graph Editor */
   else if (STRPREFIX(opname, "GRAPH_OT")) {
@@ -485,7 +507,7 @@ static bool wm_keymap_item_uses_modifier(wmKeyMapItem *kmi, const int event_modi
 
 bool WM_keymap_uses_event_modifier(wmKeyMap *keymap, const int event_modifier)
 {
-  for (wmKeyMapItem *kmi = keymap->items.first; kmi; kmi = kmi->next) {
+  LISTBASE_FOREACH (wmKeyMapItem *, kmi, &keymap->items) {
     if ((kmi->flag & KMI_INACTIVE) == 0) {
       if (wm_keymap_item_uses_modifier(kmi, event_modifier)) {
         return true;

@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __BKE_VOLUME_H__
-#define __BKE_VOLUME_H__
+#pragma once
 
 /** \file
  * \ingroup bke
@@ -85,6 +84,7 @@ bool BKE_volume_is_loaded(const struct Volume *volume);
 
 int BKE_volume_num_grids(const struct Volume *volume);
 const char *BKE_volume_grids_error_msg(const struct Volume *volume);
+const char *BKE_volume_grids_frame_filepath(const struct Volume *volume);
 VolumeGrid *BKE_volume_grid_get(const struct Volume *volume, int grid_index);
 VolumeGrid *BKE_volume_grid_active_get(const struct Volume *volume);
 VolumeGrid *BKE_volume_grid_find(const struct Volume *volume, const char *name);
@@ -157,6 +157,16 @@ openvdb::GridBase::ConstPtr BKE_volume_grid_openvdb_for_read(const struct Volume
 openvdb::GridBase::Ptr BKE_volume_grid_openvdb_for_write(const struct Volume *volume,
                                                          struct VolumeGrid *grid,
                                                          const bool clear);
-#endif
+
+template<typename GridType>
+typename GridType::Ptr BKE_volume_grid_openvdb_for_write(const struct Volume *volume,
+                                                         struct VolumeGrid *grid,
+                                                         const bool clear)
+{
+  openvdb::GridBase::Ptr openvdb_grid = BKE_volume_grid_openvdb_for_write(volume, grid, clear);
+  BLI_assert(openvdb_grid->isType<GridType>());
+  typename GridType::Ptr typed_openvdb_grid = openvdb::gridPtrCast<GridType>(openvdb_grid);
+  return typed_openvdb_grid;
+}
 
 #endif

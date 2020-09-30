@@ -1011,7 +1011,13 @@ bool OSLRenderServices::get_userdata(
   return false; /* disabled by lockgeom */
 }
 
+#if OSL_LIBRARY_VERSION_CODE >= 11100
+TextureSystem::TextureHandle *OSLRenderServices::get_texture_handle(ustring filename,
+                                                                    OSL::ShadingContext *)
+#else
+
 TextureSystem::TextureHandle *OSLRenderServices::get_texture_handle(ustring filename)
+#endif
 {
   OSLTextureHandleMap::iterator it = textures.find(filename);
 
@@ -1365,6 +1371,17 @@ bool OSLRenderServices::environment(ustring filename,
   return status;
 }
 
+#if OSL_LIBRARY_VERSION_CODE >= 11100
+bool OSLRenderServices::get_texture_info(ustring filename,
+                                         TextureHandle *texture_handle,
+                                         TexturePerthread *,
+                                         OSL::ShadingContext *,
+                                         int subimage,
+                                         ustring dataname,
+                                         TypeDesc datatype,
+                                         void *data,
+                                         ustring *)
+#else
 bool OSLRenderServices::get_texture_info(OSL::ShaderGlobals *sg,
                                          ustring filename,
                                          TextureHandle *texture_handle,
@@ -1372,6 +1389,7 @@ bool OSLRenderServices::get_texture_info(OSL::ShaderGlobals *sg,
                                          ustring dataname,
                                          TypeDesc datatype,
                                          void *data)
+#endif
 {
   OSLTextureHandle *handle = (OSLTextureHandle *)texture_handle;
 
@@ -1463,6 +1481,7 @@ bool OSLRenderServices::trace(TraceOpt &options,
   tracedata->ray = ray;
   tracedata->setup = false;
   tracedata->init = true;
+  tracedata->hit = false;
   tracedata->sd.osl_globals = sd->osl_globals;
 
   KernelGlobals *kg = sd->osl_globals;
@@ -1474,7 +1493,8 @@ bool OSLRenderServices::trace(TraceOpt &options,
 
   /* Raytrace, leaving out shadow opaque to avoid early exit. */
   uint visibility = PATH_RAY_ALL_VISIBILITY - PATH_RAY_SHADOW_OPAQUE;
-  return scene_intersect(kg, &ray, visibility, &tracedata->isect);
+  tracedata->hit = scene_intersect(kg, &ray, visibility, &tracedata->isect);
+  return tracedata->hit;
 }
 
 bool OSLRenderServices::getmessage(OSL::ShaderGlobals *sg,
@@ -1488,9 +1508,9 @@ bool OSLRenderServices::getmessage(OSL::ShaderGlobals *sg,
 
   if (source == u_trace && tracedata->init) {
     if (name == u_hit) {
-      return set_attribute_int((tracedata->isect.prim != PRIM_NONE), type, derivatives, val);
+      return set_attribute_int(tracedata->hit, type, derivatives, val);
     }
-    else if (tracedata->isect.prim != PRIM_NONE) {
+    else if (tracedata->hit) {
       if (name == u_hitdist) {
         float f[3] = {tracedata->isect.t, 0.0f, 0.0f};
         return set_attribute_float(f, type, derivatives, val);

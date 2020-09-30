@@ -81,7 +81,7 @@ void draw_channel_names(bContext *C, bAnimContext *ac, ARegion *region)
   v2d->tot.ymin = -height;
 
   /* need to do a view-sync here, so that the keys area doesn't jump around (it must copy this) */
-  UI_view2d_sync(NULL, ac->sa, v2d, V2D_LOCK_COPY);
+  UI_view2d_sync(NULL, ac->area, v2d, V2D_LOCK_COPY);
 
   /* loop through channels, and set up drawing depending on their type  */
   { /* first pass: just the standard GL-drawing for backdrop + text */
@@ -141,9 +141,9 @@ void draw_channel_strips(bAnimContext *ac, SpaceAction *saction, ARegion *region
   bDopeSheet *ads = &saction->ads;
   AnimData *adt = NULL;
 
-  unsigned char col1[4], col2[4];
-  unsigned char col1a[4], col2a[4];
-  unsigned char col1b[4], col2b[4];
+  uchar col1[4], col2[4];
+  uchar col1a[4], col2a[4];
+  uchar col1b[4], col2b[4];
 
   const bool show_group_colors = !(saction->flag & SACTION_NODRAWGCOLORS);
 
@@ -169,7 +169,7 @@ void draw_channel_strips(bAnimContext *ac, SpaceAction *saction, ARegion *region
 
   immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 
-  GPU_blend(true);
+  GPU_blend(GPU_BLEND_ALPHA);
 
   /* first backdrop strips */
   float ymax = ACHANNEL_FIRST_TOP(ac);
@@ -212,10 +212,10 @@ void draw_channel_strips(bAnimContext *ac, SpaceAction *saction, ARegion *region
               bActionGroup *agrp = ale->data;
               if (show_group_colors && agrp->customCol) {
                 if (sel) {
-                  immUniformColor3ubvAlpha((unsigned char *)agrp->cs.select, col1a[3]);
+                  immUniformColor3ubvAlpha((uchar *)agrp->cs.select, col1a[3]);
                 }
                 else {
-                  immUniformColor3ubvAlpha((unsigned char *)agrp->cs.solid, col2a[3]);
+                  immUniformColor3ubvAlpha((uchar *)agrp->cs.solid, col2a[3]);
                 }
               }
               else {
@@ -226,8 +226,7 @@ void draw_channel_strips(bAnimContext *ac, SpaceAction *saction, ARegion *region
             case ANIMTYPE_FCURVE: {
               FCurve *fcu = ale->data;
               if (show_group_colors && fcu->grp && fcu->grp->customCol) {
-                immUniformColor3ubvAlpha((unsigned char *)fcu->grp->cs.active,
-                                         sel ? col1[3] : col2[3]);
+                immUniformColor3ubvAlpha((uchar *)fcu->grp->cs.active, sel ? col1[3] : col2[3]);
               }
               else {
                 immUniformColor4ubv(sel ? col1 : col2);
@@ -243,8 +242,8 @@ void draw_channel_strips(bAnimContext *ac, SpaceAction *saction, ARegion *region
           immRectf(pos, v2d->cur.xmin, ymin, v2d->cur.xmax + EXTRA_SCROLL_PAD, ymax);
         }
         else if (ac->datatype == ANIMCONT_GPENCIL) {
-          unsigned char *color;
-          unsigned char gpl_col[4];
+          uchar *color;
+          uchar gpl_col[4];
           if ((show_group_colors) && (ale->type == ANIMTYPE_GPLAYER)) {
             bGPDlayer *gpl = (bGPDlayer *)ale->data;
             rgb_float_to_uchar(gpl_col, gpl->color);
@@ -266,7 +265,7 @@ void draw_channel_strips(bAnimContext *ac, SpaceAction *saction, ARegion *region
         else if (ac->datatype == ANIMCONT_MASK) {
           /* TODO --- this is a copy of gpencil */
           /* frames less than one get less saturated background */
-          unsigned char *color = sel ? col1 : col2;
+          uchar *color = sel ? col1 : col2;
           immUniformColor4ubv(color);
           immRectf(pos, 0.0f, ymin, v2d->cur.xmin, ymax);
 
@@ -277,7 +276,7 @@ void draw_channel_strips(bAnimContext *ac, SpaceAction *saction, ARegion *region
       }
     }
   }
-  GPU_blend(false);
+  GPU_blend(GPU_BLEND_NONE);
 
   /* black line marking 'current frame' for Time-Slide transform mode */
   if (saction->flag & SACTION_MOVING) {
@@ -361,6 +360,7 @@ static bool timeline_cache_is_hidden_by_setting(SpaceAction *saction, PTCacheID 
       }
       break;
     case PTCACHE_TYPE_PARTICLES:
+    case PTCACHE_TYPE_SIM_PARTICLES:
       if ((saction->cache_display & TIME_CACHE_PARTICLES) == 0) {
         return true;
       }
@@ -400,6 +400,7 @@ static void timeline_cache_color_get(PTCacheID *pid, float color[4])
       color[3] = 0.1;
       break;
     case PTCACHE_TYPE_PARTICLES:
+    case PTCACHE_TYPE_SIM_PARTICLES:
       color[0] = 1.0;
       color[1] = 0.1;
       color[2] = 0.02;
@@ -557,12 +558,12 @@ void timeline_draw_cache(SpaceAction *saction, Object *ob, Scene *scene)
       immVertexFormat(), "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
   immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 
-  GPU_blend(true);
+  GPU_blend(GPU_BLEND_ALPHA);
 
   /* Iterate over pointcaches on the active object, and draw each one's range. */
   float y_offset = 0.0f;
   const float cache_draw_height = 4.0f * UI_DPI_FAC * U.pixelsize;
-  for (PTCacheID *pid = pidlist.first; pid; pid = pid->next) {
+  LISTBASE_FOREACH (PTCacheID *, pid, &pidlist) {
     if (timeline_cache_is_hidden_by_setting(saction, pid)) {
       continue;
     }
@@ -576,7 +577,7 @@ void timeline_draw_cache(SpaceAction *saction, Object *ob, Scene *scene)
     y_offset += cache_draw_height;
   }
 
-  GPU_blend(false);
+  GPU_blend(GPU_BLEND_NONE);
   immUnbindProgram();
 
   BLI_freelistN(&pidlist);

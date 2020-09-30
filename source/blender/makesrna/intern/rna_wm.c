@@ -251,7 +251,7 @@ const EnumPropertyItem rna_enum_event_type_items[] = {
     {EVT_RETKEY, "RET", 0, "Return", "Enter"},
     {EVT_SPACEKEY, "SPACE", 0, "Spacebar", "Space"},
     {EVT_LINEFEEDKEY, "LINE_FEED", 0, "Line Feed", ""},
-    {EVT_BACKSPACEKEY, "BACK_SPACE", 0, "Back Space", "BkSpace"},
+    {EVT_BACKSPACEKEY, "BACK_SPACE", 0, "Backspace", "BkSpace"},
     {EVT_DELKEY, "DEL", 0, "Delete", "Del"},
     {EVT_SEMICOLONKEY, "SEMI_COLON", 0, ";", ""},
     {EVT_PERIODKEY, "PERIOD", 0, ".", ""},
@@ -438,8 +438,7 @@ static const EnumPropertyItem keymap_modifiers_items[] = {
 };
 #endif
 
-#ifndef RNA_RUNTIME
-static const EnumPropertyItem operator_flag_items[] = {
+const EnumPropertyItem rna_enum_operator_type_flag_items[] = {
     {OPTYPE_REGISTER,
      "REGISTER",
      0,
@@ -450,7 +449,7 @@ static const EnumPropertyItem operator_flag_items[] = {
      "UNDO_GROUPED",
      0,
      "Grouped Undo",
-     "Push a single undo event for repetead instances of this operator"},
+     "Push a single undo event for repeated instances of this operator"},
     {OPTYPE_BLOCKING, "BLOCKING", 0, "Blocking", "Block anything else from using the cursor"},
     {OPTYPE_MACRO, "MACRO", 0, "Macro", "Use to check if an operator is a macro"},
     {OPTYPE_GRAB_CURSOR_XY,
@@ -465,7 +464,6 @@ static const EnumPropertyItem operator_flag_items[] = {
     {OPTYPE_INTERNAL, "INTERNAL", 0, "Internal", "Removes the operator from search results"},
     {0, NULL, 0, NULL, NULL},
 };
-#endif
 
 const EnumPropertyItem rna_enum_operator_return_items[] = {
     {OPERATOR_RUNNING_MODAL,
@@ -739,7 +737,8 @@ static void rna_Window_scene_update(bContext *C, PointerRNA *ptr)
     BPy_END_ALLOW_THREADS;
 #  endif
 
-    WM_event_add_notifier(C, NC_SCENE | ND_SCENEBROWSE, win->new_scene);
+    wmWindowManager *wm = CTX_wm_manager(C);
+    WM_event_add_notifier_ex(wm, win, NC_SCENE | ND_SCENEBROWSE, win->new_scene);
 
     if (G.debug & G_DEBUG) {
       printf("scene set %p\n", win->new_scene);
@@ -782,7 +781,8 @@ static void rna_Window_workspace_update(bContext *C, PointerRNA *ptr)
   /* exception: can't set screens inside of area/region handlers,
    * and must use context so notifier gets to the right window */
   if (new_workspace) {
-    WM_event_add_notifier(C, NC_SCREEN | ND_WORKSPACE_SET, new_workspace);
+    wmWindowManager *wm = CTX_wm_manager(C);
+    WM_event_add_notifier_ex(wm, win, NC_SCREEN | ND_WORKSPACE_SET, new_workspace);
     win->workspace_hook->temp_workspace_store = NULL;
   }
 }
@@ -830,7 +830,8 @@ static void rna_workspace_screen_update(bContext *C, PointerRNA *ptr)
   /* exception: can't set screens inside of area/region handlers,
    * and must use context so notifier gets to the right window */
   if (layout_new) {
-    WM_event_add_notifier(C, NC_SCREEN | ND_LAYOUTBROWSE, layout_new);
+    wmWindowManager *wm = CTX_wm_manager(C);
+    WM_event_add_notifier_ex(wm, win, NC_SCREEN | ND_LAYOUTBROWSE, layout_new);
     win->workspace_hook->temp_layout_store = NULL;
   }
 }
@@ -1085,7 +1086,7 @@ static PointerRNA rna_wmKeyConfig_preferences_get(PointerRNA *ptr)
   wmKeyConfigPrefType_Runtime *kpt_rt = BKE_keyconfig_pref_type_find(kc->idname, true);
   if (kpt_rt) {
     wmKeyConfigPref *kpt = BKE_keyconfig_pref_ensure(&U, kc->idname);
-    return rna_pointer_inherit_refine(ptr, kpt_rt->ext.srna, kpt->prop);
+    return rna_pointer_inherit_refine(ptr, kpt_rt->rna_ext.srna, kpt->prop);
   }
   else {
     return PointerRNA_NULL;
@@ -1109,7 +1110,7 @@ static void rna_wmKeyConfigPref_unregister(Main *UNUSED(bmain), StructRNA *type)
     return;
   }
 
-  RNA_struct_free_extension(type, &kpt_rt->ext);
+  RNA_struct_free_extension(type, &kpt_rt->rna_ext);
   RNA_struct_free(&BLENDER_RNA, type);
 
   /* Possible we're not in the preferences if they have been reset. */
@@ -1152,8 +1153,8 @@ static StructRNA *rna_wmKeyConfigPref_register(Main *bmain,
 
   /* check if we have registered this keyconf-prefs type before, and remove it */
   kpt_rt = BKE_keyconfig_pref_type_find(dummy_kpt.idname, true);
-  if (kpt_rt && kpt_rt->ext.srna) {
-    rna_wmKeyConfigPref_unregister(bmain, kpt_rt->ext.srna);
+  if (kpt_rt && kpt_rt->rna_ext.srna) {
+    rna_wmKeyConfigPref_unregister(bmain, kpt_rt->rna_ext.srna);
   }
 
   /* create a new keyconf-prefs type */
@@ -1162,18 +1163,18 @@ static StructRNA *rna_wmKeyConfigPref_register(Main *bmain,
 
   BKE_keyconfig_pref_type_add(kpt_rt);
 
-  kpt_rt->ext.srna = RNA_def_struct_ptr(&BLENDER_RNA, identifier, &RNA_KeyConfigPreferences);
-  kpt_rt->ext.data = data;
-  kpt_rt->ext.call = call;
-  kpt_rt->ext.free = free;
-  RNA_struct_blender_type_set(kpt_rt->ext.srna, kpt_rt);
+  kpt_rt->rna_ext.srna = RNA_def_struct_ptr(&BLENDER_RNA, identifier, &RNA_KeyConfigPreferences);
+  kpt_rt->rna_ext.data = data;
+  kpt_rt->rna_ext.call = call;
+  kpt_rt->rna_ext.free = free;
+  RNA_struct_blender_type_set(kpt_rt->rna_ext.srna, kpt_rt);
 
   //  kpt_rt->draw = (have_function[0]) ? header_draw : NULL;
 
   /* update while blender is running */
   WM_main_add_notifier(NC_WINDOW, NULL);
 
-  return kpt_rt->ext.srna;
+  return kpt_rt->rna_ext.srna;
 }
 
 /* placeholder, doesn't do anything useful yet */
@@ -1233,39 +1234,6 @@ static bool rna_KeyMapItem_userdefined_get(PointerRNA *ptr)
   return kmi->id < 0;
 }
 
-static void rna_wmClipboard_get(PointerRNA *UNUSED(ptr), char *value)
-{
-  char *pbuf;
-  int pbuf_len;
-
-  pbuf = WM_clipboard_text_get(false, &pbuf_len);
-  if (pbuf) {
-    memcpy(value, pbuf, pbuf_len + 1);
-    MEM_freeN(pbuf);
-  }
-  else {
-    value[0] = '\0';
-  }
-}
-
-static int rna_wmClipboard_length(PointerRNA *UNUSED(ptr))
-{
-  char *pbuf;
-  int pbuf_len;
-
-  pbuf = WM_clipboard_text_get(false, &pbuf_len);
-  if (pbuf) {
-    MEM_freeN(pbuf);
-  }
-
-  return pbuf_len;
-}
-
-static void rna_wmClipboard_set(PointerRNA *UNUSED(ptr), const char *value)
-{
-  WM_clipboard_text_set((void *)value, false);
-}
-
 static PointerRNA rna_WindowManager_xr_session_state_get(PointerRNA *ptr)
 {
   wmWindowManager *wm = ptr->data;
@@ -1292,12 +1260,12 @@ static bool rna_operator_poll_cb(bContext *C, wmOperatorType *ot)
   void *ret;
   bool visible;
 
-  RNA_pointer_create(NULL, ot->ext.srna, NULL, &ptr); /* dummy */
-  func = &rna_Operator_poll_func;                     /* RNA_struct_find_function(&ptr, "poll"); */
+  RNA_pointer_create(NULL, ot->rna_ext.srna, NULL, &ptr); /* dummy */
+  func = &rna_Operator_poll_func; /* RNA_struct_find_function(&ptr, "poll"); */
 
   RNA_parameter_list_create(&list, &ptr, func);
   RNA_parameter_set_lookup(&list, "context", &C);
-  ot->ext.call(C, &ptr, func, &list);
+  ot->rna_ext.call(C, &ptr, func, &list);
 
   RNA_parameter_get_lookup(&list, "visible", &ret);
   visible = *(bool *)ret;
@@ -1317,12 +1285,12 @@ static int rna_operator_execute_cb(bContext *C, wmOperator *op)
   void *ret;
   int result;
 
-  RNA_pointer_create(NULL, op->type->ext.srna, op, &opr);
+  RNA_pointer_create(NULL, op->type->rna_ext.srna, op, &opr);
   func = &rna_Operator_execute_func; /* RNA_struct_find_function(&opr, "execute"); */
 
   RNA_parameter_list_create(&list, &opr, func);
   RNA_parameter_set_lookup(&list, "context", &C);
-  op->type->ext.call(C, &opr, func, &list);
+  op->type->rna_ext.call(C, &opr, func, &list);
 
   RNA_parameter_get_lookup(&list, "result", &ret);
   result = *(int *)ret;
@@ -1343,12 +1311,12 @@ static bool rna_operator_check_cb(bContext *C, wmOperator *op)
   void *ret;
   bool result;
 
-  RNA_pointer_create(NULL, op->type->ext.srna, op, &opr);
+  RNA_pointer_create(NULL, op->type->rna_ext.srna, op, &opr);
   func = &rna_Operator_check_func; /* RNA_struct_find_function(&opr, "check"); */
 
   RNA_parameter_list_create(&list, &opr, func);
   RNA_parameter_set_lookup(&list, "context", &C);
-  op->type->ext.call(C, &opr, func, &list);
+  op->type->rna_ext.call(C, &opr, func, &list);
 
   RNA_parameter_get_lookup(&list, "result", &ret);
   result = (*(bool *)ret) != 0;
@@ -1368,13 +1336,13 @@ static int rna_operator_invoke_cb(bContext *C, wmOperator *op, const wmEvent *ev
   void *ret;
   int result;
 
-  RNA_pointer_create(NULL, op->type->ext.srna, op, &opr);
+  RNA_pointer_create(NULL, op->type->rna_ext.srna, op, &opr);
   func = &rna_Operator_invoke_func; /* RNA_struct_find_function(&opr, "invoke"); */
 
   RNA_parameter_list_create(&list, &opr, func);
   RNA_parameter_set_lookup(&list, "context", &C);
   RNA_parameter_set_lookup(&list, "event", &event);
-  op->type->ext.call(C, &opr, func, &list);
+  op->type->rna_ext.call(C, &opr, func, &list);
 
   RNA_parameter_get_lookup(&list, "result", &ret);
   result = *(int *)ret;
@@ -1395,13 +1363,13 @@ static int rna_operator_modal_cb(bContext *C, wmOperator *op, const wmEvent *eve
   void *ret;
   int result;
 
-  RNA_pointer_create(NULL, op->type->ext.srna, op, &opr);
+  RNA_pointer_create(NULL, op->type->rna_ext.srna, op, &opr);
   func = &rna_Operator_modal_func; /* RNA_struct_find_function(&opr, "modal"); */
 
   RNA_parameter_list_create(&list, &opr, func);
   RNA_parameter_set_lookup(&list, "context", &C);
   RNA_parameter_set_lookup(&list, "event", &event);
-  op->type->ext.call(C, &opr, func, &list);
+  op->type->rna_ext.call(C, &opr, func, &list);
 
   RNA_parameter_get_lookup(&list, "result", &ret);
   result = *(int *)ret;
@@ -1419,12 +1387,12 @@ static void rna_operator_draw_cb(bContext *C, wmOperator *op)
   ParameterList list;
   FunctionRNA *func;
 
-  RNA_pointer_create(NULL, op->type->ext.srna, op, &opr);
+  RNA_pointer_create(NULL, op->type->rna_ext.srna, op, &opr);
   func = &rna_Operator_draw_func; /* RNA_struct_find_function(&opr, "draw"); */
 
   RNA_parameter_list_create(&list, &opr, func);
   RNA_parameter_set_lookup(&list, "context", &C);
-  op->type->ext.call(C, &opr, func, &list);
+  op->type->rna_ext.call(C, &opr, func, &list);
 
   RNA_parameter_list_free(&list);
 }
@@ -1438,12 +1406,12 @@ static void rna_operator_cancel_cb(bContext *C, wmOperator *op)
   ParameterList list;
   FunctionRNA *func;
 
-  RNA_pointer_create(NULL, op->type->ext.srna, op, &opr);
+  RNA_pointer_create(NULL, op->type->rna_ext.srna, op, &opr);
   func = &rna_Operator_cancel_func; /* RNA_struct_find_function(&opr, "cancel"); */
 
   RNA_parameter_list_create(&list, &opr, func);
   RNA_parameter_set_lookup(&list, "context", &C);
-  op->type->ext.call(C, &opr, func, &list);
+  op->type->rna_ext.call(C, &opr, func, &list);
 
   RNA_parameter_list_free(&list);
 }
@@ -1458,13 +1426,13 @@ static char *rna_operator_description_cb(bContext *C, wmOperatorType *ot, Pointe
   void *ret;
   char *result;
 
-  RNA_pointer_create(NULL, ot->ext.srna, NULL, &ptr); /* dummy */
+  RNA_pointer_create(NULL, ot->rna_ext.srna, NULL, &ptr); /* dummy */
   func = &rna_Operator_description_func; /* RNA_struct_find_function(&ptr, "description"); */
 
   RNA_parameter_list_create(&list, &ptr, func);
   RNA_parameter_set_lookup(&list, "context", &C);
   RNA_parameter_set_lookup(&list, "properties", prop_ptr);
-  ot->ext.call(C, &ptr, func, &list);
+  ot->rna_ext.call(C, &ptr, func, &list);
 
   RNA_parameter_get_lookup(&list, "result", &ret);
   result = (char *)ret;
@@ -1520,9 +1488,7 @@ static StructRNA *rna_Operator_register(Main *bmain,
 
   /* clear in case they are left unset */
   temp_buffers.idname[0] = temp_buffers.name[0] = temp_buffers.description[0] =
-      temp_buffers.undo_group[0] = '\0';
-  /* We have to set default op context! */
-  strcpy(temp_buffers.translation_context, BLT_I18NCONTEXT_OPERATOR_DEFAULT);
+      temp_buffers.undo_group[0] = temp_buffers.translation_context[0] = '\0';
 
   /* validate the python class */
   if (validate(&dummyotr, data, have_function) != 0) {
@@ -1532,8 +1498,8 @@ static StructRNA *rna_Operator_register(Main *bmain,
   /* check if we have registered this operator type before, and remove it */
   {
     wmOperatorType *ot = WM_operatortype_find(dummyot.idname, true);
-    if (ot && ot->ext.srna) {
-      rna_Operator_unregister(bmain, ot->ext.srna);
+    if (ot && ot->rna_ext.srna) {
+      rna_Operator_unregister(bmain, ot->rna_ext.srna);
     }
   }
 
@@ -1546,6 +1512,11 @@ static StructRNA *rna_Operator_register(Main *bmain,
 
   if (!RNA_struct_available_or_report(reports, idname_conv)) {
     return NULL;
+  }
+
+  /* We have to set default context if the class doesn't define it. */
+  if (temp_buffers.translation_context[0] == '\0') {
+    STRNCPY(temp_buffers.translation_context, BLT_I18NCONTEXT_OPERATOR_DEFAULT);
   }
 
   /* Convert foo.bar to FOO_OT_bar
@@ -1570,20 +1541,20 @@ static StructRNA *rna_Operator_register(Main *bmain,
     BLI_assert(ARRAY_SIZE(strings) == 5);
   }
 
-  /* XXX, this doubles up with the operator name [#29666]
+  /* XXX, this doubles up with the operator name T29666.
    * for now just remove from dir(bpy.types) */
 
   /* create a new operator type */
-  dummyot.ext.srna = RNA_def_struct_ptr(&BLENDER_RNA, dummyot.idname, &RNA_Operator);
+  dummyot.rna_ext.srna = RNA_def_struct_ptr(&BLENDER_RNA, dummyot.idname, &RNA_Operator);
 
   /* Operator properties are registered separately. */
-  RNA_def_struct_flag(dummyot.ext.srna, STRUCT_NO_IDPROPERTIES);
+  RNA_def_struct_flag(dummyot.rna_ext.srna, STRUCT_NO_IDPROPERTIES);
 
-  RNA_def_struct_property_tags(dummyot.ext.srna, rna_enum_operator_property_tags);
-  RNA_def_struct_translation_context(dummyot.ext.srna, dummyot.translation_context);
-  dummyot.ext.data = data;
-  dummyot.ext.call = call;
-  dummyot.ext.free = free;
+  RNA_def_struct_property_tags(dummyot.rna_ext.srna, rna_enum_operator_property_tags);
+  RNA_def_struct_translation_context(dummyot.rna_ext.srna, dummyot.translation_context);
+  dummyot.rna_ext.data = data;
+  dummyot.rna_ext.call = call;
+  dummyot.rna_ext.free = free;
 
   dummyot.pyop_poll = (have_function[0]) ? rna_operator_poll_cb : NULL;
   dummyot.exec = (have_function[1]) ? rna_operator_execute_cb : NULL;
@@ -1598,7 +1569,7 @@ static StructRNA *rna_Operator_register(Main *bmain,
   /* update while blender is running */
   WM_main_add_notifier(NC_SCREEN | NA_EDITED, NULL);
 
-  return dummyot.ext.srna;
+  return dummyot.rna_ext.srna;
 }
 
 static void rna_Operator_unregister(struct Main *bmain, StructRNA *type)
@@ -1620,7 +1591,7 @@ static void rna_Operator_unregister(struct Main *bmain, StructRNA *type)
   }
   WM_main_add_notifier(NC_SCREEN | NA_EDITED, NULL);
 
-  RNA_struct_free_extension(type, &ot->ext);
+  RNA_struct_free_extension(type, &ot->rna_ext);
 
   idname = ot->idname;
   WM_operatortype_remove_ptr(ot);
@@ -1671,9 +1642,7 @@ static StructRNA *rna_MacroOperator_register(Main *bmain,
 
   /* clear in case they are left unset */
   temp_buffers.idname[0] = temp_buffers.name[0] = temp_buffers.description[0] =
-      temp_buffers.undo_group[0] = '\0';
-  /* We have to set default op context! */
-  strcpy(temp_buffers.translation_context, BLT_I18NCONTEXT_OPERATOR_DEFAULT);
+      temp_buffers.undo_group[0] = temp_buffers.translation_context[0] = '\0';
 
   /* validate the python class */
   if (validate(&dummyotr, data, have_function) != 0) {
@@ -1692,8 +1661,8 @@ static StructRNA *rna_MacroOperator_register(Main *bmain,
   /* check if we have registered this operator type before, and remove it */
   {
     wmOperatorType *ot = WM_operatortype_find(dummyot.idname, true);
-    if (ot && ot->ext.srna) {
-      rna_Operator_unregister(bmain, ot->ext.srna);
+    if (ot && ot->rna_ext.srna) {
+      rna_Operator_unregister(bmain, ot->rna_ext.srna);
     }
   }
 
@@ -1706,6 +1675,11 @@ static StructRNA *rna_MacroOperator_register(Main *bmain,
 
   if (!RNA_struct_available_or_report(reports, idname_conv)) {
     return NULL;
+  }
+
+  /* We have to set default context if the class doesn't define it. */
+  if (temp_buffers.translation_context[0] == '\0') {
+    STRNCPY(temp_buffers.translation_context, BLT_I18NCONTEXT_OPERATOR_DEFAULT);
   }
 
   /* Convert foo.bar to FOO_OT_bar
@@ -1730,15 +1704,15 @@ static StructRNA *rna_MacroOperator_register(Main *bmain,
     BLI_assert(ARRAY_SIZE(strings) == 5);
   }
 
-  /* XXX, this doubles up with the operator name [#29666]
+  /* XXX, this doubles up with the operator name T29666.
    * for now just remove from dir(bpy.types) */
 
   /* create a new operator type */
-  dummyot.ext.srna = RNA_def_struct_ptr(&BLENDER_RNA, dummyot.idname, &RNA_Operator);
-  RNA_def_struct_translation_context(dummyot.ext.srna, dummyot.translation_context);
-  dummyot.ext.data = data;
-  dummyot.ext.call = call;
-  dummyot.ext.free = free;
+  dummyot.rna_ext.srna = RNA_def_struct_ptr(&BLENDER_RNA, dummyot.idname, &RNA_Operator);
+  RNA_def_struct_translation_context(dummyot.rna_ext.srna, dummyot.translation_context);
+  dummyot.rna_ext.data = data;
+  dummyot.rna_ext.call = call;
+  dummyot.rna_ext.free = free;
 
   dummyot.pyop_poll = (have_function[0]) ? rna_operator_poll_cb : NULL;
   dummyot.ui = (have_function[3]) ? rna_operator_draw_cb : NULL;
@@ -1748,20 +1722,20 @@ static StructRNA *rna_MacroOperator_register(Main *bmain,
   /* update while blender is running */
   WM_main_add_notifier(NC_SCREEN | NA_EDITED, NULL);
 
-  return dummyot.ext.srna;
+  return dummyot.rna_ext.srna;
 }
 #  endif /* WITH_PYTHON */
 
 static StructRNA *rna_Operator_refine(PointerRNA *opr)
 {
   wmOperator *op = (wmOperator *)opr->data;
-  return (op->type && op->type->ext.srna) ? op->type->ext.srna : &RNA_Operator;
+  return (op->type && op->type->rna_ext.srna) ? op->type->rna_ext.srna : &RNA_Operator;
 }
 
 static StructRNA *rna_MacroOperator_refine(PointerRNA *opr)
 {
   wmOperator *op = (wmOperator *)opr->data;
-  return (op->type && op->type->ext.srna) ? op->type->ext.srna : &RNA_Macro;
+  return (op->type && op->type->rna_ext.srna) ? op->type->rna_ext.srna : &RNA_Macro;
 }
 
 /* just to work around 'const char *' warning and to ensure this is a python op */
@@ -1961,7 +1935,7 @@ static void rna_def_operator(BlenderRNA *brna)
 
   prop = RNA_def_property(srna, "bl_options", PROP_ENUM, PROP_NONE);
   RNA_def_property_enum_sdna(prop, NULL, "type->flag");
-  RNA_def_property_enum_items(prop, operator_flag_items);
+  RNA_def_property_enum_items(prop, rna_enum_operator_type_flag_items);
   RNA_def_property_flag(prop, PROP_REGISTER_OPTIONAL | PROP_ENUM_FLAG);
   RNA_def_property_ui_text(prop, "Options", "Options for this operator type");
 
@@ -2053,7 +2027,7 @@ static void rna_def_macro_operator(BlenderRNA *brna)
 
   prop = RNA_def_property(srna, "bl_options", PROP_ENUM, PROP_NONE);
   RNA_def_property_enum_sdna(prop, NULL, "type->flag");
-  RNA_def_property_enum_items(prop, operator_flag_items);
+  RNA_def_property_enum_items(prop, rna_enum_operator_type_flag_items);
   RNA_def_property_flag(prop, PROP_REGISTER_OPTIONAL | PROP_ENUM_FLAG);
   RNA_def_property_ui_text(prop, "Options", "Options for this operator type");
 
@@ -2492,11 +2466,6 @@ static void rna_def_windowmanager(BlenderRNA *brna)
   RNA_def_property_struct_type(prop, "KeyConfig");
   RNA_def_property_ui_text(prop, "Key Configurations", "Registered key configurations");
   rna_def_wm_keyconfigs(brna, prop);
-
-  prop = RNA_def_property(srna, "clipboard", PROP_STRING, PROP_NONE);
-  RNA_def_property_string_funcs(
-      prop, "rna_wmClipboard_get", "rna_wmClipboard_length", "rna_wmClipboard_set");
-  RNA_def_property_ui_text(prop, "Text Clipboard", "");
 
   prop = RNA_def_property(srna, "xr_session_settings", PROP_POINTER, PROP_NONE);
   RNA_def_property_pointer_sdna(prop, NULL, "xr.session_settings");

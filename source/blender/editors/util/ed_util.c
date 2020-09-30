@@ -35,6 +35,7 @@
 #include "DNA_screen_types.h"
 #include "DNA_space_types.h"
 
+#include "BLI_listbase.h"
 #include "BLI_path_util.h"
 #include "BLI_string.h"
 #include "BLI_utildefines.h"
@@ -57,7 +58,6 @@
 #include "DEG_depsgraph.h"
 
 #include "ED_armature.h"
-#include "ED_buttons.h"
 #include "ED_image.h"
 #include "ED_mesh.h"
 #include "ED_node.h"
@@ -82,7 +82,7 @@
 void ED_editors_init_for_undo(Main *bmain)
 {
   wmWindowManager *wm = bmain->wm.first;
-  for (wmWindow *win = wm->windows.first; win; win = win->next) {
+  LISTBASE_FOREACH (wmWindow *, win, &wm->windows) {
     ViewLayer *view_layer = WM_window_get_active_view_layer(win);
     Base *base = BASACT(view_layer);
     if (base != NULL) {
@@ -91,7 +91,7 @@ void ED_editors_init_for_undo(Main *bmain)
         Scene *scene = WM_window_get_active_scene(win);
 
         BKE_texpaint_slots_refresh_object(scene, ob);
-        BKE_paint_proj_mesh_data_check(scene, ob, NULL, NULL, NULL, NULL);
+        ED_paint_proj_mesh_data_check(scene, ob, NULL, NULL, NULL, NULL);
       }
     }
   }
@@ -122,10 +122,10 @@ void ED_editors_init(bContext *C)
     if (mode == OB_MODE_OBJECT) {
       continue;
     }
-    else if (BKE_object_has_mode_data(ob, mode)) {
+    if (BKE_object_has_mode_data(ob, mode)) {
       continue;
     }
-    else if (ob->type == OB_GPENCIL) {
+    if (ob->type == OB_GPENCIL) {
       /* For multi-edit mode we may already have mode data (grease pencil does not need it).
        * However we may have a non-active object stuck in a grease-pencil edit mode. */
       if (ob != obact) {
@@ -152,10 +152,10 @@ void ED_editors_init(bContext *C)
             ED_object_sculptmode_enter_ex(bmain, depsgraph, scene, ob, true, reports);
           }
           else if (mode == OB_MODE_VERTEX_PAINT) {
-            ED_object_vpaintmode_enter_ex(bmain, depsgraph, wm, scene, ob);
+            ED_object_vpaintmode_enter_ex(bmain, depsgraph, scene, ob);
           }
           else if (mode == OB_MODE_WEIGHT_PAINT) {
-            ED_object_wpaintmode_enter_ex(bmain, depsgraph, wm, scene, ob);
+            ED_object_wpaintmode_enter_ex(bmain, depsgraph, scene, ob);
           }
           else {
             BLI_assert(0);
@@ -173,7 +173,7 @@ void ED_editors_init(bContext *C)
       else {
         /* TODO(campbell): avoid operator calls. */
         if (obact == ob) {
-          ED_object_mode_toggle(C, mode);
+          ED_object_mode_set(C, mode);
         }
       }
     }
@@ -224,8 +224,8 @@ void ED_editors_exit(Main *bmain, bool do_undo_system)
   }
 
   /* global in meshtools... */
-  ED_mesh_mirror_spatial_table(NULL, NULL, NULL, NULL, 'e');
-  ED_mesh_mirror_topo_table(NULL, NULL, 'e');
+  ED_mesh_mirror_spatial_table_end(NULL);
+  ED_mesh_mirror_topo_table_end(NULL);
 }
 
 bool ED_editors_flush_edits_for_object_ex(Main *bmain,
@@ -472,12 +472,12 @@ void ED_region_draw_mouse_line_cb(const bContext *C, ARegion *region, void *arg_
  *
  * \param new_id: may be NULL to unlink \a old_id.
  */
-void ED_spacedata_id_remap(struct ScrArea *sa, struct SpaceLink *sl, ID *old_id, ID *new_id)
+void ED_spacedata_id_remap(struct ScrArea *area, struct SpaceLink *sl, ID *old_id, ID *new_id)
 {
   SpaceType *st = BKE_spacetype_from_id(sl->spacetype);
 
   if (st && st->id_remap) {
-    st->id_remap(sa, sl, old_id, new_id);
+    st->id_remap(area, sl, old_id, new_id);
   }
 }
 

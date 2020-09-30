@@ -21,14 +21,9 @@
  * \ingroup editorui
  */
 
-#ifndef __UI_RESOURCES_H__
-#define __UI_RESOURCES_H__
+#pragma once
 
 #include "BLI_sys_types.h"
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /* Define icon enum. */
 #define DEF_ICON(name) ICON_##name,
@@ -46,6 +41,10 @@ typedef enum {
 
 /* use to denote intentionally unset theme color */
 #define TH_UNDEFINED -1
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef enum ThemeColorID {
   TH_REDALERT,
@@ -263,7 +262,6 @@ typedef enum ThemeColorID {
   TH_PAINT_CURVE_PIVOT,
 
   TH_UV_SHADOW,
-  TH_UV_OTHERS,
 
   TH_FREESTYLE_EDGE_MARK,
   TH_FREESTYLE_FACE_MARK,
@@ -432,11 +430,8 @@ void UI_GetColorPtrBlendShade3ubv(const unsigned char cp1[3],
 // (for anything fancy use UI_GetThemeColor[Fancy] then BLF_color)
 void UI_FontThemeColor(int fontid, int colorid);
 
-// clear the openGL ClearColor using the input colorid
+// clear the framebuffer using the input colorid
 void UI_ThemeClearColor(int colorid);
-
-// clear the openGL ClearColor using the input colorid using optional transparency
-void UI_ThemeClearColorAlpha(int colorid, float alpha);
 
 // internal (blender) usage only, for init and set active
 void UI_SetTheme(int spacetype, int regionid);
@@ -458,5 +453,3 @@ void UI_make_axis_color(const unsigned char *src_col, unsigned char *dst_col, co
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __UI_RESOURCES_H__ */

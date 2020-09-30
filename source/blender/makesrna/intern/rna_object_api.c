@@ -36,10 +36,12 @@
 #include "DNA_modifier_types.h"
 #include "DNA_object_types.h"
 
-#include "BKE_gpencil_geom.h"
+#include "BKE_gpencil_curve.h"
 #include "BKE_layer.h"
 
 #include "DEG_depsgraph.h"
+
+#include "ED_outliner.h"
 
 #include "rna_internal.h" /* own include */
 
@@ -63,7 +65,6 @@ static const EnumPropertyItem space_items[] = {
 
 #  include "BLI_math.h"
 
-#  include "BKE_anim.h"
 #  include "BKE_bvhutils.h"
 #  include "BKE_constraint.h"
 #  include "BKE_context.h"
@@ -115,6 +116,7 @@ static void rna_Object_select_set(
   Scene *scene = CTX_data_scene(C);
   DEG_id_tag_update(&scene->id, ID_RECALC_SELECT);
   WM_main_add_notifier(NC_SCENE | ND_OB_SELECT, scene);
+  ED_outliner_select_sync_from_object_tag(C);
 }
 
 static bool rna_Object_select_get(Object *ob, bContext *C, ViewLayer *view_layer)
@@ -222,7 +224,7 @@ static bool rna_Object_indirect_only_get(Object *ob, bContext *C, ViewLayer *vie
   return ((base->flag & BASE_INDIRECT_ONLY) != 0);
 }
 
-static Base *rna_Object_local_view_property_helper(bScreen *sc,
+static Base *rna_Object_local_view_property_helper(bScreen *screen,
                                                    View3D *v3d,
                                                    ViewLayer *view_layer,
                                                    Object *ob,
@@ -236,7 +238,7 @@ static Base *rna_Object_local_view_property_helper(bScreen *sc,
   }
 
   if (view_layer == NULL) {
-    win = ED_screen_window_find(sc, G_MAIN->wm.first);
+    win = ED_screen_window_find(screen, G_MAIN->wm.first);
     view_layer = WM_window_get_active_view_layer(win);
   }
 
@@ -266,10 +268,10 @@ static void rna_Object_local_view_set(Object *ob,
                                       PointerRNA *v3d_ptr,
                                       bool state)
 {
-  bScreen *sc = (bScreen *)v3d_ptr->owner_id;
+  bScreen *screen = (bScreen *)v3d_ptr->owner_id;
   View3D *v3d = v3d_ptr->data;
   Scene *scene;
-  Base *base = rna_Object_local_view_property_helper(sc, v3d, NULL, ob, reports, &scene);
+  Base *base = rna_Object_local_view_property_helper(screen, v3d, NULL, ob, reports, &scene);
   if (base == NULL) {
     return; /* Error reported. */
   }
@@ -277,9 +279,9 @@ static void rna_Object_local_view_set(Object *ob,
   SET_FLAG_FROM_TEST(base->local_view_bits, state, v3d->local_view_uuid);
   if (local_view_bits_prev != base->local_view_bits) {
     DEG_id_tag_update(&scene->id, ID_RECALC_BASE_FLAGS);
-    ScrArea *sa = ED_screen_area_find_with_spacedata(sc, (SpaceLink *)v3d, true);
-    if (sa) {
-      ED_area_tag_redraw(sa);
+    ScrArea *area = ED_screen_area_find_with_spacedata(screen, (SpaceLink *)v3d, true);
+    if (area) {
+      ED_area_tag_redraw(area);
     }
   }
 }
@@ -394,6 +396,9 @@ static PointerRNA rna_Object_shape_key_add(
 
     RNA_pointer_create((ID *)BKE_key_from_object(ob), &RNA_ShapeKey, kb, &keyptr);
     WM_event_add_notifier(C, NC_OBJECT | ND_DRAW, ob);
+
+    DEG_id_tag_update(&ob->id, ID_RECALC_GEOMETRY);
+    DEG_relations_tag_update(bmain);
 
     return keyptr;
   }
@@ -711,8 +716,9 @@ bool rna_Object_generate_gpencil_strokes(Object *ob,
                                          bContext *C,
                                          ReportList *reports,
                                          Object *ob_gpencil,
-                                         bool gpencil_lines,
-                                         bool use_collections)
+                                         bool use_collections,
+                                         float scale_thickness,
+                                         float sample)
 {
   if (ob->type != OB_CURVE) {
     BKE_reportf(reports,
@@ -724,7 +730,8 @@ bool rna_Object_generate_gpencil_strokes(Object *ob,
   Main *bmain = CTX_data_main(C);
   Scene *scene = CTX_data_scene(C);
 
-  BKE_gpencil_convert_curve(bmain, scene, ob_gpencil, ob, gpencil_lines, use_collections, false);
+  BKE_gpencil_convert_curve(
+      bmain, scene, ob_gpencil, ob, use_collections, scale_thickness, sample);
 
   WM_main_add_notifier(NC_GPENCIL | ND_DATA, NULL);
 
@@ -952,7 +959,7 @@ void RNA_api_object(StructRNA *srna)
   RNA_def_function_ui_description(func, "Clears mesh data-block created by to_mesh()");
 
   /* Armature */
-  func = RNA_def_function(srna, "find_armature", "modifiers_isDeformedByArmature");
+  func = RNA_def_function(srna, "find_armature", "BKE_modifiers_is_deformed_by_armature");
   RNA_def_function_ui_description(
       func, "Find armature influencing this object as a parent or via a modifier");
   parm = RNA_def_pointer(
@@ -1188,12 +1195,17 @@ void RNA_api_object(StructRNA *srna)
   RNA_def_function_ui_description(func, "Convert a curve object to grease pencil strokes.");
   RNA_def_function_flag(func, FUNC_USE_CONTEXT | FUNC_USE_REPORTS);
 
-  parm = RNA_def_pointer(
-      func, "ob_gpencil", "Object", "", "Grease Pencil object used to create new strokes");
+  parm = RNA_def_pointer(func,
+                         "grease_pencil_object",
+                         "Object",
+                         "",
+                         "Grease Pencil object used to create new strokes");
   RNA_def_parameter_flags(parm, PROP_NEVER_NULL, PARM_REQUIRED);
-  parm = RNA_def_boolean(func, "gpencil_lines", 0, "", "Create Lines");
-  parm = RNA_def_boolean(func, "use_collections", 1, "", "Use Collections");
-
+  parm = RNA_def_boolean(func, "use_collections", true, "", "Use Collections");
+  parm = RNA_def_float(
+      func, "scale_thickness", 1.0f, 0.0f, FLT_MAX, "", "Thickness scaling factor", 0.0f, 100.0f);
+  parm = RNA_def_float(
+      func, "sample", 0.0f, 0.0f, FLT_MAX, "", "Sample distance, zero to disable", 0.0f, 100.0f);
   parm = RNA_def_boolean(func, "result", 0, "", "Result");
   RNA_def_function_return(func, parm);
 }

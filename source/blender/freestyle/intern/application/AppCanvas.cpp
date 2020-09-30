@@ -18,18 +18,17 @@
  * \ingroup freestyle
  */
 
-/* clang-format off */
-#include "Controller.h"
-#include "AppView.h"
-#include "../image/Image.h"
-#include "../system/TimeStamp.h"
-#include "../stroke/StrokeRenderer.h"
 #include "AppCanvas.h"
 #include "AppConfig.h"
+#include "AppView.h"
+#include "Controller.h"
+
+#include "../image/Image.h"
+#include "../stroke/StrokeRenderer.h"
 #include "../stroke/StyleModule.h"
+#include "../system/TimeStamp.h"
 
 #include "../system/StringUtils.h"
-/* clang-format on */
 namespace Freestyle {
 
 AppCanvas::AppCanvas() : Canvas()
@@ -123,7 +122,7 @@ void AppCanvas::Erase()
 void AppCanvas::readColorPixels(int x, int y, int w, int h, RGBImage &oImage) const
 {
   float *rgb = new float[3 * w * h];
-  memset(rgb, 0, sizeof(float) * 3 * w * h);
+  memset(rgb, 0, sizeof(float[3]) * w * h);
   int xsch = width();
   int ysch = height();
   if (_pass_diffuse.buf) {
@@ -162,8 +161,7 @@ void AppCanvas::readColorPixels(int x, int y, int w, int h, RGBImage &oImage) co
         if (ii < 0 || ii >= rectx) {
           continue;
         }
-        memcpy(
-            rgb + (w * j + i) * 3, _pass_diffuse.buf + (rectx * jj + ii) * 3, sizeof(float) * 3);
+        memcpy(rgb + (w * j + i) * 3, _pass_diffuse.buf + (rectx * jj + ii) * 3, sizeof(float[3]));
       }
     }
   }

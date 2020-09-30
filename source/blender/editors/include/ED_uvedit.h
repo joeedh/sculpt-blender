@@ -21,8 +21,7 @@
  * \ingroup editors
  */
 
-#ifndef __ED_UVEDIT_H__
-#define __ED_UVEDIT_H__
+#pragma once
 
 #ifdef __cplusplus
 extern "C" {
@@ -47,23 +46,21 @@ struct wmKeyConfig;
 
 /* uvedit_ops.c */
 void ED_operatortypes_uvedit(void);
+void ED_operatormacros_uvedit(void);
 void ED_keymap_uvedit(struct wmKeyConfig *keyconf);
 
 bool ED_uvedit_minmax(const struct Scene *scene,
-                      struct Image *ima,
                       struct Object *obedit,
                       float min[2],
                       float max[2]);
 void ED_uvedit_select_all(struct BMesh *bm);
 
 bool ED_uvedit_minmax_multi(const struct Scene *scene,
-                            struct Image *ima,
                             struct Object **objects_edit,
                             uint objects_len,
                             float r_min[2],
                             float r_max[2]);
 bool ED_uvedit_center_multi(const struct Scene *scene,
-                            Image *ima,
                             struct Object **objects_edit,
                             uint objects_len,
                             float r_cent[2],
@@ -95,11 +92,7 @@ void ED_object_assign_active_image(struct Main *bmain,
 bool ED_uvedit_test(struct Object *obedit);
 
 /* visibility and selection */
-bool uvedit_face_visible_nolocal_ex(const struct ToolSettings *ts, struct BMFace *efa);
-bool uvedit_face_visible_test_ex(const struct ToolSettings *ts,
-                                 struct Object *obedit,
-                                 struct Image *ima,
-                                 struct BMFace *efa);
+bool uvedit_face_visible_test_ex(const struct ToolSettings *ts, struct BMFace *efa);
 bool uvedit_face_select_test_ex(const struct ToolSettings *ts,
                                 struct BMFace *efa,
                                 const int cd_loop_uv_offset);
@@ -110,11 +103,7 @@ bool uvedit_uv_select_test_ex(const struct ToolSettings *ts,
                               struct BMLoop *l,
                               const int cd_loop_uv_offset);
 
-bool uvedit_face_visible_nolocal(const struct Scene *scene, struct BMFace *efa);
-bool uvedit_face_visible_test(const struct Scene *scene,
-                              struct Object *obedit,
-                              struct Image *ima,
-                              struct BMFace *efa);
+bool uvedit_face_visible_test(const struct Scene *scene, struct BMFace *efa);
 bool uvedit_face_select_test(const struct Scene *scene,
                              struct BMFace *efa,
                              const int cd_loop_uv_offset);
@@ -125,70 +114,110 @@ bool uvedit_uv_select_test(const struct Scene *scene,
                            struct BMLoop *l,
                            const int cd_loop_uv_offset);
 /* uv face */
-bool uvedit_face_select_set(const struct Scene *scene,
+void uvedit_face_select_set_with_sticky(const struct SpaceImage *sima,
+                                        const struct Scene *scene,
+                                        struct BMEditMesh *em,
+                                        struct BMFace *efa,
+                                        const bool select,
+                                        const bool do_history,
+                                        const int cd_loop_uv_offset);
+void uvedit_face_select_set(const struct Scene *scene,
                             struct BMEditMesh *em,
                             struct BMFace *efa,
                             const bool select,
                             const bool do_history,
                             const int cd_loop_uv_offset);
-bool uvedit_face_select_enable(const struct Scene *scene,
+void uvedit_face_select_enable(const struct Scene *scene,
                                struct BMEditMesh *em,
                                struct BMFace *efa,
                                const bool do_history,
                                const int cd_loop_uv_offset);
-bool uvedit_face_select_disable(const struct Scene *scene,
+void uvedit_face_select_disable(const struct Scene *scene,
                                 struct BMEditMesh *em,
                                 struct BMFace *efa,
                                 const int cd_loop_uv_offset);
 /* uv edge */
-void uvedit_edge_select_set(struct BMEditMesh *em,
-                            const struct Scene *scene,
+void uvedit_edge_select_set_with_sticky(const struct SpaceImage *sima,
+                                        const struct Scene *scene,
+                                        struct BMEditMesh *em,
+                                        struct BMLoop *l,
+                                        const bool select,
+                                        const bool do_history,
+                                        const uint cd_loop_uv_offset);
+void uvedit_edge_select_set(const struct Scene *scene,
+                            struct BMEditMesh *em,
                             struct BMLoop *l,
                             const bool select,
                             const bool do_history,
                             const int cd_loop_uv_offset);
-void uvedit_edge_select_enable(struct BMEditMesh *em,
-                               const struct Scene *scene,
+void uvedit_edge_select_enable(const struct Scene *scene,
+                               struct BMEditMesh *em,
                                struct BMLoop *l,
                                const bool do_history,
                                const int cd_loop_uv_offset);
-void uvedit_edge_select_disable(struct BMEditMesh *em,
-                                const struct Scene *scene,
+void uvedit_edge_select_disable(const struct Scene *scene,
+                                struct BMEditMesh *em,
                                 struct BMLoop *l,
                                 const int cd_loop_uv_offset);
 /* uv vert */
-void uvedit_uv_select_set(struct BMEditMesh *em,
-                          const struct Scene *scene,
+void uvedit_uv_select_set_with_sticky(const struct SpaceImage *sima,
+                                      const struct Scene *scene,
+                                      struct BMEditMesh *em,
+                                      struct BMLoop *l,
+                                      const bool select,
+                                      const bool do_history,
+                                      const uint cd_loop_uv_offset);
+void uvedit_uv_select_set(const struct Scene *scene,
+                          struct BMEditMesh *em,
                           struct BMLoop *l,
                           const bool select,
                           const bool do_history,
                           const int cd_loop_uv_offset);
-void uvedit_uv_select_enable(struct BMEditMesh *em,
-                             const struct Scene *scene,
+void uvedit_uv_select_enable(const struct Scene *scene,
+                             struct BMEditMesh *em,
                              struct BMLoop *l,
                              const bool do_history,
                              const int cd_loop_uv_offset);
-void uvedit_uv_select_disable(struct BMEditMesh *em,
-                              const struct Scene *scene,
+void uvedit_uv_select_disable(const struct Scene *scene,
+                              struct BMEditMesh *em,
                               struct BMLoop *l,
                               const int cd_loop_uv_offset);
 
 bool ED_uvedit_nearest_uv(const struct Scene *scene,
                           struct Object *obedit,
-                          struct Image *ima,
                           const float co[2],
                           float *dist_sq,
                           float r_uv[2]);
 bool ED_uvedit_nearest_uv_multi(const struct Scene *scene,
-                                struct Image *ima,
                                 struct Object **objects,
                                 const uint objects_len,
                                 const float co[2],
                                 float *dist_sq,
                                 float r_uv[2]);
 
-void ED_uvedit_get_aspect(
-    const struct Scene *scene, struct Object *ob, struct BMesh *em, float *r_aspx, float *r_aspy);
+struct BMFace **ED_uvedit_selected_faces(struct Scene *scene,
+                                         struct BMesh *bm,
+                                         int len_max,
+                                         int *r_faces_len);
+struct BMLoop **ED_uvedit_selected_edges(struct Scene *scene,
+                                         struct BMesh *bm,
+                                         int len_max,
+                                         int *r_edges_len);
+struct BMLoop **ED_uvedit_selected_verts(struct Scene *scene,
+                                         struct BMesh *bm,
+                                         int len_max,
+                                         int *r_verts_len);
+
+void ED_uvedit_get_aspect(struct Object *obedit, float *r_aspx, float *r_aspy);
+
+void ED_uvedit_active_vert_loop_set(struct BMesh *bm, struct BMLoop *l);
+struct BMLoop *ED_uvedit_active_vert_loop_get(struct BMesh *bm);
+
+void ED_uvedit_active_edge_loop_set(struct BMesh *bm, struct BMLoop *l);
+struct BMLoop *ED_uvedit_active_edge_loop_get(struct BMesh *bm);
+
+char ED_uvedit_select_mode_get(const Scene *scene);
+void ED_uvedit_select_sync_flush(const ToolSettings *ts, struct BMEditMesh *em, const bool select);
 
 /* uvedit_unwrap_ops.c */
 void ED_uvedit_live_unwrap_begin(struct Scene *scene, struct Object *obedit);
@@ -213,5 +242,3 @@ void ED_uvedit_buttons_register(struct ARegionType *art);
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __ED_UVEDIT_H__ */

@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __FREESTYLE_SPHERICAL_GRID_H__
-#define __FREESTYLE_SPHERICAL_GRID_H__
+#pragma once
 
 /** \file
  * \ingroup freestyle
@@ -24,7 +23,6 @@
 
 #define SPHERICAL_GRID_LOGGING 0
 
-/* clang-format off */
 // I would like to avoid using deque because including ViewMap.h and <deque> or <vector> separately
 // results in redefinitions of identifiers. ViewMap.h already includes <vector> so it should be a
 // safe fall-back.
@@ -35,9 +33,9 @@
 #include "OccluderSource.h"
 #include "ViewMap.h"
 
-#include "../geometry/Polygon.h"
 #include "../geometry/BBox.h"
 #include "../geometry/GridHelpers.h"
+#include "../geometry/Polygon.h"
 
 #include "../system/PointerSequence.h"
 
@@ -48,7 +46,6 @@
 #ifdef WITH_CXX_GUARDEDALLOC
 #  include "MEM_guardedalloc.h"
 #endif
-/* clang-format on */
 
 namespace Freestyle {
 
@@ -436,5 +433,3 @@ inline bool SphericalGrid::insertOccluder(OccluderSource &source, OccluderData *
 }
 
 } /* namespace Freestyle */
-
-#endif  // __FREESTYLE_SPHERICAL_GRID_H__

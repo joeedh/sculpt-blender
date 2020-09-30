@@ -59,7 +59,8 @@ int getname_anim_fcurve(char *name, ID *id, FCurve *fcu)
   if (name == NULL) {
     return icon;
   }
-  else if (ELEM(NULL, id, fcu, fcu->rna_path)) {
+
+  if (ELEM(NULL, id, fcu, fcu->rna_path)) {
     if (fcu == NULL) {
       strcpy(name, TIP_("<invalid>"));
     }
@@ -203,7 +204,7 @@ int getname_anim_fcurve(char *name, ID *id, FCurve *fcu)
 #define HSV_BANDWIDTH 0.3f
 
 /* used to determine the color of F-Curves with FCURVE_COLOR_AUTO_RAINBOW set */
-// void fcurve_rainbow(unsigned int cur, unsigned int tot, float *out)
+// void fcurve_rainbow(uint cur, uint tot, float *out)
 void getcolor_fcurve_rainbow(int cur, int tot, float out[3])
 {
   float hsv[3], fac;

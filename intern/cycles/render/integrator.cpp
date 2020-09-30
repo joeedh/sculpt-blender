@@ -30,6 +30,7 @@
 #include "util/util_foreach.h"
 #include "util/util_hash.h"
 #include "util/util_logging.h"
+#include "util/util_task.h"
 
 CCL_NAMESPACE_BEGIN
 
@@ -159,7 +160,7 @@ void Integrator::device_update(Device *device, DeviceScene *dscene, Scene *scene
 
   kintegrator->seed = hash_uint2(seed, 0);
 
-  kintegrator->use_ambient_occlusion = ((Pass::contains(scene->film->passes, PASS_AO)) ||
+  kintegrator->use_ambient_occlusion = ((Pass::contains(scene->passes, PASS_AO)) ||
                                         dscene->data.background.ao_factor != 0.0f);
 
   kintegrator->sample_clamp_direct = (sample_clamp_direct == 0.0f) ? FLT_MAX :
@@ -199,6 +200,13 @@ void Integrator::device_update(Device *device, DeviceScene *dscene, Scene *scene
   else {
     kintegrator->adaptive_min_samples = max(4, adaptive_min_samples);
   }
+
+  kintegrator->adaptive_step = 4;
+  kintegrator->adaptive_stop_per_sample = device->info.has_adaptive_stop_per_sample;
+
+  /* Adaptive step must be a power of two for bitwise operations to work. */
+  assert((kintegrator->adaptive_step & (kintegrator->adaptive_step - 1)) == 0);
+
   if (aa_samples > 0 && adaptive_threshold == 0.0f) {
     kintegrator->adaptive_threshold = max(0.001f, 1.0f / (float)aa_samples);
     VLOG(1) << "Cycles adaptive sampling: automatic threshold = "

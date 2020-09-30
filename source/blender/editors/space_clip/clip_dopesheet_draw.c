@@ -49,7 +49,9 @@
 
 #include "clip_intern.h" /* own include */
 
-static void track_channel_color(MovieTrackingTrack *track, float default_color[3], float color[3])
+static void track_channel_color(MovieTrackingTrack *track,
+                                const float default_color[3],
+                                float color[3])
 {
   if (track->flag & TRACK_CUSTOMCOLOR) {
     float bg[3];
@@ -68,7 +70,7 @@ static void track_channel_color(MovieTrackingTrack *track, float default_color[3
 }
 
 static void draw_keyframe_shape(
-    float x, float y, bool sel, float alpha, unsigned int pos_id, unsigned int color_id)
+    float x, float y, bool sel, float alpha, uint pos_id, uint color_id)
 {
   float color[4] = {0.91f, 0.91f, 0.91f, alpha};
   if (sel) {
@@ -79,7 +81,7 @@ static void draw_keyframe_shape(
   immVertex2f(pos_id, x, y);
 }
 
-static void clip_draw_dopesheet_background(ARegion *region, MovieClip *clip, unsigned int pos_id)
+static void clip_draw_dopesheet_background(ARegion *region, MovieClip *clip, uint pos_id)
 {
   View2D *v2d = &region->v2d;
   MovieTracking *tracking = &clip->tracking;
@@ -118,7 +120,7 @@ void clip_draw_dopesheet_main(SpaceClip *sc, ARegion *region, Scene *scene)
     MovieTrackingDopesheet *dopesheet = &tracking->dopesheet;
     MovieTrackingDopesheetChannel *channel;
     float strip[4], selected_strip[4];
-    float height = (dopesheet->tot_channel * CHANNEL_STEP) + (CHANNEL_HEIGHT);
+    float height = (dopesheet->tot_channel * CHANNEL_STEP) + CHANNEL_HEIGHT;
 
     uint keyframe_len = 0;
 
@@ -140,7 +142,7 @@ void clip_draw_dopesheet_main(SpaceClip *sc, ARegion *region, Scene *scene)
     strip[3] = 0.5f;
     selected_strip[3] = 1.0f;
 
-    GPU_blend(true);
+    GPU_blend(GPU_BLEND_ALPHA);
 
     clip_draw_dopesheet_background(region, clip, pos_id);
 
@@ -286,13 +288,13 @@ void clip_draw_dopesheet_main(SpaceClip *sc, ARegion *region, Scene *scene)
       immUnbindProgram();
     }
 
-    GPU_blend(false);
+    GPU_blend(GPU_BLEND_NONE);
   }
 }
 
 void clip_draw_dopesheet_channels(const bContext *C, ARegion *region)
 {
-  ScrArea *sa = CTX_wm_area(C);
+  ScrArea *area = CTX_wm_area(C);
   SpaceClip *sc = CTX_wm_space_clip(C);
   View2D *v2d = &region->v2d;
   MovieClip *clip = ED_space_clip_get_clip(sc);
@@ -305,7 +307,7 @@ void clip_draw_dopesheet_channels(const bContext *C, ARegion *region)
 
   MovieTracking *tracking = &clip->tracking;
   MovieTrackingDopesheet *dopesheet = &tracking->dopesheet;
-  int height = (dopesheet->tot_channel * CHANNEL_STEP) + (CHANNEL_HEIGHT);
+  int height = (dopesheet->tot_channel * CHANNEL_STEP) + CHANNEL_HEIGHT;
 
   if (height > BLI_rcti_size_y(&v2d->mask)) {
     /* don't use totrect set, as the width stays the same
@@ -316,7 +318,7 @@ void clip_draw_dopesheet_channels(const bContext *C, ARegion *region)
 
   /* need to do a view-sync here, so that the keys area doesn't jump around
    * (it must copy this) */
-  UI_view2d_sync(NULL, sa, v2d, V2D_LOCK_COPY);
+  UI_view2d_sync(NULL, area, v2d, V2D_LOCK_COPY);
 
   /* loop through channels, and set up drawing depending on their type
    * first pass: just the standard GL-drawing for backdrop + text
@@ -387,7 +389,7 @@ void clip_draw_dopesheet_channels(const bContext *C, ARegion *region)
   PropertyRNA *chan_prop_lock = RNA_struct_type_find_property(&RNA_MovieTrackingTrack, "lock");
   BLI_assert(chan_prop_lock);
 
-  GPU_blend(true);
+  GPU_blend(GPU_BLEND_ALPHA);
   for (channel = dopesheet->channels.first; channel; channel = channel->next) {
     float yminc = (float)(y - CHANNEL_HEIGHT_HALF);
     float ymaxc = (float)(y + CHANNEL_HEIGHT_HALF);
@@ -424,7 +426,7 @@ void clip_draw_dopesheet_channels(const bContext *C, ARegion *region)
     /* adjust y-position for next one */
     y -= CHANNEL_STEP;
   }
-  GPU_blend(false);
+  GPU_blend(GPU_BLEND_NONE);
 
   UI_block_end(C, block);
   UI_block_draw(C, block);

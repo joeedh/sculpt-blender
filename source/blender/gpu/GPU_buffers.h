@@ -21,8 +21,7 @@
  * \ingroup gpu
  */
 
-#ifndef __GPU_BUFFERS_H__
-#define __GPU_BUFFERS_H__
+#pragma once
 
 #include <stddef.h>
 
@@ -39,22 +38,23 @@ struct MLoop;
 struct MLoopCol;
 struct MLoopTri;
 struct MPoly;
+struct MPropCol;
 struct MVert;
 struct Mesh;
 struct PBVH;
+struct SubdivCCG;
 
 /* Buffers for drawing from PBVH grids. */
 typedef struct GPU_PBVH_Buffers GPU_PBVH_Buffers;
 
 /* Build must be called once before using the other functions, used every time
  * mesh topology changes. Threaded. */
-GPU_PBVH_Buffers *GPU_pbvh_mesh_buffers_build(const int (*face_vert_indices)[3],
-                                              const struct MPoly *mpoly,
+GPU_PBVH_Buffers *GPU_pbvh_mesh_buffers_build(const struct MPoly *mpoly,
                                               const struct MLoop *mloop,
                                               const struct MLoopTri *looptri,
-                                              const struct MVert *verts,
+                                              const struct MVert *mvert,
                                               const int *face_indices,
-                                              const int *sculpt_facemap,
+                                              const int *sculpt_face_sets,
                                               const int face_indices_len,
                                               const struct Mesh *mesh);
 
@@ -66,7 +66,7 @@ GPU_PBVH_Buffers *GPU_pbvh_bmesh_buffers_build(bool smooth_shading);
 void GPU_pbvh_bmesh_buffers_update_free(GPU_PBVH_Buffers *buffers);
 void GPU_pbvh_grid_buffers_update_free(GPU_PBVH_Buffers *buffers,
                                        const struct DMFlagMat *grid_flag_mats,
-                                       int *grid_indices);
+                                       const int *grid_indices);
 
 /* Update mesh buffers without topology changes. Threaded. */
 enum {
@@ -77,14 +77,12 @@ enum {
 
 void GPU_pbvh_mesh_buffers_update(GPU_PBVH_Buffers *buffers,
                                   const struct MVert *mvert,
-                                  const int *vert_indices,
-                                  int totvert,
                                   const float *vmask,
                                   const struct MLoopCol *vcol,
                                   const int *sculpt_face_sets,
                                   const int face_sets_color_seed,
                                   const int face_sets_color_default,
-                                  const int (*face_vert_indices)[3],
+                                  const struct MPropCol *vtcol,
                                   const int update_flags);
 
 void GPU_pbvh_bmesh_buffers_update(GPU_PBVH_Buffers *buffers,
@@ -95,10 +93,14 @@ void GPU_pbvh_bmesh_buffers_update(GPU_PBVH_Buffers *buffers,
                                    const int update_flags);
 
 void GPU_pbvh_grid_buffers_update(GPU_PBVH_Buffers *buffers,
+                                  struct SubdivCCG *subdiv_ccg,
                                   struct CCGElem **grids,
                                   const struct DMFlagMat *grid_flag_mats,
                                   int *grid_indices,
                                   int totgrid,
+                                  const int *sculpt_face_sets,
+                                  const int face_sets_color_seed,
+                                  const int face_sets_color_default,
                                   const struct CCGKey *key,
                                   const int update_flags);
 
@@ -117,6 +119,4 @@ bool GPU_pbvh_buffers_has_overlays(GPU_PBVH_Buffers *buffers);
 
 #ifdef __cplusplus
 }
-#endif
-
 #endif

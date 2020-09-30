@@ -21,8 +21,7 @@
  * \brief GHOST C-API function and type declarations.
  */
 
-#ifndef __GHOST_C_API_H__
-#define __GHOST_C_API_H__
+#pragma once
 
 #include "GHOST_Types.h"
 
@@ -203,7 +202,8 @@ extern GHOST_WindowHandle GHOST_CreateDialogWindow(GHOST_SystemHandle systemhand
  * \param platform_support_callback An optional callback to check platform support
  * \return A handle to the new context ( == NULL if creation failed).
  */
-extern GHOST_ContextHandle GHOST_CreateOpenGLContext(GHOST_SystemHandle systemhandle);
+extern GHOST_ContextHandle GHOST_CreateOpenGLContext(GHOST_SystemHandle systemhandle,
+                                                     GHOST_GLSettings glSettings);
 
 /**
  * Dispose of a context.
@@ -213,25 +213,6 @@ extern GHOST_ContextHandle GHOST_CreateOpenGLContext(GHOST_SystemHandle systemha
  */
 extern GHOST_TSuccess GHOST_DisposeOpenGLContext(GHOST_SystemHandle systemhandle,
                                                  GHOST_ContextHandle contexthandle);
-
-#ifdef WIN32
-/**
- * Create a new offscreen context.
- * Never explicitly delete the context, use disposeContext() instead.
- * \param systemhandle The handle to the system
- * \return A handle to the new context ( == NULL if creation failed).
- */
-GHOST_ContextHandle GHOST_CreateDirectXContext(GHOST_SystemHandle systemhandle);
-
-/**
- * Dispose of a context.
- * \param systemhandle The handle to the system
- * \param contexthandle Handle to the context to be disposed.
- * \return Indication of success.
- */
-GHOST_TSuccess GHOST_DisposeDirectXContext(GHOST_SystemHandle systemhandle,
-                                           GHOST_ContextHandle contexthandle);
-#endif
 
 /**
  * Returns the window user data.
@@ -381,8 +362,8 @@ extern GHOST_TSuccess GHOST_HasCursorShape(GHOST_WindowHandle windowhandle,
  * \param mask The mask data for the cursor.
  * \param sizex The width of the cursor
  * \param sizey The height of the cursor
- * \param hotX The X coordinate of the cursor hotspot.
- * \param hotY The Y coordinate of the cursor hotspot.
+ * \param hotX The X coordinate of the cursor hot-spot.
+ * \param hotY The Y coordinate of the cursor hot-spot.
  * \param canInvertColor Let macOS invert cursor color to match platform convention.
  * \return Indication of success.
  */
@@ -454,7 +435,7 @@ extern GHOST_TSuccess GHOST_SetCursorGrab(GHOST_WindowHandle windowhandle,
  ***************************************************************************************/
 
 /**
- * Returns the state of a modifier key (ouside the message queue).
+ * Returns the state of a modifier key (outside the message queue).
  * \param systemhandle The handle to the system
  * \param mask The modifier key state to retrieve.
  * \param isDown Pointer to return modifier state in.
@@ -465,7 +446,7 @@ extern GHOST_TSuccess GHOST_GetModifierKeyState(GHOST_SystemHandle systemhandle,
                                                 int *isDown);
 
 /**
- * Returns the state of a mouse button (ouside the message queue).
+ * Returns the state of a mouse button (outside the message queue).
  * \param systemhandle The handle to the system
  * \param mask The button state to retrieve.
  * \param isDown Pointer to return button state in.
@@ -757,7 +738,7 @@ extern GHOST_TSuccess GHOST_ActivateOpenGLContext(GHOST_ContextHandle contexthan
 extern GHOST_TSuccess GHOST_ReleaseOpenGLContext(GHOST_ContextHandle contexthandle);
 
 /**
- * Get the OpenGL framebuffer handle that serves as a default framebuffer.
+ * Get the OpenGL frame-buffer handle that serves as a default frame-buffer.
  */
 extern unsigned int GHOST_GetContextDefaultOpenGLFramebuffer(GHOST_ContextHandle contexthandle);
 
@@ -769,7 +750,7 @@ extern unsigned int GHOST_GetContextDefaultOpenGLFramebuffer(GHOST_ContextHandle
 extern int GHOST_isUpsideDownContext(GHOST_ContextHandle contexthandle);
 
 /**
- * Get the OpenGL framebuffer handle that serves as a default framebuffer.
+ * Get the OpenGL frame-buffer handle that serves as a default frame-buffer.
  */
 extern unsigned int GHOST_GetDefaultOpenGLFramebuffer(GHOST_WindowHandle windwHandle);
 
@@ -779,13 +760,6 @@ extern unsigned int GHOST_GetDefaultOpenGLFramebuffer(GHOST_WindowHandle windwHa
  * \param api Enum indicating which API to use.
  */
 extern void GHOST_SetTabletAPI(GHOST_SystemHandle systemhandle, GHOST_TTabletAPI api);
-
-/**
- * Returns the status of the tablet
- * \param windowhandle The handle to the window
- * \return Status of tablet
- */
-extern const GHOST_TabletData *GHOST_GetTabletData(GHOST_WindowHandle windowhandle);
 
 /**
  * Access to rectangle width.
@@ -1078,6 +1052,13 @@ void GHOST_XrSessionDrawViews(GHOST_XrContextHandle xr_context, void *customdata
  */
 int GHOST_XrSessionIsRunning(const GHOST_XrContextHandle xr_context);
 
+/**
+ * Check if \a xr_context has a session that requires an upside-down frame-buffer (compared to
+ * OpenGL). If true, the render result should be flipped vertically for correct output.
+ * \note: Only to be called after session start, may otherwise result in a false negative.
+ */
+int GHOST_XrSessionNeedsUpsideDownDrawing(const GHOST_XrContextHandle xr_context);
+
 /* events */
 /**
  * Invoke handling of all OpenXR events for \a xr_context. Should be called on every main-loop
@@ -1090,6 +1071,4 @@ GHOST_TSuccess GHOST_XrEventsHandle(GHOST_XrContextHandle xr_context);
 
 #ifdef __cplusplus
 }
-#endif
-
 #endif

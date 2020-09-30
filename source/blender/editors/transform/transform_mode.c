@@ -39,17 +39,33 @@
 
 #include "RNA_access.h"
 
-#include "ED_screen.h"
-
 #include "UI_interface.h"
 
 #include "BLT_translation.h"
 
 #include "transform.h"
+#include "transform_convert.h"
 #include "transform_snap.h"
 
 /* Own include. */
 #include "transform_mode.h"
+
+int transform_mode_really_used(bContext *C, int mode)
+{
+  if (mode == TFM_BONESIZE) {
+    Object *ob = CTX_data_active_object(C);
+    BLI_assert(ob);
+    if (ob->type != OB_ARMATURE) {
+      return TFM_RESIZE;
+    }
+    bArmature *arm = ob->data;
+    if (arm->drawtype == ARM_ENVELOPE) {
+      return TFM_BONE_ENVELOPE_DIST;
+    }
+  }
+
+  return mode;
+}
 
 bool transdata_check_local_center(TransInfo *t, short around)
 {
@@ -59,6 +75,18 @@ bool transdata_check_local_center(TransInfo *t, short around)
            (ELEM(t->obedit_type, OB_MESH, OB_CURVE, OB_MBALL, OB_ARMATURE, OB_GPENCIL)) ||
            (t->spacetype == SPACE_GRAPH) ||
            (t->options & (CTX_MOVIECLIP | CTX_MASK | CTX_PAINT_CURVE))));
+}
+
+/* Informs if the mode can be switched during modal. */
+bool transform_mode_is_changeable(const int mode)
+{
+  return ELEM(mode,
+              TFM_ROTATION,
+              TFM_RESIZE,
+              TFM_TRACKBALL,
+              TFM_TRANSLATION,
+              TFM_EDGE_SLIDE,
+              TFM_VERT_SLIDE);
 }
 
 /* -------------------------------------------------------------------- */
@@ -150,7 +178,7 @@ static void protectedRotateBits(short protectflag, float eul[3], const float old
 /* this function only does the delta rotation */
 /* axis-angle is usually internally stored as quats... */
 static void protectedAxisAngleBits(
-    short protectflag, float axis[3], float *angle, float oldAxis[3], float oldAngle)
+    short protectflag, float axis[3], float *angle, const float oldAxis[3], float oldAngle)
 {
   /* check that protection flags are set */
   if ((protectflag & (OB_LOCK_ROTX | OB_LOCK_ROTY | OB_LOCK_ROTZ | OB_LOCK_ROTW)) == 0) {
@@ -420,20 +448,19 @@ static void constraintSizeLim(TransInfo *t, TransData *td)
       /* scale val and reset size */
       return;  // TODO: fix this case
     }
-    else {
-      /* Reset val if SINGLESIZE but using a constraint */
-      if (td->flag & TD_SINGLESIZE) {
-        return;
-      }
 
-      /* separate out sign to apply back later */
-      for (i = 0; i < 3; i++) {
-        size_sign[i] = signf(td->ext->size[i]);
-        size_abs[i] = fabsf(td->ext->size[i]);
-      }
-
-      size_to_mat4(cob.matrix, size_abs);
+    /* Reset val if SINGLESIZE but using a constraint */
+    if (td->flag & TD_SINGLESIZE) {
+      return;
     }
+
+    /* separate out sign to apply back later */
+    for (i = 0; i < 3; i++) {
+      size_sign[i] = signf(td->ext->size[i]);
+      size_abs[i] = fabsf(td->ext->size[i]);
+    }
+
+    size_to_mat4(cob.matrix, size_abs);
 
     /* Evaluate valid constraints */
     for (con = td->con; con; con = con->next) {
@@ -480,16 +507,15 @@ static void constraintSizeLim(TransInfo *t, TransData *td)
       /* scale val and reset size */
       return;  // TODO: fix this case
     }
-    else {
-      /* Reset val if SINGLESIZE but using a constraint */
-      if (td->flag & TD_SINGLESIZE) {
-        return;
-      }
 
-      /* extrace scale from matrix and apply back sign */
-      mat4_to_size(td->ext->size, cob.matrix);
-      mul_v3_v3(td->ext->size, size_sign);
+    /* Reset val if SINGLESIZE but using a constraint */
+    if (td->flag & TD_SINGLESIZE) {
+      return;
     }
+
+    /* extrace scale from matrix and apply back sign */
+    mat4_to_size(td->ext->size, cob.matrix);
+    mul_v3_v3(td->ext->size, size_sign);
   }
 }
 
@@ -529,7 +555,7 @@ void headerRotation(TransInfo *t, char str[UI_MAX_DRAW_STR], float final)
 void postInputRotation(TransInfo *t, float values[3])
 {
   float axis_final[3];
-  copy_v3_v3(axis_final, t->orient_matrix[t->orient_axis]);
+  copy_v3_v3(axis_final, t->spacemtx[t->orient_axis]);
   if ((t->con.mode & CON_APPLY) && t->con.applyRot) {
     t->con.applyRot(t, NULL, NULL, axis_final, values);
   }
@@ -870,7 +896,7 @@ void headerResize(TransInfo *t, const float vec[3], char str[UI_MAX_DRAW_STR])
  *
  * \note this is a tricky area, before making changes see: T29633, T42444
  */
-static void TransMat3ToSize(float mat[3][3], float smat[3][3], float size[3])
+static void TransMat3ToSize(const float mat[3][3], const float smat[3][3], float size[3])
 {
   float rmat[3][3];
 
@@ -925,7 +951,7 @@ void ElementResize(TransInfo *t, TransDataContainer *tc, TransData *td, float ma
   if (td->ext && td->ext->size) {
     float fsize[3];
 
-    if ((t->options & CTX_SCULPT) || t->flag & (T_OBJECT | T_TEXTURE | T_POSE)) {
+    if (ELEM(t->data_type, TC_SCULPT, TC_OBJECT, TC_OBJECT_TEXSPACE, TC_POSE)) {
       float obsizemat[3][3];
       /* Reorient the size mat to fit the oriented object. */
       mul_m3_m3m3(obsizemat, tmat, td->axismtx);
@@ -988,7 +1014,7 @@ void ElementResize(TransInfo *t, TransDataContainer *tc, TransData *td, float ma
 
     /* scale stroke thickness */
     if (td->val) {
-      snapGridIncrement(t, t->values_final);
+      transform_snap_increment(t, t->values_final);
       applyNumInput(&t->num, t->values_final);
 
       float ratio = t->values_final[0];
@@ -1028,21 +1054,21 @@ short getAnimEdit_SnapMode(TransInfo *t)
   short autosnap = SACTSNAP_OFF;
 
   if (t->spacetype == SPACE_ACTION) {
-    SpaceAction *saction = (SpaceAction *)t->sa->spacedata.first;
+    SpaceAction *saction = (SpaceAction *)t->area->spacedata.first;
 
     if (saction) {
       autosnap = saction->autosnap;
     }
   }
   else if (t->spacetype == SPACE_GRAPH) {
-    SpaceGraph *sipo = (SpaceGraph *)t->sa->spacedata.first;
+    SpaceGraph *sipo = (SpaceGraph *)t->area->spacedata.first;
 
     if (sipo) {
       autosnap = sipo->autosnap;
     }
   }
   else if (t->spacetype == SPACE_NLA) {
-    SpaceNla *snla = (SpaceNla *)t->sa->spacedata.first;
+    SpaceNla *snla = (SpaceNla *)t->area->spacedata.first;
 
     if (snla) {
       autosnap = snla->autosnap;
@@ -1163,25 +1189,12 @@ void transform_mode_init(TransInfo *t, wmOperator *op, const int mode)
     case TFM_CREASE:
       initCrease(t);
       break;
-    case TFM_BONESIZE: { /* used for both B-Bone width (bonesize) as for deform-dist (envelope) */
-      /* Note: we have to pick one, use the active object. */
-      TransDataContainer *tc = TRANS_DATA_CONTAINER_FIRST_OK(t);
-      bArmature *arm = tc->poseobj->data;
-      if (arm->drawtype == ARM_ENVELOPE) {
-        initBoneEnvelope(t);
-        t->mode = TFM_BONE_ENVELOPE_DIST;
-      }
-      else {
-        initBoneSize(t);
-      }
+    case TFM_BONESIZE:
+      initBoneSize(t);
       break;
-    }
     case TFM_BONE_ENVELOPE:
-      initBoneEnvelope(t);
-      break;
     case TFM_BONE_ENVELOPE_DIST:
       initBoneEnvelope(t);
-      t->mode = TFM_BONE_ENVELOPE_DIST;
       break;
     case TFM_EDGE_SLIDE:
     case TFM_VERT_SLIDE: {
@@ -1254,6 +1267,12 @@ void transform_mode_init(TransInfo *t, wmOperator *op, const int mode)
     case TFM_GPENCIL_OPACITY:
       initGPOpacity(t);
       break;
+  }
+
+  if (t->data_type == TC_MESH_VERTS) {
+    /* Init Custom Data correction.
+     * Ideally this should be called when creating the TransData. */
+    mesh_customdatacorrect_init(t);
   }
 
   /* TODO(germano): Some of these operations change the `t->mode`.

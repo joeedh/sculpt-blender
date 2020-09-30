@@ -17,8 +17,7 @@
  * All rights reserved.
  */
 
-#ifndef __BKE_MATERIAL_H__
-#define __BKE_MATERIAL_H__
+#pragma once
 
 /** \file
  * \ingroup bke
@@ -84,7 +83,8 @@ void BKE_object_material_assign(
 void BKE_object_material_array_assign(struct Main *bmain,
                                       struct Object *ob,
                                       struct Material ***matar,
-                                      short totcol);
+                                      int totcol,
+                                      const bool to_object_only);
 
 short BKE_object_material_slot_find_index(struct Object *ob, struct Material *ma);
 bool BKE_object_material_slot_add(struct Main *bmain, struct Object *ob);
@@ -99,6 +99,7 @@ void BKE_texpaint_slots_refresh_object(struct Scene *scene, struct Object *ob);
 struct bNode *BKE_texpaint_slot_material_find_node(struct Material *ma, short texpaint_slot);
 
 /* rna api */
+void BKE_id_materials_copy(struct Main *bmain, struct ID *id_src, struct ID *id_dst);
 void BKE_id_material_resize(struct Main *bmain, struct ID *id, short totcol, bool do_id_user);
 void BKE_id_material_append(struct Main *bmain, struct ID *id, struct Material *ma);
 struct Material *BKE_id_material_pop(struct Main *bmain,
@@ -119,6 +120,7 @@ void BKE_material_copybuf_paste(struct Main *bmain, struct Material *ma);
 /* Default Materials */
 
 struct Material *BKE_material_default_empty(void);
+struct Material *BKE_material_default_holdout(void);
 struct Material *BKE_material_default_surface(void);
 struct Material *BKE_material_default_volume(void);
 struct Material *BKE_material_default_gpencil(void);
@@ -133,6 +135,4 @@ void BKE_material_eval(struct Depsgraph *depsgraph, struct Material *material);
 
 #ifdef __cplusplus
 }
-#endif
-
 #endif

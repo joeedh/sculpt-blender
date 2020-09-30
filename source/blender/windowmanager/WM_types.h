@@ -81,7 +81,7 @@
  * ScrArea's store a list of space data (SpaceLinks), each of unique type.
  * The first one is the displayed in the UI, others are added as needed.
  *
- * +----------------------------+  <-- sa->spacedata.first;
+ * +----------------------------+  <-- area->spacedata.first;
  * |                            |
  * |                            |---+  <-- other inactive SpaceLink's stored.
  * |                            |   |
@@ -99,19 +99,14 @@
  *
  * A common way to get the space from the ScrArea:
  * \code{.c}
- * if (sa->spacetype == SPACE_VIEW3D) {
- *     View3D *v3d = sa->spacedata.first;
+ * if (area->spacetype == SPACE_VIEW3D) {
+ *     View3D *v3d = area->spacedata.first;
  *     ...
  * }
  * \endcode
  */
 
-#ifndef __WM_TYPES_H__
-#define __WM_TYPES_H__
-
-#ifdef __cplusplus
-extern "C" {
-#endif
+#pragma once
 
 struct ID;
 struct ImBuf;
@@ -132,6 +127,10 @@ struct wmWindowManager;
 
 /* Include external gizmo API's */
 #include "gizmo/WM_gizmo_api.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef struct wmGenericUserData {
   void *data;
@@ -310,7 +309,7 @@ typedef struct wmNotifier {
 #define ND_HISTORY (4 << 16)
 #define ND_JOB (5 << 16)
 #define ND_UNDO (6 << 16)
-#define ND_XR_DATA_CHANGED (7 << 17)
+#define ND_XR_DATA_CHANGED (7 << 16)
 
 /* NC_SCREEN */
 #define ND_LAYOUTBROWSE (1 << 16)
@@ -330,7 +329,10 @@ typedef struct wmNotifier {
 #define ND_RENDER_OPTIONS (4 << 16)
 #define ND_NODES (5 << 16)
 #define ND_SEQUENCER (6 << 16)
+/* Note: If an object was added, removed, merged/joined, ..., it is not enough to notify with
+ * this. This affects the layer so also send a layer change notifier (e.g. ND_LAYER_CONTENT)! */
 #define ND_OB_ACTIVE (7 << 16)
+/* See comment on ND_OB_ACTIVE. */
 #define ND_OB_SELECT (8 << 16)
 #define ND_OB_VISIBLE (9 << 16)
 #define ND_OB_RENDER (10 << 16)
@@ -361,6 +363,7 @@ typedef struct wmNotifier {
 #define ND_LOD (30 << 16)
 #define ND_DRAW_RENDER_VIEWPORT \
   (31 << 16) /* for camera & sequencer viewport update, also /w NC_SCENE */
+#define ND_SHADERFX (32 << 16)
 
 /* NC_MATERIAL Material */
 #define ND_SHADING (30 << 16)
@@ -438,7 +441,10 @@ typedef struct wmNotifier {
 
 /* subtype 3d view editing */
 #define NS_VIEW3D_GPU (16 << 8)
-#define NS_VIEW3D_SHADING (16 << 9)
+#define NS_VIEW3D_SHADING (17 << 8)
+
+/* subtype layer editing */
+#define NS_LAYER_COLLECTION (24 << 8)
 
 /* action classification */
 #define NOTE_ACTION (0x000000FF)
@@ -448,7 +454,8 @@ typedef struct wmNotifier {
 #define NA_REMOVED 4
 #define NA_RENAME 5
 #define NA_SELECTED 6
-#define NA_PAINTING 7
+#define NA_ACTIVATED 7
+#define NA_PAINTING 8
 
 /* ************** Gesture Manager data ************** */
 
@@ -760,7 +767,7 @@ typedef struct wmOperatorType {
   bool (*pyop_poll)(struct bContext *, struct wmOperatorType *ot) ATTR_WARN_UNUSED_RESULT;
 
   /** RNA integration */
-  ExtensionRNA ext;
+  ExtensionRNA rna_ext;
 
   /** Flag last for padding */
   short flag;
@@ -927,5 +934,3 @@ extern struct CLG_LogRef *WM_LOG_MSGBUS_SUB;
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __WM_TYPES_H__ */

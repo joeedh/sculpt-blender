@@ -102,7 +102,7 @@ static void vcol_to_fcol(Mesh *me)
     return;
   }
 
-  mcoln = mcolmain = MEM_malloc_arrayN(me->totface, 4 * sizeof(int), "mcoln");
+  mcoln = mcolmain = MEM_malloc_arrayN(me->totface, sizeof(int[4]), "mcoln");
   mcol = (uint *)me->mcol;
   mface = me->mface;
   for (a = me->totface; a > 0; a--, mface++) {
@@ -493,6 +493,7 @@ void blo_do_version_old_trackto_to_constraints(Object *ob)
   ob->track = NULL;
 }
 
+/* NOLINTNEXTLINE: readability-function-size */
 void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
 {
   /* WATCH IT!!!: pointers from libdata have not been converted */
@@ -579,12 +580,12 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
   }
 
   if (bmain->versionfile <= 109) {
-    /* new variable: gridlines */
-    bScreen *sc = bmain->screens.first;
-    while (sc) {
-      ScrArea *sa = sc->areabase.first;
-      while (sa) {
-        SpaceLink *sl = sa->spacedata.first;
+    /* New variable: `gridlines`. */
+    bScreen *screen = bmain->screens.first;
+    while (screen) {
+      ScrArea *area = screen->areabase.first;
+      while (area) {
+        SpaceLink *sl = area->spacedata.first;
         while (sl) {
           if (sl->spacetype == SPACE_VIEW3D) {
             View3D *v3d = (View3D *)sl;
@@ -595,9 +596,9 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
           }
           sl = sl->next;
         }
-        sa = sa->next;
+        area = area->next;
       }
-      sc = sc->id.next;
+      screen = screen->id.next;
     }
   }
 
@@ -694,11 +695,11 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
   }
 
   if (bmain->versionfile <= 169) {
-    bScreen *sc = bmain->screens.first;
-    while (sc) {
-      ScrArea *sa = sc->areabase.first;
-      while (sa) {
-        SpaceLink *sl = sa->spacedata.first;
+    bScreen *screen = bmain->screens.first;
+    while (screen) {
+      ScrArea *area = screen->areabase.first;
+      while (area) {
+        SpaceLink *sl = area->spacedata.first;
         while (sl) {
           if (sl->spacetype == SPACE_GRAPH) {
             SpaceGraph *sipo = (SpaceGraph *)sl;
@@ -706,9 +707,9 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
           }
           sl = sl->next;
         }
-        sa = sa->next;
+        area = area->next;
       }
-      sc = sc->id.next;
+      screen = screen->id.next;
     }
   }
 
@@ -727,11 +728,11 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
   }
 
   if (bmain->versionfile <= 171) {
-    bScreen *sc = bmain->screens.first;
-    while (sc) {
-      ScrArea *sa = sc->areabase.first;
-      while (sa) {
-        SpaceLink *sl = sa->spacedata.first;
+    bScreen *screen = bmain->screens.first;
+    while (screen) {
+      ScrArea *area = screen->areabase.first;
+      while (area) {
+        SpaceLink *sl = area->spacedata.first;
         while (sl) {
           if (sl->spacetype == SPACE_TEXT) {
             SpaceText *st = (SpaceText *)sl;
@@ -739,9 +740,9 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
           }
           sl = sl->next;
         }
-        sa = sa->next;
+        area = area->next;
       }
-      sc = sc->id.next;
+      screen = screen->id.next;
     }
   }
 
@@ -856,8 +857,8 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
   if (bmain->versionfile <= 223) {
     VFont *vf;
     for (vf = bmain->fonts.first; vf; vf = vf->id.next) {
-      if (STREQ(vf->name + strlen(vf->name) - 6, ".Bfont")) {
-        strcpy(vf->name, FO_BUILTIN_NAME);
+      if (STREQ(vf->filepath + strlen(vf->filepath) - 6, ".Bfont")) {
+        strcpy(vf->filepath, FO_BUILTIN_NAME);
       }
     }
   }
@@ -866,7 +867,7 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
     bSound *sound;
     Scene *sce;
     Mesh *me;
-    bScreen *sc;
+    bScreen *screen;
 
     for (sound = bmain->sounds.first; sound; sound = sound->id.next) {
       if (sound->packedfile) {
@@ -889,13 +890,13 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
     }
 
     /* some oldfile patch, moved from set_func_space */
-    for (sc = bmain->screens.first; sc; sc = sc->id.next) {
-      ScrArea *sa;
+    for (screen = bmain->screens.first; screen; screen = screen->id.next) {
+      ScrArea *area;
 
-      for (sa = sc->areabase.first; sa; sa = sa->next) {
+      for (area = screen->areabase.first; area; area = area->next) {
         SpaceLink *sl;
 
-        for (sl = sa->spacedata.first; sl; sl = sl->next) {
+        for (sl = area->spacedata.first; sl; sl = sl->next) {
           if (sl->spacetype == SPACE_GRAPH) {
             SpaceSeq *sseq = (SpaceSeq *)sl;
             sseq->v2d.keeptot = 0;
@@ -907,7 +908,7 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
 
   if (bmain->versionfile <= 227) {
     Scene *sce;
-    bScreen *sc;
+    bScreen *screen;
     Object *ob;
 
     /* As of now, this insures that the transition from the old Track system
@@ -962,13 +963,13 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
     }
 
     /* patch for old wrong max view2d settings, allows zooming out more */
-    for (sc = bmain->screens.first; sc; sc = sc->id.next) {
-      ScrArea *sa;
+    for (screen = bmain->screens.first; screen; screen = screen->id.next) {
+      ScrArea *area;
 
-      for (sa = sc->areabase.first; sa; sa = sa->next) {
+      for (area = screen->areabase.first; area; area = area->next) {
         SpaceLink *sl;
 
-        for (sl = sa->spacedata.first; sl; sl = sl->next) {
+        for (sl = area->spacedata.first; sl; sl = sl->next) {
           if (sl->spacetype == SPACE_ACTION) {
             SpaceAction *sac = (SpaceAction *)sl;
             sac->v2d.max[0] = 32000;
@@ -983,7 +984,7 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
   }
 
   if (bmain->versionfile <= 228) {
-    bScreen *sc;
+    bScreen *screen;
     Object *ob;
 
     /* As of now, this insures that the transition from the old Track system
@@ -1029,13 +1030,13 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
     }
 
     /* convert old mainb values for new button panels */
-    for (sc = bmain->screens.first; sc; sc = sc->id.next) {
-      ScrArea *sa;
+    for (screen = bmain->screens.first; screen; screen = screen->id.next) {
+      ScrArea *area;
 
-      for (sa = sc->areabase.first; sa; sa = sa->next) {
+      for (area = screen->areabase.first; area; area = area->next) {
         SpaceLink *sl;
 
-        for (sl = sa->spacedata.first; sl; sl = sl->next) {
+        for (sl = area->spacedata.first; sl; sl = sl->next) {
           if (sl->spacetype == SPACE_PROPERTIES) {
             SpaceProperties *sbuts = (SpaceProperties *)sl;
 
@@ -1096,16 +1097,16 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
    */
 
   if (bmain->versionfile <= 230) {
-    bScreen *sc;
+    bScreen *screen;
 
     /* new variable blockscale, for panels in any area */
-    for (sc = bmain->screens.first; sc; sc = sc->id.next) {
-      ScrArea *sa;
+    for (screen = bmain->screens.first; screen; screen = screen->id.next) {
+      ScrArea *area;
 
-      for (sa = sc->areabase.first; sa; sa = sa->next) {
+      for (area = screen->areabase.first; area; area = area->next) {
         SpaceLink *sl;
 
-        for (sl = sa->spacedata.first; sl; sl = sl->next) {
+        for (sl = area->spacedata.first; sl; sl = sl->next) {
           /* added: 5x better zoom in for action */
           if (sl->spacetype == SPACE_ACTION) {
             SpaceAction *sac = (SpaceAction *)sl;
@@ -1117,14 +1118,14 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
   }
 
   if (bmain->versionfile <= 231) {
-    bScreen *sc = bmain->screens.first;
+    bScreen *screen = bmain->screens.first;
 
     /* new bit flags for showing/hiding grid floor and axes */
 
-    while (sc) {
-      ScrArea *sa = sc->areabase.first;
-      while (sa) {
-        SpaceLink *sl = sa->spacedata.first;
+    while (screen) {
+      ScrArea *area = screen->areabase.first;
+      while (area) {
+        SpaceLink *sl = area->spacedata.first;
         while (sl) {
           if (sl->spacetype == SPACE_VIEW3D) {
             View3D *v3d = (View3D *)sl;
@@ -1138,16 +1139,16 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
           }
           sl = sl->next;
         }
-        sa = sa->next;
+        area = area->next;
       }
-      sc = sc->id.next;
+      screen = screen->id.next;
     }
   }
 
   if (bmain->versionfile <= 232) {
     Tex *tex = bmain->textures.first;
     World *wrld = bmain->worlds.first;
-    bScreen *sc;
+    bScreen *screen;
 
     while (tex) {
       if ((tex->flag & (TEX_CHECKER_ODD + TEX_CHECKER_EVEN)) == 0) {
@@ -1184,11 +1185,11 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
     /* new variable blockscale, for panels in any area, do again because new
      * areas didn't initialize it to 0.7 yet
      */
-    for (sc = bmain->screens.first; sc; sc = sc->id.next) {
-      ScrArea *sa;
-      for (sa = sc->areabase.first; sa; sa = sa->next) {
+    for (screen = bmain->screens.first; screen; screen = screen->id.next) {
+      ScrArea *area;
+      for (area = screen->areabase.first; area; area = area->next) {
         SpaceLink *sl;
-        for (sl = sa->spacedata.first; sl; sl = sl->next) {
+        for (sl = area->spacedata.first; sl; sl = sl->next) {
           /* added: 5x better zoom in for nla */
           if (sl->spacetype == SPACE_NLA) {
             SpaceNla *snla = (SpaceNla *)sl;
@@ -1200,13 +1201,13 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
   }
 
   if (bmain->versionfile <= 233) {
-    bScreen *sc;
+    bScreen *screen;
 
-    for (sc = bmain->screens.first; sc; sc = sc->id.next) {
-      ScrArea *sa;
-      for (sa = sc->areabase.first; sa; sa = sa->next) {
+    for (screen = bmain->screens.first; screen; screen = screen->id.next) {
+      ScrArea *area;
+      for (area = screen->areabase.first; area; area = area->next) {
         SpaceLink *sl;
-        for (sl = sa->spacedata.first; sl; sl = sl->next) {
+        for (sl = area->spacedata.first; sl; sl = sl->next) {
           if (sl->spacetype == SPACE_VIEW3D) {
             View3D *v3d = (View3D *)sl;
             v3d->flag |= V3D_SELECT_OUTLINE;
@@ -1217,13 +1218,13 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
   }
 
   if (bmain->versionfile <= 234) {
-    bScreen *sc;
+    bScreen *screen;
 
-    for (sc = bmain->screens.first; sc; sc = sc->id.next) {
-      ScrArea *sa;
-      for (sa = sc->areabase.first; sa; sa = sa->next) {
+    for (screen = bmain->screens.first; screen; screen = screen->id.next) {
+      ScrArea *area;
+      for (area = screen->areabase.first; area; area = area->next) {
         SpaceLink *sl;
-        for (sl = sa->spacedata.first; sl; sl = sl->next) {
+        for (sl = area->spacedata.first; sl; sl = sl->next) {
           if (sl->spacetype == SPACE_TEXT) {
             SpaceText *st = (SpaceText *)sl;
             if (st->tabnumber == 0) {
@@ -1250,12 +1251,12 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
     while (sce) {
       ed = sce->ed;
       if (ed) {
-        SEQ_BEGIN (sce->ed, seq) {
+        SEQ_ALL_BEGIN (sce->ed, seq) {
           if (seq->type == SEQ_TYPE_IMAGE || seq->type == SEQ_TYPE_MOVIE) {
             seq->alpha_mode = SEQ_ALPHA_STRAIGHT;
           }
         }
-        SEQ_END;
+        SEQ_ALL_END;
       }
 
       sce = sce->id.next;
@@ -1339,7 +1340,7 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
         arm = blo_do_versions_newlibadr(fd, lib, ob->data);
         enum { ARM_DRAWXRAY = (1 << 1) };
         if (arm->flag & ARM_DRAWXRAY) {
-          ob->dtx |= OB_DRAWXRAY;
+          ob->dtx |= OB_DRAW_IN_FRONT;
         }
       }
       else if (ob->type == OB_MESH) {
@@ -1351,7 +1352,8 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
         };
 
         if ((me->flag & ME_SUBSURF)) {
-          SubsurfModifierData *smd = (SubsurfModifierData *)modifier_new(eModifierType_Subsurf);
+          SubsurfModifierData *smd = (SubsurfModifierData *)BKE_modifier_new(
+              eModifierType_Subsurf);
 
           smd->levels = MAX2(1, me->subdiv);
           smd->renderLevels = MAX2(1, me->subdivr);
@@ -1371,7 +1373,7 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
 
           BLI_addtail(&ob->modifiers, smd);
 
-          modifier_unique_name(&ob->modifiers, (ModifierData *)smd);
+          BKE_modifier_unique_name(&ob->modifiers, (ModifierData *)smd);
         }
       }
 
@@ -1428,18 +1430,19 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
         }
       }
 
-      if ((ob->softflag & OB_SB_ENABLE) && !modifiers_findByType(ob, eModifierType_Softbody)) {
+      if ((ob->softflag & OB_SB_ENABLE) &&
+          !BKE_modifiers_findby_type(ob, eModifierType_Softbody)) {
         if (ob->softflag & OB_SB_POSTDEF) {
           md = ob->modifiers.first;
 
-          while (md && modifierType_getInfo(md->type)->type == eModifierTypeType_OnlyDeform) {
+          while (md && BKE_modifier_get_info(md->type)->type == eModifierTypeType_OnlyDeform) {
             md = md->next;
           }
 
-          BLI_insertlinkbefore(&ob->modifiers, md, modifier_new(eModifierType_Softbody));
+          BLI_insertlinkbefore(&ob->modifiers, md, BKE_modifier_new(eModifierType_Softbody));
         }
         else {
-          BLI_addhead(&ob->modifiers, modifier_new(eModifierType_Softbody));
+          BLI_addhead(&ob->modifiers, BKE_modifier_new(eModifierType_Softbody));
         }
 
         ob->softflag &= ~OB_SB_ENABLE;
@@ -1641,9 +1644,9 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
     if (bmain->versionfile == 241) {
       Image *ima;
       for (ima = bmain->images.first; ima; ima = ima->id.next) {
-        if (STREQ(ima->name, "Compositor")) {
+        if (STREQ(ima->filepath, "Compositor")) {
           strcpy(ima->id.name + 2, "Viewer Node");
-          strcpy(ima->name, "Viewer Node");
+          strcpy(ima->filepath, "Viewer Node");
         }
       }
     }
@@ -1651,7 +1654,7 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
 
   if (bmain->versionfile <= 242) {
     Scene *sce;
-    bScreen *sc;
+    bScreen *screen;
     Object *ob;
     Curve *cu;
     Material *ma;
@@ -1663,13 +1666,13 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
     bNodeTree *ntree;
     int a;
 
-    for (sc = bmain->screens.first; sc; sc = sc->id.next) {
-      ScrArea *sa;
-      sa = sc->areabase.first;
-      while (sa) {
+    for (screen = bmain->screens.first; screen; screen = screen->id.next) {
+      ScrArea *area;
+      area = screen->areabase.first;
+      while (area) {
         SpaceLink *sl;
 
-        for (sl = sa->spacedata.first; sl; sl = sl->next) {
+        for (sl = area->spacedata.first; sl; sl = sl->next) {
           if (sl->spacetype == SPACE_VIEW3D) {
             View3D *v3d = (View3D *)sl;
             if (v3d->gridsubdiv == 0) {
@@ -1677,7 +1680,7 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
             }
           }
         }
-        sa = sa->next;
+        area = area->next;
       }
     }
 
@@ -1922,17 +1925,17 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
   }
 
   if (bmain->versionfile <= 244) {
-    bScreen *sc;
+    bScreen *screen;
 
     if (bmain->versionfile != 244 || bmain->subversionfile < 2) {
       /* correct older action editors - incorrect scrolling */
-      for (sc = bmain->screens.first; sc; sc = sc->id.next) {
-        ScrArea *sa;
-        sa = sc->areabase.first;
-        while (sa) {
+      for (screen = bmain->screens.first; screen; screen = screen->id.next) {
+        ScrArea *area;
+        area = screen->areabase.first;
+        while (area) {
           SpaceLink *sl;
 
-          for (sl = sa->spacedata.first; sl; sl = sl->next) {
+          for (sl = area->spacedata.first; sl; sl = sl->next) {
             if (sl->spacetype == SPACE_ACTION) {
               SpaceAction *saction = (SpaceAction *)sl;
 
@@ -1943,7 +1946,7 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
               saction->v2d.cur.ymax = 5.0;
             }
           }
-          sa = sa->next;
+          area = area->next;
         }
       }
     }
@@ -2094,7 +2097,7 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
 
         if (la->curfalloff == NULL) {
           la->curfalloff = BKE_curvemapping_add(1, 0.0f, 1.0f, 1.0f, 0.0f);
-          BKE_curvemapping_initialize(la->curfalloff);
+          BKE_curvemapping_init(la->curfalloff);
         }
       }
     }
@@ -2271,7 +2274,7 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
 
         BLI_addtail(&ob->particlesystem, psys);
 
-        md = modifier_new(eModifierType_ParticleSystem);
+        md = BKE_modifier_new(eModifierType_ParticleSystem);
         BLI_snprintf(md->name,
                      sizeof(md->name),
                      "ParticleSystem %i",
@@ -2357,7 +2360,7 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
         }
 
         {
-          FluidsimModifierData *fluidmd = (FluidsimModifierData *)modifiers_findByType(
+          FluidsimModifierData *fluidmd = (FluidsimModifierData *)BKE_modifiers_findby_type(
               ob, eModifierType_Fluidsim);
           if (fluidmd && fluidmd->fss && fluidmd->fss->type == OB_FLUIDSIM_PARTICLE) {
             part->type = PART_FLUID;
@@ -2439,12 +2442,12 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
     Sequence *seq;
 
     for (sce = bmain->scenes.first; sce; sce = sce->id.next) {
-      SEQ_BEGIN (sce->ed, seq) {
+      SEQ_ALL_BEGIN (sce->ed, seq) {
         if (seq->blend_mode == 0) {
           seq->blend_opacity = 100.0f;
         }
       }
-      SEQ_END;
+      SEQ_ALL_END;
     }
   }
 
@@ -2483,7 +2486,7 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
 
     for (ob = bmain->objects.first; ob; ob = ob->id.next) {
       if (ob->fluidsimSettings) {
-        FluidsimModifierData *fluidmd = (FluidsimModifierData *)modifier_new(
+        FluidsimModifierData *fluidmd = (FluidsimModifierData *)BKE_modifier_new(
             eModifierType_Fluidsim);
         BLI_addhead(&ob->modifiers, (ModifierData *)fluidmd);
 
@@ -2540,16 +2543,16 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
   }
 
   if (bmain->versionfile < 248 || (bmain->versionfile == 248 && bmain->subversionfile < 3)) {
-    bScreen *sc;
+    bScreen *screen;
 
     /* adjust default settings for Animation Editors */
-    for (sc = bmain->screens.first; sc; sc = sc->id.next) {
-      ScrArea *sa;
+    for (screen = bmain->screens.first; screen; screen = screen->id.next) {
+      ScrArea *area;
 
-      for (sa = sc->areabase.first; sa; sa = sa->next) {
+      for (area = screen->areabase.first; area; area = area->next) {
         SpaceLink *sl;
 
-        for (sl = sa->spacedata.first; sl; sl = sl->next) {
+        for (sl = area->spacedata.first; sl; sl = sl->next) {
           switch (sl->spacetype) {
             case SPACE_ACTION: {
               SpaceAction *sact = (SpaceAction *)sl;
@@ -2592,12 +2595,12 @@ void blo_do_versions_pre250(FileData *fd, Library *lib, Main *bmain)
     while (sce) {
       ed = sce->ed;
       if (ed) {
-        SEQP_BEGIN (ed, seq) {
+        SEQ_CURRENT_BEGIN (ed, seq) {
           if (seq->strip && seq->strip->proxy) {
             seq->strip->proxy->quality = 90;
           }
         }
-        SEQ_END;
+        SEQ_CURRENT_END;
       }
 
       sce = sce->id.next;

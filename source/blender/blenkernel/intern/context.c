@@ -92,6 +92,11 @@ struct bContext {
     /** True if python is initialized. */
     bool py_init;
     void *py_context;
+    /**
+     * If we need to remove members, do so in a copy
+     * (keep this to check if the copy needs freeing).
+     */
+    void *py_context_orig;
   } data;
 };
 
@@ -226,9 +231,23 @@ void *CTX_py_dict_get(const bContext *C)
 {
   return C->data.py_context;
 }
-void CTX_py_dict_set(bContext *C, void *value)
+void *CTX_py_dict_get_orig(const bContext *C)
 {
+  return C->data.py_context_orig;
+}
+
+void CTX_py_state_push(bContext *C, struct bContext_PyState *pystate, void *value)
+{
+  pystate->py_context = C->data.py_context;
+  pystate->py_context_orig = C->data.py_context_orig;
+
   C->data.py_context = value;
+  C->data.py_context_orig = value;
+}
+void CTX_py_state_pop(bContext *C, struct bContext_PyState *pystate)
+{
+  C->data.py_context = pystate->py_context;
+  C->data.py_context_orig = pystate->py_context_orig;
 }
 
 /* data context utility functions */
@@ -255,13 +274,12 @@ static void *ctx_wm_python_context_get(const bContext *C,
       if (RNA_struct_is_a(result.ptr.type, member_type)) {
         return result.ptr.data;
       }
-      else {
-        CLOG_WARN(&LOG,
-                  "PyContext '%s' is a '%s', expected a '%s'",
-                  member,
-                  RNA_struct_identifier(result.ptr.type),
-                  RNA_struct_identifier(member_type));
-      }
+
+      CLOG_WARN(&LOG,
+                "PyContext '%s' is a '%s', expected a '%s'",
+                member,
+                RNA_struct_identifier(result.ptr.type),
+                RNA_struct_identifier(member_type));
     }
   }
 #else
@@ -278,8 +296,8 @@ static void *ctx_wm_python_context_get(const bContext *C,
 
 static int ctx_data_get(bContext *C, const char *member, bContextDataResult *result)
 {
-  bScreen *sc;
-  ScrArea *sa;
+  bScreen *screen;
+  ScrArea *area;
   ARegion *region;
   int done = 0, recursion = C->data.recursion;
   int ret = 0;
@@ -327,17 +345,17 @@ static int ctx_data_get(bContext *C, const char *member, bContextDataResult *res
       }
     }
   }
-  if (done != 1 && recursion < 3 && (sa = CTX_wm_area(C))) {
+  if (done != 1 && recursion < 3 && (area = CTX_wm_area(C))) {
     C->data.recursion = 3;
-    if (sa->type && sa->type->context) {
-      ret = sa->type->context(C, member, result);
+    if (area->type && area->type->context) {
+      ret = area->type->context(C, member, result);
       if (ret) {
         done = -(-ret | -done);
       }
     }
   }
-  if (done != 1 && recursion < 4 && (sc = CTX_wm_screen(C))) {
-    bContextDataCallback cb = sc->context;
+  if (done != 1 && recursion < 4 && (screen = CTX_wm_screen(C))) {
+    bContextDataCallback cb = screen->context;
     C->data.recursion = 4;
     if (cb) {
       ret = cb(C, member, result);
@@ -360,9 +378,8 @@ static void *ctx_data_pointer_get(const bContext *C, const char *member)
     BLI_assert(result.type == CTX_DATA_TYPE_POINTER);
     return result.ptr.data;
   }
-  else {
-    return NULL;
-  }
+
+  return NULL;
 }
 
 static int ctx_data_pointer_verify(const bContext *C, const char *member, void **pointer)
@@ -374,15 +391,14 @@ static int ctx_data_pointer_verify(const bContext *C, const char *member, void *
     *pointer = NULL;
     return 1;
   }
-  else if (ctx_data_get((bContext *)C, member, &result) == 1) {
+  if (ctx_data_get((bContext *)C, member, &result) == 1) {
     BLI_assert(result.type == CTX_DATA_TYPE_POINTER);
     *pointer = result.ptr.data;
     return 1;
   }
-  else {
-    *pointer = NULL;
-    return 0;
-  }
+
+  *pointer = NULL;
+  return 0;
 }
 
 static int ctx_data_collection_get(const bContext *C, const char *member, ListBase *list)
@@ -441,9 +457,8 @@ PointerRNA CTX_data_pointer_get(const bContext *C, const char *member)
     BLI_assert(result.type == CTX_DATA_TYPE_POINTER);
     return result.ptr;
   }
-  else {
-    return PointerRNA_NULL;
-  }
+
+  return PointerRNA_NULL;
 }
 
 PointerRNA CTX_data_pointer_get_type(const bContext *C, const char *member, StructRNA *type)
@@ -454,13 +469,12 @@ PointerRNA CTX_data_pointer_get_type(const bContext *C, const char *member, Stru
     if (RNA_struct_is_a(ptr.type, type)) {
       return ptr;
     }
-    else {
-      CLOG_WARN(&LOG,
-                "member '%s' is '%s', not '%s'",
-                member,
-                RNA_struct_identifier(ptr.type),
-                RNA_struct_identifier(type));
-    }
+
+    CLOG_WARN(&LOG,
+              "member '%s' is '%s', not '%s'",
+              member,
+              RNA_struct_identifier(ptr.type),
+              RNA_struct_identifier(type));
   }
 
   return PointerRNA_NULL;
@@ -473,9 +487,8 @@ PointerRNA CTX_data_pointer_get_type_silent(const bContext *C, const char *membe
   if (ptr.data && RNA_struct_is_a(ptr.type, type)) {
     return ptr;
   }
-  else {
-    return PointerRNA_NULL;
-  }
+
+  return PointerRNA_NULL;
 }
 
 ListBase CTX_data_collection_get(const bContext *C, const char *member)
@@ -486,10 +499,9 @@ ListBase CTX_data_collection_get(const bContext *C, const char *member)
     BLI_assert(result.type == CTX_DATA_TYPE_COLLECTION);
     return result.list;
   }
-  else {
-    ListBase list = {NULL, NULL};
-    return list;
-  }
+
+  ListBase list = {NULL, NULL};
+  return list;
 }
 
 /* 1:found,  -1:found but not set,  0:not found */
@@ -543,8 +555,8 @@ ListBase CTX_data_dir_get_ex(const bContext *C,
 {
   bContextDataResult result;
   ListBase lb;
-  bScreen *sc;
-  ScrArea *sa;
+  bScreen *screen;
+  ScrArea *area;
   ARegion *region;
   int a;
 
@@ -588,9 +600,9 @@ ListBase CTX_data_dir_get_ex(const bContext *C,
       }
     }
   }
-  if ((sa = CTX_wm_area(C)) && sa->type && sa->type->context) {
+  if ((area = CTX_wm_area(C)) && area->type && area->type->context) {
     memset(&result, 0, sizeof(result));
-    sa->type->context(C, "", &result);
+    area->type->context(C, "", &result);
 
     if (result.dir) {
       for (a = 0; result.dir[a]; a++) {
@@ -598,8 +610,8 @@ ListBase CTX_data_dir_get_ex(const bContext *C,
       }
     }
   }
-  if ((sc = CTX_wm_screen(C)) && sc->context) {
-    bContextDataCallback cb = sc->context;
+  if ((screen = CTX_wm_screen(C)) && screen->context) {
+    bContextDataCallback cb = screen->context;
     memset(&result, 0, sizeof(result));
     cb(C, "", &result);
 
@@ -667,9 +679,8 @@ int ctx_data_list_count(const bContext *C, int (*func)(const bContext *, ListBas
     BLI_freelistN(&list);
     return tot;
   }
-  else {
-    return 0;
-  }
+
+  return 0;
 }
 
 void CTX_data_dir_set(bContextDataResult *result, const char **dir)
@@ -694,6 +705,11 @@ wmWindowManager *CTX_wm_manager(const bContext *C)
   return C->wm.manager;
 }
 
+bool CTX_wm_interface_locked(const bContext *C)
+{
+  return (bool)C->wm.manager->is_interface_locked;
+}
+
 wmWindow *CTX_wm_window(const bContext *C)
 {
   return ctx_wm_python_context_get(C, "window", &RNA_Window, C->wm.window);
@@ -716,8 +732,8 @@ ScrArea *CTX_wm_area(const bContext *C)
 
 SpaceLink *CTX_wm_space_data(const bContext *C)
 {
-  ScrArea *sa = CTX_wm_area(C);
-  return (sa) ? sa->spacedata.first : NULL;
+  ScrArea *area = CTX_wm_area(C);
+  return (area) ? area->spacedata.first : NULL;
 }
 
 ARegion *CTX_wm_region(const bContext *C)
@@ -757,19 +773,19 @@ struct ReportList *CTX_wm_reports(const bContext *C)
 
 View3D *CTX_wm_view3d(const bContext *C)
 {
-  ScrArea *sa = CTX_wm_area(C);
-  if (sa && sa->spacetype == SPACE_VIEW3D) {
-    return sa->spacedata.first;
+  ScrArea *area = CTX_wm_area(C);
+  if (area && area->spacetype == SPACE_VIEW3D) {
+    return area->spacedata.first;
   }
   return NULL;
 }
 
 RegionView3D *CTX_wm_region_view3d(const bContext *C)
 {
-  ScrArea *sa = CTX_wm_area(C);
+  ScrArea *area = CTX_wm_area(C);
   ARegion *region = CTX_wm_region(C);
 
-  if (sa && sa->spacetype == SPACE_VIEW3D) {
+  if (area && area->spacetype == SPACE_VIEW3D) {
     if (region && region->regiontype == RGN_TYPE_WINDOW) {
       return region->regiondata;
     }
@@ -779,135 +795,135 @@ RegionView3D *CTX_wm_region_view3d(const bContext *C)
 
 struct SpaceText *CTX_wm_space_text(const bContext *C)
 {
-  ScrArea *sa = CTX_wm_area(C);
-  if (sa && sa->spacetype == SPACE_TEXT) {
-    return sa->spacedata.first;
+  ScrArea *area = CTX_wm_area(C);
+  if (area && area->spacetype == SPACE_TEXT) {
+    return area->spacedata.first;
   }
   return NULL;
 }
 
 struct SpaceConsole *CTX_wm_space_console(const bContext *C)
 {
-  ScrArea *sa = CTX_wm_area(C);
-  if (sa && sa->spacetype == SPACE_CONSOLE) {
-    return sa->spacedata.first;
+  ScrArea *area = CTX_wm_area(C);
+  if (area && area->spacetype == SPACE_CONSOLE) {
+    return area->spacedata.first;
   }
   return NULL;
 }
 
 struct SpaceImage *CTX_wm_space_image(const bContext *C)
 {
-  ScrArea *sa = CTX_wm_area(C);
-  if (sa && sa->spacetype == SPACE_IMAGE) {
-    return sa->spacedata.first;
+  ScrArea *area = CTX_wm_area(C);
+  if (area && area->spacetype == SPACE_IMAGE) {
+    return area->spacedata.first;
   }
   return NULL;
 }
 
 struct SpaceProperties *CTX_wm_space_properties(const bContext *C)
 {
-  ScrArea *sa = CTX_wm_area(C);
-  if (sa && sa->spacetype == SPACE_PROPERTIES) {
-    return sa->spacedata.first;
+  ScrArea *area = CTX_wm_area(C);
+  if (area && area->spacetype == SPACE_PROPERTIES) {
+    return area->spacedata.first;
   }
   return NULL;
 }
 
 struct SpaceFile *CTX_wm_space_file(const bContext *C)
 {
-  ScrArea *sa = CTX_wm_area(C);
-  if (sa && sa->spacetype == SPACE_FILE) {
-    return sa->spacedata.first;
+  ScrArea *area = CTX_wm_area(C);
+  if (area && area->spacetype == SPACE_FILE) {
+    return area->spacedata.first;
   }
   return NULL;
 }
 
 struct SpaceSeq *CTX_wm_space_seq(const bContext *C)
 {
-  ScrArea *sa = CTX_wm_area(C);
-  if (sa && sa->spacetype == SPACE_SEQ) {
-    return sa->spacedata.first;
+  ScrArea *area = CTX_wm_area(C);
+  if (area && area->spacetype == SPACE_SEQ) {
+    return area->spacedata.first;
   }
   return NULL;
 }
 
 struct SpaceOutliner *CTX_wm_space_outliner(const bContext *C)
 {
-  ScrArea *sa = CTX_wm_area(C);
-  if (sa && sa->spacetype == SPACE_OUTLINER) {
-    return sa->spacedata.first;
+  ScrArea *area = CTX_wm_area(C);
+  if (area && area->spacetype == SPACE_OUTLINER) {
+    return area->spacedata.first;
   }
   return NULL;
 }
 
 struct SpaceNla *CTX_wm_space_nla(const bContext *C)
 {
-  ScrArea *sa = CTX_wm_area(C);
-  if (sa && sa->spacetype == SPACE_NLA) {
-    return sa->spacedata.first;
+  ScrArea *area = CTX_wm_area(C);
+  if (area && area->spacetype == SPACE_NLA) {
+    return area->spacedata.first;
   }
   return NULL;
 }
 
 struct SpaceNode *CTX_wm_space_node(const bContext *C)
 {
-  ScrArea *sa = CTX_wm_area(C);
-  if (sa && sa->spacetype == SPACE_NODE) {
-    return sa->spacedata.first;
+  ScrArea *area = CTX_wm_area(C);
+  if (area && area->spacetype == SPACE_NODE) {
+    return area->spacedata.first;
   }
   return NULL;
 }
 
 struct SpaceGraph *CTX_wm_space_graph(const bContext *C)
 {
-  ScrArea *sa = CTX_wm_area(C);
-  if (sa && sa->spacetype == SPACE_GRAPH) {
-    return sa->spacedata.first;
+  ScrArea *area = CTX_wm_area(C);
+  if (area && area->spacetype == SPACE_GRAPH) {
+    return area->spacedata.first;
   }
   return NULL;
 }
 
 struct SpaceAction *CTX_wm_space_action(const bContext *C)
 {
-  ScrArea *sa = CTX_wm_area(C);
-  if (sa && sa->spacetype == SPACE_ACTION) {
-    return sa->spacedata.first;
+  ScrArea *area = CTX_wm_area(C);
+  if (area && area->spacetype == SPACE_ACTION) {
+    return area->spacedata.first;
   }
   return NULL;
 }
 
 struct SpaceInfo *CTX_wm_space_info(const bContext *C)
 {
-  ScrArea *sa = CTX_wm_area(C);
-  if (sa && sa->spacetype == SPACE_INFO) {
-    return sa->spacedata.first;
+  ScrArea *area = CTX_wm_area(C);
+  if (area && area->spacetype == SPACE_INFO) {
+    return area->spacedata.first;
   }
   return NULL;
 }
 
 struct SpaceUserPref *CTX_wm_space_userpref(const bContext *C)
 {
-  ScrArea *sa = CTX_wm_area(C);
-  if (sa && sa->spacetype == SPACE_USERPREF) {
-    return sa->spacedata.first;
+  ScrArea *area = CTX_wm_area(C);
+  if (area && area->spacetype == SPACE_USERPREF) {
+    return area->spacedata.first;
   }
   return NULL;
 }
 
 struct SpaceClip *CTX_wm_space_clip(const bContext *C)
 {
-  ScrArea *sa = CTX_wm_area(C);
-  if (sa && sa->spacetype == SPACE_CLIP) {
-    return sa->spacedata.first;
+  ScrArea *area = CTX_wm_area(C);
+  if (area && area->spacetype == SPACE_CLIP) {
+    return area->spacedata.first;
   }
   return NULL;
 }
 
 struct SpaceTopBar *CTX_wm_space_topbar(const bContext *C)
 {
-  ScrArea *sa = CTX_wm_area(C);
-  if (sa && sa->spacetype == SPACE_TOPBAR) {
-    return sa->spacedata.first;
+  ScrArea *area = CTX_wm_area(C);
+  if (area && area->spacetype == SPACE_TOPBAR) {
+    return area->spacedata.first;
   }
   return NULL;
 }
@@ -921,6 +937,13 @@ void CTX_wm_manager_set(bContext *C, wmWindowManager *wm)
   C->wm.region = NULL;
 }
 
+#ifdef WITH_PYTHON
+#  define PYCTX_REGION_MEMBERS "region", "region_data"
+#  define PYCTX_AREA_MEMBERS "area", "space_data", PYCTX_REGION_MEMBERS
+#  define PYCTX_SCREEN_MEMBERS "screen", PYCTX_AREA_MEMBERS
+#  define PYCTX_WINDOW_MEMBERS "window", "scene", "workspace", PYCTX_SCREEN_MEMBERS
+#endif
+
 void CTX_wm_window_set(bContext *C, wmWindow *win)
 {
   C->wm.window = win;
@@ -931,6 +954,12 @@ void CTX_wm_window_set(bContext *C, wmWindow *win)
   C->wm.screen = (win) ? BKE_workspace_active_screen_get(win->workspace_hook) : NULL;
   C->wm.area = NULL;
   C->wm.region = NULL;
+
+#ifdef WITH_PYTHON
+  if (C->data.py_context != NULL) {
+    BPY_context_dict_clear_members(C, PYCTX_WINDOW_MEMBERS);
+  }
+#endif
 }
 
 void CTX_wm_screen_set(bContext *C, bScreen *screen)
@@ -938,17 +967,35 @@ void CTX_wm_screen_set(bContext *C, bScreen *screen)
   C->wm.screen = screen;
   C->wm.area = NULL;
   C->wm.region = NULL;
+
+#ifdef WITH_PYTHON
+  if (C->data.py_context != NULL) {
+    BPY_context_dict_clear_members(C, PYCTX_SCREEN_MEMBERS);
+  }
+#endif
 }
 
 void CTX_wm_area_set(bContext *C, ScrArea *area)
 {
   C->wm.area = area;
   C->wm.region = NULL;
+
+#ifdef WITH_PYTHON
+  if (C->data.py_context != NULL) {
+    BPY_context_dict_clear_members(C, PYCTX_AREA_MEMBERS);
+  }
+#endif
 }
 
 void CTX_wm_region_set(bContext *C, ARegion *region)
 {
   C->wm.region = region;
+
+#ifdef WITH_PYTHON
+  if (C->data.py_context != NULL) {
+    BPY_context_dict_clear_members(C, PYCTX_REGION_MEMBERS);
+  }
+#endif
 }
 
 void CTX_wm_menu_set(bContext *C, ARegion *menu)
@@ -980,9 +1027,8 @@ Main *CTX_data_main(const bContext *C)
   if (ctx_data_pointer_verify(C, "blend_data", (void *)&bmain)) {
     return bmain;
   }
-  else {
-    return C->data.main;
-  }
+
+  return C->data.main;
 }
 
 void CTX_data_main_set(bContext *C, Main *bmain)
@@ -998,9 +1044,8 @@ Scene *CTX_data_scene(const bContext *C)
   if (ctx_data_pointer_verify(C, "scene", (void *)&scene)) {
     return scene;
   }
-  else {
-    return C->data.scene;
-  }
+
+  return C->data.scene;
 }
 
 ViewLayer *CTX_data_view_layer(const bContext *C)
@@ -1097,34 +1142,34 @@ enum eContextObjectMode CTX_data_mode_enum_ex(const Object *obedit,
       if (object_mode & OB_MODE_POSE) {
         return CTX_MODE_POSE;
       }
-      else if (object_mode & OB_MODE_SCULPT) {
+      if (object_mode & OB_MODE_SCULPT) {
         return CTX_MODE_SCULPT;
       }
-      else if (object_mode & OB_MODE_WEIGHT_PAINT) {
+      if (object_mode & OB_MODE_WEIGHT_PAINT) {
         return CTX_MODE_PAINT_WEIGHT;
       }
-      else if (object_mode & OB_MODE_VERTEX_PAINT) {
+      if (object_mode & OB_MODE_VERTEX_PAINT) {
         return CTX_MODE_PAINT_VERTEX;
       }
-      else if (object_mode & OB_MODE_TEXTURE_PAINT) {
+      if (object_mode & OB_MODE_TEXTURE_PAINT) {
         return CTX_MODE_PAINT_TEXTURE;
       }
-      else if (object_mode & OB_MODE_PARTICLE_EDIT) {
+      if (object_mode & OB_MODE_PARTICLE_EDIT) {
         return CTX_MODE_PARTICLE;
       }
-      else if (object_mode & OB_MODE_PAINT_GPENCIL) {
+      if (object_mode & OB_MODE_PAINT_GPENCIL) {
         return CTX_MODE_PAINT_GPENCIL;
       }
-      else if (object_mode & OB_MODE_EDIT_GPENCIL) {
+      if (object_mode & OB_MODE_EDIT_GPENCIL) {
         return CTX_MODE_EDIT_GPENCIL;
       }
-      else if (object_mode & OB_MODE_SCULPT_GPENCIL) {
+      if (object_mode & OB_MODE_SCULPT_GPENCIL) {
         return CTX_MODE_SCULPT_GPENCIL;
       }
-      else if (object_mode & OB_MODE_WEIGHT_GPENCIL) {
+      if (object_mode & OB_MODE_WEIGHT_GPENCIL) {
         return CTX_MODE_WEIGHT_GPENCIL;
       }
-      else if (object_mode & OB_MODE_VERTEX_GPENCIL) {
+      if (object_mode & OB_MODE_VERTEX_GPENCIL) {
         return CTX_MODE_VERTEX_GPENCIL;
       }
     }
@@ -1159,6 +1204,12 @@ const char *CTX_data_mode_string(const bContext *C)
 void CTX_data_scene_set(bContext *C, Scene *scene)
 {
   C->data.scene = scene;
+
+#ifdef WITH_PYTHON
+  if (C->data.py_context != NULL) {
+    BPY_context_dict_clear_members(C, "scene");
+  }
+#endif
 }
 
 ToolSettings *CTX_data_tool_settings(const bContext *C)
@@ -1168,9 +1219,8 @@ ToolSettings *CTX_data_tool_settings(const bContext *C)
   if (scene) {
     return scene->toolsettings;
   }
-  else {
-    return NULL;
-  }
+
+  return NULL;
 }
 
 int CTX_data_selected_nodes(const bContext *C, ListBase *list)
@@ -1355,7 +1405,7 @@ Depsgraph *CTX_data_depsgraph_pointer(const bContext *C)
   Main *bmain = CTX_data_main(C);
   Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  Depsgraph *depsgraph = BKE_scene_get_depsgraph(bmain, scene, view_layer, true);
+  Depsgraph *depsgraph = BKE_scene_ensure_depsgraph(bmain, scene, view_layer);
   /* Dependency graph might have been just allocated, and hence it will not be marked.
    * This confuses redo system due to the lack of flushing changes back to the original data.
    * In the future we would need to check whether the CTX_wm_window(C)  is in editing mode (as an
@@ -1383,8 +1433,7 @@ Depsgraph *CTX_data_ensure_evaluated_depsgraph(const bContext *C)
 
 Depsgraph *CTX_data_depsgraph_on_load(const bContext *C)
 {
-  Main *bmain = CTX_data_main(C);
   Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  return BKE_scene_get_depsgraph(bmain, scene, view_layer, false);
+  return BKE_scene_get_depsgraph(scene, view_layer);
 }

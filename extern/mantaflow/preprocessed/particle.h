@@ -100,6 +100,17 @@ class ParticleBase : public PbClass {
   //! threads)
   inline void addBuffered(const Vec3 &pos, int flag = 0);
 
+  virtual void resize(IndexInt size)
+  {
+    assertMsg(false, "Dont use, override...");
+    return;
+  }
+  virtual void resizeAll(IndexInt size)
+  {
+    assertMsg(false, "Dont use, override...");
+    return;
+  }
+
   //! particle data functions
 
   //! create a particle data object
@@ -150,6 +161,20 @@ class ParticleBase : public PbClass {
   ParticleDataBase *getPdata(int i)
   {
     return mPartData[i];
+  }
+
+  //! expose maximum number of particles to python
+  int mMaxParticles;
+  static PyObject *_GET_mMaxParticles(PyObject *self, void *cl)
+  {
+    ParticleBase *pbo = dynamic_cast<ParticleBase *>(Pb::objFromPy(self));
+    return toPy(pbo->mMaxParticles);
+  }
+  static int _SET_mMaxParticles(PyObject *self, PyObject *val, void *cl)
+  {
+    ParticleBase *pbo = dynamic_cast<ParticleBase *>(Pb::objFromPy(self));
+    pbo->mMaxParticles = fromPy<int>(val);
+    return 0;
   }
 
  protected:
@@ -431,8 +456,14 @@ template<class S> class ParticleSystem : public ParticleBase {
   }
   //! insert buffered positions as new particles, update additional particle data
   void insertBufferedParticles();
+  //! resize only the data vector, only use if you know what you're doing, otherwise use
+  //! resizeAll()
+  virtual void resize(IndexInt size)
+  {
+    mData.resize(size);
+  }
   //! resize data vector, and all pdata fields
-  void resizeAll(IndexInt newsize);
+  virtual void resizeAll(IndexInt size);
 
   //! adding and deleting
   inline void kill(IndexInt idx);
@@ -469,6 +500,7 @@ template<class S> class ParticleSystem : public ParticleBase {
                     const int integrationMode,
                     const bool deleteInObstacle = true,
                     const bool stopInObstacle = true,
+                    const bool skipNew = false,
                     const ParticleDataImpl<int> *ptype = NULL,
                     const int exclude = 0);
   static PyObject *_W_9(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
@@ -486,13 +518,20 @@ template<class S> class ParticleSystem : public ParticleBase {
         const int integrationMode = _args.get<int>("integrationMode", 2, &_lock);
         const bool deleteInObstacle = _args.getOpt<bool>("deleteInObstacle", 3, true, &_lock);
         const bool stopInObstacle = _args.getOpt<bool>("stopInObstacle", 4, true, &_lock);
+        const bool skipNew = _args.getOpt<bool>("skipNew", 5, false, &_lock);
         const ParticleDataImpl<int> *ptype = _args.getPtrOpt<ParticleDataImpl<int>>(
-            "ptype", 5, NULL, &_lock);
-        const int exclude = _args.getOpt<int>("exclude", 6, 0, &_lock);
+            "ptype", 6, NULL, &_lock);
+        const int exclude = _args.getOpt<int>("exclude", 7, 0, &_lock);
         pbo->_args.copy(_args);
         _retval = getPyNone();
-        pbo->advectInGrid(
-            flags, vel, integrationMode, deleteInObstacle, stopInObstacle, ptype, exclude);
+        pbo->advectInGrid(flags,
+                          vel,
+                          integrationMode,
+                          deleteInObstacle,
+                          stopInObstacle,
+                          skipNew,
+                          ptype,
+                          exclude);
         pbo->_args.check();
       }
       pbFinalizePlugin(pbo->getParent(), "ParticleSystem::advectInGrid", !noTiming);
@@ -638,7 +677,7 @@ class BasicParticleSystem : public ParticleSystem<BasicParticleData> {
   }
 
   //! file io
-  void save(const std::string name) const;
+  int save(const std::string name);
   static PyObject *_W_13(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
   {
     try {
@@ -651,8 +690,7 @@ class BasicParticleSystem : public ParticleSystem<BasicParticleData> {
         ArgLocker _lock;
         const std::string name = _args.get<std::string>("name", 0, &_lock);
         pbo->_args.copy(_args);
-        _retval = getPyNone();
-        pbo->save(name);
+        _retval = toPy(pbo->save(name));
         pbo->_args.check();
       }
       pbFinalizePlugin(pbo->getParent(), "BasicParticleSystem::save", !noTiming);
@@ -664,7 +702,7 @@ class BasicParticleSystem : public ParticleSystem<BasicParticleData> {
     }
   }
 
-  void load(const std::string name);
+  int load(const std::string name);
   static PyObject *_W_14(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
   {
     try {
@@ -677,8 +715,7 @@ class BasicParticleSystem : public ParticleSystem<BasicParticleData> {
         ArgLocker _lock;
         const std::string name = _args.get<std::string>("name", 0, &_lock);
         pbo->_args.copy(_args);
-        _retval = getPyNone();
-        pbo->load(name);
+        _retval = toPy(pbo->load(name));
         pbo->_args.check();
       }
       pbFinalizePlugin(pbo->getParent(), "BasicParticleSystem::load", !noTiming);
@@ -871,11 +908,6 @@ class ParticleIndexSystem : public ParticleSystem<ParticleIndexData> {
       return -1;
     }
   };
-  //! we only need a resize function...
-  void resize(IndexInt size)
-  {
-    mData.resize(size);
-  }
  public:
   PbArgs _args;
 }
@@ -1014,10 +1046,14 @@ class ParticleDataBase : public PbClass {
     return;
   }
 
-  //! set base pointer
+  //! set / get base pointer to parent particle system
   void setParticleSys(ParticleBase *set)
   {
     mpParticleSys = set;
+  }
+  ParticleBase *getParticleSys()
+  {
+    return mpParticleSys;
   }
 
   //! debugging
@@ -1084,6 +1120,13 @@ template<class T> class ParticleDataImpl : public ParticleDataBase {
   {
     DEBUG_ONLY(checkPartIndex(idx));
     return mData[idx];
+  }
+
+  //! set data
+  inline void set(const IndexInt idx, T &val)
+  {
+    DEBUG_ONLY(checkPartIndex(idx));
+    mData[idx] = val;
   }
 
   //! set all values to 0, note - different from particleSystem::clear! doesnt modify size of array
@@ -1708,7 +1751,7 @@ template<class T> class ParticleDataImpl : public ParticleDataBase {
   }
 
   //! file io
-  void save(const std::string name);
+  int save(const std::string name);
   static PyObject *_W_46(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
   {
     try {
@@ -1721,8 +1764,7 @@ template<class T> class ParticleDataImpl : public ParticleDataBase {
         ArgLocker _lock;
         const std::string name = _args.get<std::string>("name", 0, &_lock);
         pbo->_args.copy(_args);
-        _retval = getPyNone();
-        pbo->save(name);
+        _retval = toPy(pbo->save(name));
         pbo->_args.check();
       }
       pbFinalizePlugin(pbo->getParent(), "ParticleDataImpl::save", !noTiming);
@@ -1734,7 +1776,7 @@ template<class T> class ParticleDataImpl : public ParticleDataBase {
     }
   }
 
-  void load(const std::string name);
+  int load(const std::string name);
   static PyObject *_W_47(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
   {
     try {
@@ -1747,8 +1789,7 @@ template<class T> class ParticleDataImpl : public ParticleDataBase {
         ArgLocker _lock;
         const std::string name = _args.get<std::string>("name", 0, &_lock);
         pbo->_args.copy(_args);
-        _retval = getPyNone();
-        pbo->load(name);
+        _retval = toPy(pbo->load(name));
         pbo->_args.check();
       }
       pbFinalizePlugin(pbo->getParent(), "ParticleDataImpl::load", !noTiming);
@@ -1863,6 +1904,7 @@ template<class S> struct _GridAdvectKernel : public KernelBase {
                     const Real dt,
                     const bool deleteInObstacle,
                     const bool stopInObstacle,
+                    const bool skipNew,
                     const ParticleDataImpl<int> *ptype,
                     const int exclude,
                     std::vector<Vec3> &u)
@@ -1873,6 +1915,7 @@ template<class S> struct _GridAdvectKernel : public KernelBase {
         dt(dt),
         deleteInObstacle(deleteInObstacle),
         stopInObstacle(stopInObstacle),
+        skipNew(skipNew),
         ptype(ptype),
         exclude(exclude),
         u(u)
@@ -1885,11 +1928,13 @@ template<class S> struct _GridAdvectKernel : public KernelBase {
                  const Real dt,
                  const bool deleteInObstacle,
                  const bool stopInObstacle,
+                 const bool skipNew,
                  const ParticleDataImpl<int> *ptype,
                  const int exclude,
                  std::vector<Vec3> &u) const
   {
-    if ((p[idx].flag & ParticleBase::PDELETE) || (ptype && ((*ptype)[idx] & exclude))) {
+    if ((p[idx].flag & ParticleBase::PDELETE) || (ptype && ((*ptype)[idx] & exclude)) ||
+        (skipNew && (p[idx].flag & ParticleBase::PNEW))) {
       u[idx] = 0.;
       return;
     }
@@ -1910,7 +1955,7 @@ template<class S> struct _GridAdvectKernel : public KernelBase {
   void operator()(const tbb::blocked_range<IndexInt> &__r) const
   {
     for (IndexInt idx = __r.begin(); idx != (IndexInt)__r.end(); idx++)
-      op(idx, p, vel, flags, dt, deleteInObstacle, stopInObstacle, ptype, exclude, u);
+      op(idx, p, vel, flags, dt, deleteInObstacle, stopInObstacle, skipNew, ptype, exclude, u);
   }
   void run()
   {
@@ -1922,6 +1967,7 @@ template<class S> struct _GridAdvectKernel : public KernelBase {
   const Real dt;
   const bool deleteInObstacle;
   const bool stopInObstacle;
+  const bool skipNew;
   const ParticleDataImpl<int> *ptype;
   const int exclude;
   std::vector<Vec3> &u;
@@ -1933,6 +1979,7 @@ template<class S> struct GridAdvectKernel : public KernelBase {
                    const Real dt,
                    const bool deleteInObstacle,
                    const bool stopInObstacle,
+                   const bool skipNew,
                    const ParticleDataImpl<int> *ptype,
                    const int exclude)
       : KernelBase(p.size()),
@@ -1943,6 +1990,7 @@ template<class S> struct GridAdvectKernel : public KernelBase {
                dt,
                deleteInObstacle,
                stopInObstacle,
+               skipNew,
                ptype,
                exclude,
                u),
@@ -1952,6 +2000,7 @@ template<class S> struct GridAdvectKernel : public KernelBase {
         dt(dt),
         deleteInObstacle(deleteInObstacle),
         stopInObstacle(stopInObstacle),
+        skipNew(skipNew),
         ptype(ptype),
         exclude(exclude),
         u((size))
@@ -2001,16 +2050,21 @@ template<class S> struct GridAdvectKernel : public KernelBase {
     return stopInObstacle;
   }
   typedef bool type5;
-  inline const ParticleDataImpl<int> *getArg6()
+  inline const bool &getArg6()
+  {
+    return skipNew;
+  }
+  typedef bool type6;
+  inline const ParticleDataImpl<int> *getArg7()
   {
     return ptype;
   }
-  typedef ParticleDataImpl<int> type6;
-  inline const int &getArg7()
+  typedef ParticleDataImpl<int> type7;
+  inline const int &getArg8()
   {
     return exclude;
   }
-  typedef int type7;
+  typedef int type8;
   void runMessage()
   {
     debMsg("Executing kernel GridAdvectKernel ", 3);
@@ -2025,6 +2079,7 @@ template<class S> struct GridAdvectKernel : public KernelBase {
   const Real dt;
   const bool deleteInObstacle;
   const bool stopInObstacle;
+  const bool skipNew;
   const ParticleDataImpl<int> *ptype;
   const int exclude;
   std::vector<Vec3> u;
@@ -2195,6 +2250,7 @@ void ParticleSystem<S>::advectInGrid(const FlagGrid &flags,
                                      const int integrationMode,
                                      const bool deleteInObstacle,
                                      const bool stopInObstacle,
+                                     const bool skipNew,
                                      const ParticleDataImpl<int> *ptype,
                                      const int exclude)
 {
@@ -2208,8 +2264,15 @@ void ParticleSystem<S>::advectInGrid(const FlagGrid &flags,
   }
 
   // update positions
-  GridAdvectKernel<S> kernel(
-      mData, vel, flags, getParent()->getDt(), deleteInObstacle, stopInObstacle, ptype, exclude);
+  GridAdvectKernel<S> kernel(mData,
+                             vel,
+                             flags,
+                             getParent()->getDt(),
+                             deleteInObstacle,
+                             stopInObstacle,
+                             skipNew,
+                             ptype,
+                             exclude);
   integratePointSet(kernel, integrationMode);
 
   if (!deleteInObstacle) {
@@ -2438,32 +2501,70 @@ template<class S> void ParticleSystem<S>::compress()
 //! insert buffered positions as new particles, update additional particle data
 template<class S> void ParticleSystem<S>::insertBufferedParticles()
 {
-  if (mNewBufferPos.size() == 0)
-    return;
-  IndexInt newCnt = mData.size();
-  resizeAll(newCnt + mNewBufferPos.size());
-
   // clear new flag everywhere
   for (IndexInt i = 0; i < (IndexInt)mData.size(); ++i)
     mData[i].flag &= ~PNEW;
 
-  for (IndexInt i = 0; i < (IndexInt)mNewBufferPos.size(); ++i) {
-    int flag = (mNewBufferFlag.size() > 0) ? mNewBufferFlag[i] : 0;
-    // note, other fields are not initialized here...
-    mData[newCnt].pos = mNewBufferPos[i];
-    mData[newCnt].flag = PNEW | flag;
+  if (mNewBufferPos.empty())
+    return;
+  IndexInt bufferSize = mNewBufferPos.size();
+  IndexInt partsSize = mData.size();
+
+  if (mMaxParticles > 0)
+    assertMsg(mMaxParticles >= partsSize,
+              "Particle system cannot contain more particles that the maximum allowed number");
+
+  // max number of new particles that can be inserted, adjusted buffer size when using maxParticles
+  // field
+  IndexInt numNewParts = (mMaxParticles > 0) ? mMaxParticles - mData.size() : bufferSize;
+  if (numNewParts > bufferSize)
+    numNewParts = bufferSize;  // upper clamp
+
+  assertMsg(numNewParts >= 0, "Must not have negative number of new particles");
+
+  // new size of particle system
+  IndexInt newSize = mData.size() + numNewParts;
+  if (mMaxParticles > 0)
+    assertMsg(newSize <= mMaxParticles,
+              "Particle system cannot contain more particles that the maximum allowed number");
+  resizeAll(newSize);
+
+  int insertFlag;
+  Vec3 insertPos;
+  static RandomStream mRand(9832);
+  for (IndexInt i = 0; i < numNewParts; ++i) {
+
+    // get random index in newBuffer vector
+    // we are inserting particles randomly so that they are sampled uniformly in the fluid region
+    // otherwise, regions of fluid can remain completely empty once mData.size() == maxParticles is
+    // reached.
+    int randIndex = floor(mRand.getReal() * mNewBufferPos.size());
+
+    // get elements from new buffers with random index
+    std::swap(mNewBufferPos[randIndex], mNewBufferPos.back());
+    insertPos = mNewBufferPos.back();
+    mNewBufferPos.pop_back();
+
+    insertFlag = 0;
+    if (!mNewBufferFlag.empty()) {
+      std::swap(mNewBufferFlag[randIndex], mNewBufferFlag.back());
+      insertFlag = mNewBufferFlag.back();
+      mNewBufferFlag.pop_back();
+    }
+
+    mData[partsSize].pos = insertPos;
+    mData[partsSize].flag = PNEW | insertFlag;
+
     // now init pdata fields from associated grids...
     for (IndexInt pd = 0; pd < (IndexInt)mPdataReal.size(); ++pd)
-      mPdataReal[pd]->initNewValue(newCnt, mNewBufferPos[i]);
+      mPdataReal[pd]->initNewValue(partsSize, insertPos);
     for (IndexInt pd = 0; pd < (IndexInt)mPdataVec3.size(); ++pd)
-      mPdataVec3[pd]->initNewValue(newCnt, mNewBufferPos[i]);
+      mPdataVec3[pd]->initNewValue(partsSize, insertPos);
     for (IndexInt pd = 0; pd < (IndexInt)mPdataInt.size(); ++pd)
-      mPdataInt[pd]->initNewValue(newCnt, mNewBufferPos[i]);
-    newCnt++;
+      mPdataInt[pd]->initNewValue(partsSize, insertPos);
+    partsSize++;
   }
-  if (mNewBufferPos.size() > 0)
-    debMsg("Added & initialized " << (IndexInt)mNewBufferPos.size() << " particles",
-           2);  // debug info
+  debMsg("Added & initialized " << numNewParts << " particles", 2);  // debug info
   mNewBufferPos.clear();
   mNewBufferFlag.clear();
 }

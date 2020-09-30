@@ -40,6 +40,7 @@
 #include "DNA_screen_types.h"
 #include "DNA_view3d_types.h"
 
+#include "GPU_context.h"
 #include "GPU_framebuffer.h"
 #include "GPU_texture.h"
 
@@ -151,6 +152,7 @@ static PyObject *bpygpu_offscreen_bind(BPyGPUOffScreen *self, PyObject *args, Py
   }
 
   GPU_offscreen_bind(self->ofs, save);
+  GPU_apply_state();
 
   self->is_saved = save;
   Py_INCREF(self);
@@ -179,6 +181,7 @@ static PyObject *bpygpu_offscreen_unbind(BPyGPUOffScreen *self, PyObject *args, 
   }
 
   GPU_offscreen_unbind(self->ofs, restore);
+  GPU_apply_state();
   Py_RETURN_NONE;
 }
 
@@ -240,7 +243,7 @@ static PyObject *bpygpu_offscreen_draw_view3d(BPyGPUOffScreen *self,
 
   BLI_assert(BKE_id_is_in_global_main(&scene->id));
 
-  depsgraph = BKE_scene_get_depsgraph(G_MAIN, scene, view_layer, true);
+  depsgraph = BKE_scene_ensure_depsgraph(G_MAIN, scene, view_layer);
 
   rv3d_mats = ED_view3d_mats_rv3d_backup(region->regiondata);
 
@@ -339,16 +342,14 @@ static struct PyMethodDef bpygpu_offscreen_methods[] = {
 };
 
 PyDoc_STRVAR(bpygpu_offscreen_doc,
-             ".. class:: GPUOffScreen(width, height, samples=0)\n"
+             ".. class:: GPUOffScreen(width, height)\n"
              "\n"
              "   This object gives access to off screen buffers.\n"
              "\n"
              "   :arg width: Horizontal dimension of the buffer.\n"
              "   :type width: `int`\n"
              "   :arg height: Vertical dimension of the buffer.\n"
-             "   :type height: `int`\n"
-             "   :arg samples: OpenGL samples to use for MSAA or zero to disable.\n"
-             "   :type samples: `int`\n");
+             "   :type height: `int`\n");
 PyTypeObject BPyGPUOffScreen_Type = {
     PyVarObject_HEAD_INIT(NULL, 0).tp_name = "GPUOffScreen",
     .tp_basicsize = sizeof(BPyGPUOffScreen),

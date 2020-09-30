@@ -606,7 +606,10 @@ static AVStream *alloc_video_stream(FFMpegContext *context,
   c->gop_size = context->ffmpeg_gop_size;
   c->max_b_frames = context->ffmpeg_max_b_frames;
 
-  if (context->ffmpeg_crf >= 0) {
+  if (context->ffmpeg_type == FFMPEG_WEBM && context->ffmpeg_crf == 0) {
+    ffmpeg_dict_set_int(&opts, "lossless", 1);
+  }
+  else if (context->ffmpeg_crf >= 0) {
     ffmpeg_dict_set_int(&opts, "crf", context->ffmpeg_crf);
   }
   else {
@@ -1746,7 +1749,7 @@ void BKE_ffmpeg_preset_set(RenderData *rd, int preset)
       rd->ffcodecdata.type = FFMPEG_MPEG2;
       rd->ffcodecdata.video_bitrate = 6000;
 
-      /* Don't set resolution, see [#21351]
+      /* Don't set resolution, see T21351.
        * rd->xsch = 720;
        * rd->ysch = isntsc ? 480 : 576; */
 

@@ -53,10 +53,10 @@ static void initShear_mouseInputMode(TransInfo *t)
 {
   float dir[3];
   bool dir_flip = false;
-  copy_v3_v3(dir, t->orient_matrix[t->orient_axis_ortho]);
+  copy_v3_v3(dir, t->spacemtx[t->orient_axis_ortho]);
 
   /* Needed for axis aligned view gizmo. */
-  if (t->orientation.user == V3D_ORIENT_VIEW) {
+  if (t->orient[t->orient_curr].type == V3D_ORIENT_VIEW) {
     if (t->orient_axis_ortho == 0) {
       if (t->center2d[1] > t->mouse.imval[1]) {
         dir_flip = !dir_flip;
@@ -128,7 +128,7 @@ static void applyShear(TransInfo *t, const int UNUSED(mval[2]))
 
   value = t->values[0];
 
-  snapGridIncrement(t, &value);
+  transform_snap_increment(t, &value);
 
   applyNumInput(&t->num, &value);
 
@@ -154,8 +154,8 @@ static void applyShear(TransInfo *t, const int UNUSED(mval[2]))
   unit_m3(smat);
   smat[1][0] = value;
 
-  copy_v3_v3(axismat_inv[0], t->orient_matrix[t->orient_axis_ortho]);
-  copy_v3_v3(axismat_inv[2], t->orient_matrix[t->orient_axis]);
+  copy_v3_v3(axismat_inv[0], t->spacemtx[t->orient_axis_ortho]);
+  copy_v3_v3(axismat_inv[2], t->spacemtx[t->orient_axis]);
   cross_v3_v3v3(axismat_inv[1], axismat_inv[0], axismat_inv[2]);
   invert_m3_m3(axismat, axismat_inv);
 
@@ -164,12 +164,7 @@ static void applyShear(TransInfo *t, const int UNUSED(mval[2]))
   FOREACH_TRANS_DATA_CONTAINER (t, tc) {
     TransData *td = tc->data;
     for (i = 0; i < tc->data_len; i++, td++) {
-      const float *center, *co;
-
-      if (td->flag & TD_NOACTION) {
-        break;
-      }
-
+      const float *center;
       if (td->flag & TD_SKIP) {
         continue;
       }
@@ -183,19 +178,15 @@ static void applyShear(TransInfo *t, const int UNUSED(mval[2]))
 
       if (is_local_center) {
         center = td->center;
-        co = td->loc;
       }
       else {
         center = tc->center_local;
-        co = td->center;
       }
 
-      sub_v3_v3v3(vec, co, center);
-
+      sub_v3_v3v3(vec, td->iloc, center);
       mul_m3_v3(tmat, vec);
-
       add_v3_v3(vec, center);
-      sub_v3_v3(vec, co);
+      sub_v3_v3(vec, td->iloc);
 
       if (t->options & CTX_GPENCIL_STROKES) {
         /* grease pencil multiframe falloff */
@@ -217,7 +208,7 @@ static void applyShear(TransInfo *t, const int UNUSED(mval[2]))
 
   recalcData(t);
 
-  ED_area_status_text(t->sa, str);
+  ED_area_status_text(t->area, str);
 }
 
 void initShear(TransInfo *t)

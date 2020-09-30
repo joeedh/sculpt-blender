@@ -67,7 +67,7 @@ static void applyBakeTime(TransInfo *t, const int mval[2])
     time = (float)(t->center2d[0] - mval[0]) * fac;
   }
 
-  snapGridIncrement(t, &time);
+  transform_snap_increment(t, &time);
 
   applyNumInput(&t->num, &time);
 
@@ -97,10 +97,6 @@ static void applyBakeTime(TransInfo *t, const int mval[2])
   FOREACH_TRANS_DATA_CONTAINER (t, tc) {
     TransData *td = tc->data;
     for (i = 0; i < tc->data_len; i++, td++) {
-      if (td->flag & TD_NOACTION) {
-        break;
-      }
-
       if (td->flag & TD_SKIP) {
         continue;
       }
@@ -119,7 +115,7 @@ static void applyBakeTime(TransInfo *t, const int mval[2])
 
   recalcData(t);
 
-  ED_area_status_text(t->sa, str);
+  ED_area_status_text(t->area, str);
 }
 
 void initBakeTime(TransInfo *t)

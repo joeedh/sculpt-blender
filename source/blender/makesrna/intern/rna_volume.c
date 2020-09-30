@@ -194,6 +194,19 @@ static int rna_VolumeGrids_error_message_length(PointerRNA *ptr)
   return strlen(BKE_volume_grids_error_msg(volume));
 }
 
+/* Frame Filepath */
+static void rna_VolumeGrids_frame_filepath_get(PointerRNA *ptr, char *value)
+{
+  Volume *volume = (Volume *)ptr->data;
+  strcpy(value, BKE_volume_grids_frame_filepath(volume));
+}
+
+static int rna_VolumeGrids_frame_filepath_length(PointerRNA *ptr)
+{
+  Volume *volume = (Volume *)ptr->data;
+  return strlen(BKE_volume_grids_frame_filepath(volume));
+}
+
 #else
 
 static void rna_def_volume_grid(BlenderRNA *brna)
@@ -308,6 +321,16 @@ static void rna_def_volume_grids(BlenderRNA *brna, PropertyRNA *cprop)
                            "Frame number that volume grids will be loaded at, based on scene time "
                            "and volume parameters");
 
+  prop = RNA_def_property(srna, "frame_filepath", PROP_STRING, PROP_FILEPATH);
+  RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+  RNA_def_property_string_funcs(
+      prop, "rna_VolumeGrids_frame_filepath_get", "rna_VolumeGrids_frame_filepath_length", NULL);
+
+  RNA_def_property_ui_text(prop,
+                           "Frame File Path",
+                           "Volume file used for loading the volume at the current frame. Empty "
+                           "if the volume has not be loaded or the frame only exists in memory");
+
   /* API */
   FunctionRNA *func;
   PropertyRNA *parm;
@@ -372,6 +395,39 @@ static void rna_def_volume_display(BlenderRNA *brna)
       {0, NULL, 0, NULL, NULL},
   };
 
+  static const EnumPropertyItem interpolation_method_items[] = {
+      {VOLUME_DISPLAY_INTERP_LINEAR, "LINEAR", 0, "Linear", "Good smoothness and speed"},
+      {VOLUME_DISPLAY_INTERP_CUBIC,
+       "CUBIC",
+       0,
+       "Cubic",
+       "Smoothed high quality interpolation, but slower"},
+      {VOLUME_DISPLAY_INTERP_CLOSEST, "CLOSEST", 0, "Closest", "No interpolation"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  static const EnumPropertyItem axis_slice_method_items[] = {
+      {VOLUME_AXIS_SLICE_FULL, "FULL", 0, "Full", "Slice the whole domain object"},
+      {VOLUME_AXIS_SLICE_SINGLE,
+       "SINGLE",
+       0,
+       "Single",
+       "Perform a single slice of the domain object"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  static const EnumPropertyItem axis_slice_position_items[] = {
+      {VOLUME_SLICE_AXIS_AUTO,
+       "AUTO",
+       0,
+       "Auto",
+       "Adjust slice direction according to the view direction"},
+      {VOLUME_SLICE_AXIS_X, "X", 0, "X", "Slice along the X axis"},
+      {VOLUME_SLICE_AXIS_Y, "Y", 0, "Y", "Slice along the Y axis"},
+      {VOLUME_SLICE_AXIS_Z, "Z", 0, "Z", "Slice along the Z axis"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
   prop = RNA_def_property(srna, "wireframe_type", PROP_ENUM, PROP_NONE);
   RNA_def_property_enum_items(prop, wireframe_type_items);
   RNA_def_property_ui_text(prop, "Wireframe", "Type of wireframe display");
@@ -380,6 +436,27 @@ static void rna_def_volume_display(BlenderRNA *brna)
   prop = RNA_def_property(srna, "wireframe_detail", PROP_ENUM, PROP_NONE);
   RNA_def_property_enum_items(prop, wireframe_detail_items);
   RNA_def_property_ui_text(prop, "Wireframe Detail", "Amount of detail for wireframe display");
+  RNA_def_property_update(prop, 0, "rna_Volume_update_display");
+
+  prop = RNA_def_property(srna, "interpolation_method", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, interpolation_method_items);
+  RNA_def_property_ui_text(
+      prop, "Interpolation", "Interpolation method to use for volumes in solid mode");
+  RNA_def_property_update(prop, 0, "rna_Volume_update_display");
+
+  prop = RNA_def_property(srna, "axis_slice_method", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, axis_slice_method_items);
+  RNA_def_property_ui_text(prop, "Method", "");
+  RNA_def_property_update(prop, 0, "rna_Volume_update_display");
+
+  prop = RNA_def_property(srna, "slice_axis", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, axis_slice_position_items);
+  RNA_def_property_ui_text(prop, "Axis", "");
+
+  prop = RNA_def_property(srna, "slice_depth", PROP_FLOAT, PROP_FACTOR);
+  RNA_def_property_range(prop, 0.0, 1.0);
+  RNA_def_property_ui_range(prop, 0.0, 1.0, 0.1, 3);
+  RNA_def_property_ui_text(prop, "Position", "Position of the slice");
   RNA_def_property_update(prop, 0, "rna_Volume_update_display");
 }
 
@@ -418,7 +495,7 @@ static void rna_def_volume_render(BlenderRNA *brna)
   RNA_def_property_ui_range(prop, 0.0, 100.0, 1, 3);
   RNA_def_property_ui_text(prop,
                            "Step Size",
-                           "Distance between volume samples. Higher values render more detail at "
+                           "Distance between volume samples. Lower values render more detail at "
                            "the cost of performance. If set to zero, the step size is "
                            "automatically determined based on voxel size");
   RNA_def_property_update(prop, 0, "rna_Volume_update_display");
@@ -446,7 +523,7 @@ static void rna_def_volume(BlenderRNA *brna)
   /* File */
   prop = RNA_def_property(srna, "filepath", PROP_STRING, PROP_FILEPATH);
   RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
-  RNA_def_property_ui_text(prop, "File Path", "Volume sample file used by this Volume data-block");
+  RNA_def_property_ui_text(prop, "File Path", "Volume file used by this Volume data-block");
   RNA_def_property_update(prop, 0, "rna_Volume_update_filepath");
 
   prop = RNA_def_property(srna, "packed_file", PROP_POINTER, PROP_NONE);

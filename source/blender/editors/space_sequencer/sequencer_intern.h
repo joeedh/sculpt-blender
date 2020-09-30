@@ -21,13 +21,12 @@
  * \ingroup spseq
  */
 
-#ifndef __SEQUENCER_INTERN_H__
-#define __SEQUENCER_INTERN_H__
+#pragma once
 
 #include "DNA_sequence_types.h"
 #include "RNA_access.h"
 
-/* internal exports only */
+/* Internal exports only. */
 
 struct ARegion;
 struct ARegionType;
@@ -43,6 +42,7 @@ struct wmOperator;
 
 /* sequencer_draw.c */
 void draw_timeline_seq(const struct bContext *C, struct ARegion *region);
+void draw_timeline_seq_display(const struct bContext *C, struct ARegion *region);
 void sequencer_draw_preview(const struct bContext *C,
                             struct Scene *scene,
                             struct ARegion *region,
@@ -57,9 +57,10 @@ void sequencer_special_update_set(Sequence *seq);
 float sequence_handle_size_get_clamped(struct Sequence *seq, const float pixelx);
 
 /* UNUSED */
-// void seq_reset_imageofs(struct SpaceSeq *sseq);
+/* void seq_reset_imageofs(struct SpaceSeq *sseq); */
 
 struct ImBuf *sequencer_ibuf_get(struct Main *bmain,
+                                 struct ARegion *region,
                                  struct Depsgraph *depsgraph,
                                  struct Scene *scene,
                                  struct SpaceSeq *sseq,
@@ -88,19 +89,19 @@ int seq_effect_find_selected(struct Scene *scene,
                              struct Sequence **r_selseq3,
                              const char **r_error_str);
 
-/* operator helpers */
+/* Operator helpers. */
 bool sequencer_edit_poll(struct bContext *C);
 /* UNUSED */
-// bool sequencer_strip_poll(struct bContext *C);
+/* bool sequencer_strip_poll(struct bContext *C); */
 bool sequencer_strip_has_path_poll(struct bContext *C);
 bool sequencer_view_preview_poll(struct bContext *C);
 bool sequencer_view_strips_poll(struct bContext *C);
 
-/* externs */
+/* Externs. */
 extern EnumPropertyItem sequencer_prop_effect_types[];
 extern EnumPropertyItem prop_side_types[];
 
-/* operators */
+/* Operators. */
 struct wmKeyConfig;
 struct wmOperatorType;
 
@@ -131,13 +132,6 @@ void SEQUENCER_OT_swap(struct wmOperatorType *ot);
 void SEQUENCER_OT_swap_data(struct wmOperatorType *ot);
 void SEQUENCER_OT_rendersize(struct wmOperatorType *ot);
 
-void SEQUENCER_OT_view_toggle(struct wmOperatorType *ot);
-void SEQUENCER_OT_view_all(struct wmOperatorType *ot);
-void SEQUENCER_OT_view_selected(struct wmOperatorType *ot);
-void SEQUENCER_OT_view_frame(struct wmOperatorType *ot);
-void SEQUENCER_OT_view_zoom_ratio(struct wmOperatorType *ot);
-void SEQUENCER_OT_view_ghost_border(struct wmOperatorType *ot);
-
 void SEQUENCER_OT_change_effect_input(struct wmOperatorType *ot);
 void SEQUENCER_OT_change_effect_type(struct wmOperatorType *ot);
 void SEQUENCER_OT_change_path(struct wmOperatorType *ot);
@@ -152,12 +146,10 @@ void SEQUENCER_OT_export_subtitles(struct wmOperatorType *ot);
 
 void SEQUENCER_OT_set_range_to_strips(struct wmOperatorType *ot);
 
-/* preview specific operators */
-void SEQUENCER_OT_view_all_preview(struct wmOperatorType *ot);
-
 /* sequencer_select.c */
 void SEQUENCER_OT_select_all(struct wmOperatorType *ot);
 void SEQUENCER_OT_select(struct wmOperatorType *ot);
+void SEQUENCER_OT_select_side_of_frame(struct wmOperatorType *ot);
 void SEQUENCER_OT_select_more(struct wmOperatorType *ot);
 void SEQUENCER_OT_select_less(struct wmOperatorType *ot);
 void SEQUENCER_OT_select_linked(struct wmOperatorType *ot);
@@ -168,7 +160,7 @@ void SEQUENCER_OT_select_box(struct wmOperatorType *ot);
 void SEQUENCER_OT_select_inverse(struct wmOperatorType *ot);
 void SEQUENCER_OT_select_grouped(struct wmOperatorType *ot);
 
-/* sequencer_select.c */
+/* sequencer_add.c */
 void SEQUENCER_OT_scene_strip_add(struct wmOperatorType *ot);
 void SEQUENCER_OT_movie_strip_add(struct wmOperatorType *ot);
 void SEQUENCER_OT_movieclip_strip_add(struct wmOperatorType *ot);
@@ -176,25 +168,6 @@ void SEQUENCER_OT_mask_strip_add(struct wmOperatorType *ot);
 void SEQUENCER_OT_sound_strip_add(struct wmOperatorType *ot);
 void SEQUENCER_OT_image_strip_add(struct wmOperatorType *ot);
 void SEQUENCER_OT_effect_strip_add(struct wmOperatorType *ot);
-
-enum {
-  SEQ_SPLIT_SOFT,
-  SEQ_SPLIT_HARD,
-};
-enum {
-  SEQ_SELECTED,
-  SEQ_UNSELECTED,
-};
-
-enum {
-  SEQ_SELECT_LR_NONE = 0,
-  SEQ_SELECT_LR_MOUSE,
-  SEQ_SELECT_LR_LEFT,
-  SEQ_SELECT_LR_RIGHT,
-};
-
-/* defines used internally */
-#define SCE_MARKERS 0  // XXX - dummy
 
 /* sequencer_ops.c */
 void sequencer_operatortypes(void);
@@ -218,16 +191,20 @@ void SEQUENCER_OT_strip_modifier_copy(struct wmOperatorType *ot);
 
 /* sequencer_view.c */
 void SEQUENCER_OT_sample(struct wmOperatorType *ot);
+void SEQUENCER_OT_view_all(struct wmOperatorType *ot);
+void SEQUENCER_OT_view_frame(struct wmOperatorType *ot);
+void SEQUENCER_OT_view_all_preview(struct wmOperatorType *ot);
+void SEQUENCER_OT_view_zoom_ratio(struct wmOperatorType *ot);
+void SEQUENCER_OT_view_selected(struct wmOperatorType *ot);
+void SEQUENCER_OT_view_ghost_border(struct wmOperatorType *ot);
 
 /* sequencer_preview.c */
 void sequencer_preview_add_sound(const struct bContext *C, struct Sequence *seq);
 
-/* sequencer_add */
+/* sequencer_add.c */
 int sequencer_image_seq_get_minmax_frame(struct wmOperator *op,
                                          int sfra,
                                          int *r_minframe,
                                          int *r_numdigits);
 void sequencer_image_seq_reserve_frames(
     struct wmOperator *op, struct StripElem *se, int len, int minframe, int numdigits);
-
-#endif /* __SEQUENCER_INTERN_H__ */

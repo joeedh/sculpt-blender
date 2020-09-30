@@ -80,12 +80,12 @@ static bool BLI_path_is_abs(const char *name);
  * or from dot if no digits.
  * \param r_num_len: Optional to return number of digits found.
  */
-int BLI_stringdec(const char *string, char *head, char *tail, ushort *r_num_len)
+int BLI_path_sequence_decode(const char *string, char *head, char *tail, ushort *r_num_len)
 {
   uint nums = 0, nume = 0;
   int i;
   bool found_digit = false;
-  const char *const lslash = BLI_last_slash(string);
+  const char *const lslash = BLI_path_slash_rfind(string);
   const uint string_len = strlen(string);
   const uint lslash_len = lslash != NULL ? (int)(lslash - string) : 0;
   uint name_end = string_len;
@@ -151,7 +151,7 @@ int BLI_stringdec(const char *string, char *head, char *tail, ushort *r_num_len)
  * Returns in area pointed to by string a string of the form "<head><pic><tail>", where pic
  * is formatted as numlen digits with leading zeroes.
  */
-void BLI_stringenc(
+void BLI_path_sequence_encode(
     char *string, const char *head, const char *tail, unsigned short numlen, int pic)
 {
   sprintf(string, "%s%.*d%s", head, numlen, MAX2(0, pic), tail);
@@ -170,7 +170,7 @@ static int BLI_path_unc_prefix_len(const char *path); /* defined below in same f
  *
  * \note \a path isn't protected for max string names...
  */
-void BLI_cleanup_path(const char *relabase, char *path)
+void BLI_path_normalize(const char *relabase, char *path)
 {
   ptrdiff_t a;
   char *start, *eind;
@@ -242,7 +242,7 @@ void BLI_cleanup_path(const char *relabase, char *path)
 
       /* Note: previous version of following call used an offset of 3 instead of 4,
        * which meant that the "/../home/me" example actually became "home/me".
-       * Using offset of 3 gives behavior consistent with the abovementioned
+       * Using offset of 3 gives behavior consistent with the aforementioned
        * Python routine. */
       memmove(path, path + 3, strlen(path + 3) + 1);
     }
@@ -263,10 +263,10 @@ void BLI_cleanup_path(const char *relabase, char *path)
 /**
  * Cleanup filepath ensuring a trailing slash.
  */
-void BLI_cleanup_dir(const char *relabase, char *dir)
+void BLI_path_normalize_dir(const char *relabase, char *dir)
 {
-  BLI_cleanup_path(relabase, dir);
-  BLI_add_slash(dir);
+  BLI_path_normalize(relabase, dir);
+  BLI_path_slash_ensure(dir);
 }
 
 /**
@@ -381,8 +381,8 @@ bool BLI_path_make_safe(char *path)
   }
 #endif
 
-  for (curr_slash = (char *)BLI_first_slash(curr_path); curr_slash;
-       curr_slash = (char *)BLI_first_slash(curr_path)) {
+  for (curr_slash = (char *)BLI_path_slash_find(curr_path); curr_slash;
+       curr_slash = (char *)BLI_path_slash_find(curr_path)) {
     const char backup = *curr_slash;
     *curr_slash = '\0';
     if (!skip_first && (*curr_path != '\0') && BLI_filename_make_safe(curr_path)) {
@@ -427,9 +427,8 @@ static int BLI_path_unc_prefix_len(const char *path)
       /* we assume long UNC path like \\?\server\share\folder etc... */
       return 4;
     }
-    else {
-      return 2;
-    }
+
+    return 2;
   }
 
   return 0;
@@ -494,14 +493,14 @@ static void BLI_path_unc_to_short(wchar_t *unc)
   }
 }
 
-void BLI_cleanup_unc(char *path, int maxlen)
+void BLI_path_normalize_unc(char *path, int maxlen)
 {
   wchar_t *tmp_16 = alloc_utf16_from_8(path, 1);
-  BLI_cleanup_unc_16(tmp_16);
+  BLI_path_normalize_unc_16(tmp_16);
   conv_utf_16_to_8(tmp_16, path, maxlen);
 }
 
-void BLI_cleanup_unc_16(wchar_t *path_16)
+void BLI_path_normalize_unc_16(wchar_t *path_16)
 {
   BLI_path_unc_to_short(path_16);
   BLI_path_add_slash_to_share(path_16);
@@ -533,7 +532,7 @@ void BLI_path_rel(char *file, const char *relfile)
     char *ptemp;
     /* fix missing volume name in relative base,
      * can happen with old recent-files.txt files */
-    get_default_root(temp);
+    BLI_windows_get_default_root_dir(temp);
     ptemp = &temp[2];
     if (relfile[0] != '\\' && relfile[0] != '/') {
       ptemp++;
@@ -578,11 +577,11 @@ void BLI_path_rel(char *file, const char *relfile)
   BLI_str_replace_char(file + BLI_path_unc_prefix_len(file), '\\', '/');
 
   /* remove /./ which confuse the following slash counting... */
-  BLI_cleanup_path(NULL, file);
-  BLI_cleanup_path(NULL, temp);
+  BLI_path_normalize(NULL, file);
+  BLI_path_normalize(NULL, temp);
 
   /* the last slash in the file indicates where the path part ends */
-  lslash = BLI_last_slash(temp);
+  lslash = BLI_path_slash_rfind(temp);
 
   if (lslash) {
     /* find the prefix of the filename that is equal for both filenames.
@@ -683,7 +682,7 @@ bool BLI_path_suffix(char *string, size_t maxlen, const char *suffix, const char
       has_extension = true;
       break;
     }
-    else if (ELEM(string[a], '/', '\\')) {
+    if (ELEM(string[a], '/', '\\')) {
       break;
     }
   }
@@ -701,33 +700,32 @@ bool BLI_path_suffix(char *string, size_t maxlen, const char *suffix, const char
  * Replaces path with the path of its parent directory, returning true if
  * it was able to find a parent directory within the pathname.
  */
-bool BLI_parent_dir(char *path)
+bool BLI_path_parent_dir(char *path)
 {
   const char parent_dir[] = {'.', '.', SEP, '\0'}; /* "../" or "..\\" */
   char tmp[FILE_MAX + 4];
 
   BLI_join_dirfile(tmp, sizeof(tmp), path, parent_dir);
-  BLI_cleanup_path(NULL, tmp); /* does all the work of normalizing the path for us */
+  BLI_path_normalize(NULL, tmp); /* does all the work of normalizing the path for us */
 
   if (!BLI_path_extension_check(tmp, parent_dir)) {
     strcpy(path, tmp); /* We assume pardir is always shorter... */
     return true;
   }
-  else {
-    return false;
-  }
+
+  return false;
 }
 
 /**
  * Strips off nonexistent (or non-accessible) subdirectories from the end of *dir,
  * leaving the path of the lowest-level directory that does exist and we can read.
  */
-bool BLI_parent_dir_until_exists(char *dir)
+bool BLI_path_parent_dir_until_exists(char *dir)
 {
   bool valid_path = true;
 
   /* Loop as long as cur path is not a dir, and we can get a parent path. */
-  while ((BLI_access(dir, R_OK) != 0) && (valid_path = BLI_parent_dir(dir))) {
+  while ((BLI_access(dir, R_OK) != 0) && (valid_path = BLI_path_parent_dir(dir))) {
     /* pass */
   }
   return (valid_path && dir[0]);
@@ -764,11 +762,10 @@ static bool stringframe_chars(const char *path, int *char_start, int *char_end)
     *char_end = ch_end;
     return true;
   }
-  else {
-    *char_start = -1;
-    *char_end = -1;
-    return false;
-  }
+
+  *char_start = -1;
+  *char_end = -1;
+  return false;
 }
 
 /**
@@ -777,7 +774,7 @@ static bool stringframe_chars(const char *path, int *char_start, int *char_end)
  */
 static void ensure_digits(char *path, int digits)
 {
-  char *file = (char *)BLI_last_slash(path);
+  char *file = (char *)BLI_path_slash_rfind(path);
 
   if (file == NULL) {
     file = path;
@@ -852,7 +849,7 @@ bool BLI_path_frame_range(char *path, int sta, int end, int digits)
 bool BLI_path_frame_get(char *path, int *r_frame, int *r_numdigits)
 {
   if (*path) {
-    char *file = (char *)BLI_last_slash(path);
+    char *file = (char *)BLI_path_slash_rfind(path);
     char *c;
     int len, numdigits;
 
@@ -908,7 +905,7 @@ void BLI_path_frame_strip(char *path, char *r_ext)
     return;
   }
 
-  char *file = (char *)BLI_last_slash(path);
+  char *file = (char *)BLI_path_slash_rfind(path);
   char *c, *suffix;
   int len;
   int numdigits = 0;
@@ -1029,7 +1026,7 @@ bool BLI_path_abs(char *path, const char *basepath)
    */
   if (!wasrelative && !BLI_path_is_abs(path)) {
     char *p = path;
-    get_default_root(tmp);
+    BLI_windows_get_default_root_dir(tmp);
     // get rid of the slashes at the beginning of the path
     while (ELEM(*p, '\\', '/')) {
       p++;
@@ -1075,8 +1072,8 @@ bool BLI_path_abs(char *path, const char *basepath)
     BLI_strncpy(base, basepath, sizeof(base));
 
     /* file component is ignored, so don't bother with the trailing slash */
-    BLI_cleanup_path(NULL, base);
-    lslash = BLI_last_slash(base);
+    BLI_path_normalize(NULL, base);
+    lslash = BLI_path_slash_rfind(base);
     BLI_str_replace_char(base + BLI_path_unc_prefix_len(base), '\\', '/');
 
     if (lslash) {
@@ -1110,19 +1107,20 @@ bool BLI_path_abs(char *path, const char *basepath)
 #endif
 
   /* ensure this is after correcting for path switch */
-  BLI_cleanup_path(NULL, path);
+  BLI_path_normalize(NULL, path);
 
   return wasrelative;
 }
 
 /**
- * Expands path relative to the current working directory, if it was relative.
- * Returns true if such expansion was done.
+ * Checks for relative path, expanding them relative to the current working directory.
+ * Returns true if the expansion was performed.
  *
- * \note Should only be done with command line paths.
- * this is _not_ something blenders internal paths support like the "//" prefix
+ * \note Should only be called with command line paths.
+ * This is _not_ something Blender's internal paths support, instead they use the "//" prefix.
+ * In most cases #BLI_path_abs should be used instead.
  */
-bool BLI_path_cwd(char *path, const size_t maxlen)
+bool BLI_path_abs_from_cwd(char *path, const size_t maxlen)
 {
 #ifdef DEBUG_STRSIZE
   memset(path, 0xff, sizeof(*path) * maxlen);
@@ -1301,6 +1299,11 @@ void BLI_setenv_if_new(const char *env, const char *val)
 
 /**
  * Get an env var, result has to be used immediately.
+ *
+ * On windows getenv gets its variables from a static copy of the environment variables taken at
+ * process start-up, causing it to not pick up on environment variables created during runtime.
+ * This function uses an alternative method to get environment variables that does pick up on
+ * runtime environment variables.
  */
 const char *BLI_getenv(const char *env)
 {
@@ -1363,7 +1366,7 @@ void BLI_make_file_string(const char *relabase, char *string, const char *dir, c
     /* Get the file name, chop everything past the last slash (ie. the filename) */
     strcpy(string, relabase);
 
-    lslash = (char *)BLI_last_slash(string);
+    lslash = (char *)BLI_path_slash_rfind(string);
     if (lslash) {
       *(lslash + 1) = 0;
     }
@@ -1387,7 +1390,7 @@ void BLI_make_file_string(const char *relabase, char *string, const char *dir, c
         string[3] = '\0';
       }
       else { /* we're out of luck here, guessing the first valid drive, usually c:\ */
-        get_default_root(string);
+        BLI_windows_get_default_root_dir(string);
       }
 
       /* ignore leading slashes */
@@ -1418,7 +1421,7 @@ void BLI_make_file_string(const char *relabase, char *string, const char *dir, c
   strcat(string, file);
 
   /* Push all slashes to the system preferred direction */
-  BLI_path_native_slash(string);
+  BLI_path_slash_native(string);
 }
 
 static bool path_extension_check_ex(const char *str,
@@ -1608,12 +1611,12 @@ bool BLI_path_extension_ensure(char *path, size_t maxlen, const char *ext)
   return true;
 }
 
-bool BLI_ensure_filename(char *filepath, size_t maxlen, const char *filename)
+bool BLI_path_filename_ensure(char *filepath, size_t maxlen, const char *filename)
 {
 #ifdef DEBUG_STRSIZE
   memset(filepath, 0xff, sizeof(*filepath) * maxlen);
 #endif
-  char *c = (char *)BLI_last_slash(filepath);
+  char *c = (char *)BLI_path_slash_rfind(filepath);
   if (!c || ((c - filepath) < maxlen - (strlen(filename) + 1))) {
     strcpy(c ? &c[1] : filepath, filename);
     return true;
@@ -1636,7 +1639,7 @@ void BLI_split_dirfile(
   memset(dir, 0xff, sizeof(*dir) * dirlen);
   memset(file, 0xff, sizeof(*file) * filelen);
 #endif
-  const char *lslash_str = BLI_last_slash(string);
+  const char *lslash_str = BLI_path_slash_rfind(string);
   const size_t lslash = lslash_str ? (size_t)(lslash_str - string) + 1 : 0;
 
   if (dir) {
@@ -1680,7 +1683,7 @@ const char *BLI_path_extension(const char *filepath)
   if (extension == NULL) {
     return NULL;
   }
-  if (BLI_first_slash(extension) != NULL) {
+  if (BLI_path_slash_find(extension) != NULL) {
     /* There is a path separator in the extension, so the '.' was found in a
      * directory component and not in the filename. */
     return NULL;
@@ -1695,7 +1698,7 @@ void BLI_path_append(char *__restrict dst, const size_t maxlen, const char *__re
 {
   size_t dirlen = BLI_strnlen(dst, maxlen);
 
-  /* inline BLI_add_slash */
+  /* inline BLI_path_slash_ensure */
   if ((dirlen > 0) && (dst[dirlen - 1] != SEP)) {
     dst[dirlen++] = SEP;
     dst[dirlen] = '\0';
@@ -1730,15 +1733,14 @@ void BLI_join_dirfile(char *__restrict dst,
     dst[dirlen - 1] = '\0';
     return; /* dir fills the path */
   }
-  else {
-    memcpy(dst, dir, dirlen + 1);
-  }
+
+  memcpy(dst, dir, dirlen + 1);
 
   if (dirlen + 1 >= maxlen) {
     return; /* fills the path */
   }
 
-  /* inline BLI_add_slash */
+  /* inline BLI_path_slash_ensure */
   if ((dirlen > 0) && !ELEM(dst[dirlen - 1], SEP, ALTSEP)) {
     dst[dirlen++] = SEP;
     dst[dirlen] = '\0';
@@ -1846,7 +1848,7 @@ size_t BLI_path_join(char *__restrict dst, const size_t dst_len, const char *pat
  */
 const char *BLI_path_basename(const char *path)
 {
-  const char *const filename = BLI_last_slash(path);
+  const char *const filename = BLI_path_slash_rfind(path);
   return filename ? filename + 1 : path;
 }
 
@@ -1890,38 +1892,37 @@ bool BLI_path_name_at_index(const char *__restrict path,
     }
     return false;
   }
-  else {
-    /* negative number, reverse where -1 is the last element */
-    int index_step = -1;
-    int prev = strlen(path);
-    int i = prev - 1;
-    while (true) {
-      const char c = i >= 0 ? path[i] : '\0';
-      if (ELEM(c, SEP, ALTSEP, '\0')) {
-        if (prev - 1 != i) {
-          i += 1;
-          if (index_step == index) {
-            *r_offset = i;
-            *r_len = prev - i;
-            return true;
-          }
-          index_step -= 1;
+
+  /* negative number, reverse where -1 is the last element */
+  int index_step = -1;
+  int prev = strlen(path);
+  int i = prev - 1;
+  while (true) {
+    const char c = i >= 0 ? path[i] : '\0';
+    if (ELEM(c, SEP, ALTSEP, '\0')) {
+      if (prev - 1 != i) {
+        i += 1;
+        if (index_step == index) {
+          *r_offset = i;
+          *r_len = prev - i;
+          return true;
         }
-        if (c == '\0') {
-          break;
-        }
-        prev = i;
+        index_step -= 1;
       }
-      i -= 1;
+      if (c == '\0') {
+        break;
+      }
+      prev = i;
     }
-    return false;
+    i -= 1;
   }
+  return false;
 }
 
 /**
  * Returns pointer to the leftmost path separator in string. Not actually used anywhere.
  */
-const char *BLI_first_slash(const char *string)
+const char *BLI_path_slash_find(const char *string)
 {
   const char *const ffslash = strchr(string, '/');
   const char *const fbslash = strchr(string, '\\');
@@ -1929,7 +1930,7 @@ const char *BLI_first_slash(const char *string)
   if (!ffslash) {
     return fbslash;
   }
-  else if (!fbslash) {
+  if (!fbslash) {
     return ffslash;
   }
 
@@ -1939,7 +1940,7 @@ const char *BLI_first_slash(const char *string)
 /**
  * Returns pointer to the rightmost path separator in string.
  */
-const char *BLI_last_slash(const char *string)
+const char *BLI_path_slash_rfind(const char *string)
 {
   const char *const lfslash = strrchr(string, '/');
   const char *const lbslash = strrchr(string, '\\');
@@ -1947,7 +1948,7 @@ const char *BLI_last_slash(const char *string)
   if (!lfslash) {
     return lbslash;
   }
-  else if (!lbslash) {
+  if (!lbslash) {
     return lfslash;
   }
 
@@ -1958,7 +1959,7 @@ const char *BLI_last_slash(const char *string)
  * Appends a slash to string if there isn't one there already.
  * Returns the new length of the string.
  */
-int BLI_add_slash(char *string)
+int BLI_path_slash_ensure(char *string)
 {
   int len = strlen(string);
   if (len == 0 || string[len - 1] != SEP) {
@@ -1972,7 +1973,7 @@ int BLI_add_slash(char *string)
 /**
  * Removes the last slash and everything after it to the end of string, if there is one.
  */
-void BLI_del_slash(char *string)
+void BLI_path_slash_rstrip(char *string)
 {
   int len = strlen(string);
   while (len) {
@@ -1989,7 +1990,7 @@ void BLI_del_slash(char *string)
 /**
  * Changes to the path separators to the native ones for this OS.
  */
-void BLI_path_native_slash(char *path)
+void BLI_path_slash_native(char *path)
 {
 #ifdef WIN32
   if (path && BLI_strnlen(path, 3) > 2) {

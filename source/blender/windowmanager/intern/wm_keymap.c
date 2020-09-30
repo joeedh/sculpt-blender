@@ -278,7 +278,7 @@ wmKeyConfig *WM_keyconfig_new(wmWindowManager *wm, const char *idname, bool user
     if (keyconf == wm->defaultconf) {
       /* For default configuration, we need to keep keymap
        * modal items and poll functions intact. */
-      for (wmKeyMap *km = keyconf->keymaps.first; km; km = km->next) {
+      LISTBASE_FOREACH (wmKeyMap *, km, &keyconf->keymaps) {
         WM_keymap_clear(km);
       }
     }
@@ -321,14 +321,12 @@ bool WM_keyconfig_remove(wmWindowManager *wm, wmKeyConfig *keyconf)
 
     return true;
   }
-  else {
-    return false;
-  }
+  return false;
 }
 
 void WM_keyconfig_clear(wmKeyConfig *keyconf)
 {
-  for (wmKeyMap *km = keyconf->keymaps.first; km; km = km->next) {
+  LISTBASE_FOREACH (wmKeyMap *, km, &keyconf->keymaps) {
     WM_keymap_clear(km);
   }
 
@@ -363,7 +361,7 @@ void WM_keyconfig_set_active(wmWindowManager *wm, const char *idname)
   WM_keyconfig_update(wm);
 
   BLI_strncpy(U.keyconfigstr, idname, sizeof(U.keyconfigstr));
-  if (wm->initialized & WM_KEYCONFIG_IS_INITIALIZED) {
+  if (wm->initialized & WM_KEYCONFIG_IS_INIT) {
     U.runtime.is_dirty = true;
   }
 
@@ -448,9 +446,7 @@ bool WM_keymap_remove(wmKeyConfig *keyconf, wmKeyMap *keymap)
 
     return true;
   }
-  else {
-    return false;
-  }
+  return false;
 }
 
 bool WM_keymap_poll(bContext *C, wmKeyMap *keymap)
@@ -551,9 +547,7 @@ bool WM_keymap_remove_item(wmKeyMap *keymap, wmKeyMapItem *kmi)
     WM_keyconfig_update_tag(keymap, NULL);
     return true;
   }
-  else {
-    return false;
-  }
+  return false;
 }
 
 /** \} */
@@ -1122,7 +1116,7 @@ const char *WM_key_event_string(const short type, const bool compact)
         if (platform == MACOS) {
           return key_event_glyph_or_text(font_id, IFACE_("Cmd"), "\xe2\x8c\x98");
         }
-        else if (platform == MSWIN) {
+        if (platform == MSWIN) {
           return key_event_glyph_or_text(font_id, IFACE_("Win"), "\xe2\x9d\x96");
         }
         return IFACE_("OS");
@@ -1182,8 +1176,9 @@ int WM_keymap_item_raw_to_string(const short shift,
                                  const int result_len)
 {
 #define ADD_SEP \
-  if (p != buf) \
+  if (p != buf) { \
     *p++ = ' '; \
+  } \
   (void)0
 
   char buf[128];
@@ -1329,7 +1324,7 @@ static wmKeyMapItem *wm_keymap_item_find_in_keymap(wmKeyMap *keymap,
                                                    const bool is_strict,
                                                    const struct wmKeyMapItemFind_Params *params)
 {
-  for (wmKeyMapItem *kmi = keymap->items.first; kmi; kmi = kmi->next) {
+  LISTBASE_FOREACH (wmKeyMapItem *, kmi, &keymap->items) {
     /* skip disabled keymap items [T38447] */
     if (kmi->flag & KMI_INACTIVE) {
       continue;
@@ -1449,7 +1444,7 @@ static wmKeyMapItem *wm_keymap_item_find_props(const bContext *C,
                                                wmKeyMap **r_keymap)
 {
   wmWindow *win = CTX_wm_window(C);
-  ScrArea *sa = CTX_wm_area(C);
+  ScrArea *area = CTX_wm_area(C);
   ARegion *region = CTX_wm_region(C);
   wmKeyMapItem *found = NULL;
 
@@ -1463,16 +1458,16 @@ static wmKeyMapItem *wm_keymap_item_find_props(const bContext *C,
     }
   }
 
-  if (sa && found == NULL) {
+  if (area && found == NULL) {
     found = wm_keymap_item_find_handlers(
-        C, &sa->handlers, opname, opcontext, properties, is_strict, params, r_keymap);
+        C, &area->handlers, opname, opcontext, properties, is_strict, params, r_keymap);
   }
 
   if (found == NULL) {
     if (ELEM(opcontext, WM_OP_EXEC_REGION_WIN, WM_OP_INVOKE_REGION_WIN)) {
-      if (sa) {
+      if (area) {
         if (!(region && region->regiontype == RGN_TYPE_WINDOW)) {
-          region = BKE_area_find_region_type(sa, RGN_TYPE_WINDOW);
+          region = BKE_area_find_region_type(area, RGN_TYPE_WINDOW);
         }
 
         if (region) {
@@ -1483,7 +1478,7 @@ static wmKeyMapItem *wm_keymap_item_find_props(const bContext *C,
     }
     else if (ELEM(opcontext, WM_OP_EXEC_REGION_CHANNELS, WM_OP_INVOKE_REGION_CHANNELS)) {
       if (!(region && region->regiontype == RGN_TYPE_CHANNELS)) {
-        region = BKE_area_find_region_type(sa, RGN_TYPE_CHANNELS);
+        region = BKE_area_find_region_type(area, RGN_TYPE_CHANNELS);
       }
 
       if (region) {
@@ -1493,7 +1488,7 @@ static wmKeyMapItem *wm_keymap_item_find_props(const bContext *C,
     }
     else if (ELEM(opcontext, WM_OP_EXEC_REGION_PREVIEW, WM_OP_INVOKE_REGION_PREVIEW)) {
       if (!(region && region->regiontype == RGN_TYPE_PREVIEW)) {
-        region = BKE_area_find_region_type(sa, RGN_TYPE_PREVIEW);
+        region = BKE_area_find_region_type(area, RGN_TYPE_PREVIEW);
       }
 
       if (region) {
@@ -1767,13 +1762,13 @@ enum {
 
 static char wm_keymap_update_flag = 0;
 
-void WM_keyconfig_update_tag(wmKeyMap *km, wmKeyMapItem *kmi)
+void WM_keyconfig_update_tag(wmKeyMap *keymap, wmKeyMapItem *kmi)
 {
   /* quick tag to do delayed keymap updates */
   wm_keymap_update_flag |= WM_KEYMAP_UPDATE_RECONFIGURE;
 
-  if (km) {
-    km->flag |= KEYMAP_UPDATE;
+  if (keymap) {
+    keymap->flag |= KEYMAP_UPDATE;
   }
   if (kmi) {
     kmi->flag |= KMI_UPDATE;
@@ -1936,7 +1931,7 @@ void WM_keyconfig_update(wmWindowManager *wm)
  * During event handling this function is called to get the keymap from the final configuration.
  * \{ */
 
-wmKeyMap *WM_keymap_active(wmWindowManager *wm, wmKeyMap *keymap)
+wmKeyMap *WM_keymap_active(const wmWindowManager *wm, wmKeyMap *keymap)
 {
   wmKeyMap *km;
 

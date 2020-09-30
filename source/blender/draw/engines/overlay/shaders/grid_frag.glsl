@@ -10,11 +10,9 @@ out vec4 FragColor;
 
 uniform vec3 planeAxes;
 uniform float gridDistance;
-uniform float meshSize;
+uniform vec3 gridSize;
 uniform float lineKernel = 0.0;
 uniform sampler2D depthBuffer;
-
-#define cameraPos (ViewMatrixInverse[3].xyz)
 
 uniform int gridFlag;
 
@@ -28,7 +26,8 @@ uniform float gridSteps[STEPS_LEN] = float[](0.001, 0.01, 0.1, 1.0, 10.0, 100.0,
 #define PLANE_XY (1 << 4)
 #define PLANE_XZ (1 << 5)
 #define PLANE_YZ (1 << 6)
-#define GRID_BACK (1 << 9) /* grid is behind objects */
+#define GRID_BACK (1 << 9)    /* grid is behind objects */
+#define GRID_CAMERA (1 << 10) /* In camera view */
 
 #define M_1_SQRTPI 0.5641895835477563 /* 1/sqrt(pi) */
 
@@ -74,7 +73,7 @@ vec3 get_axes(vec3 co, vec3 fwidthCos, float line_size)
 
 void main()
 {
-  vec3 wPos = local_pos * meshSize;
+  vec3 wPos = local_pos * gridSize;
   vec3 dFdxPos = dFdx(wPos);
   vec3 dFdyPos = dFdy(wPos);
   vec3 fwidthPos = abs(dFdxPos) + abs(dFdyPos);
@@ -104,7 +103,9 @@ void main()
     fade *= 1.0 - smoothstep(0.0, gridDistance, dist - gridDistance);
   }
   else {
-    dist = abs(gl_FragCoord.z * 2.0 - 1.0);
+    dist = gl_FragCoord.z * 2.0 - 1.0;
+    /* Avoid fading in +Z direction in camera view (see T70193). */
+    dist = ((gridFlag & GRID_CAMERA) != 0) ? clamp(dist, 0.0, 1.0) : abs(dist);
     fade = 1.0 - smoothstep(0.0, 0.5, dist - 0.5);
     dist = 1.0; /* avoid branch after */
 
@@ -227,21 +228,20 @@ void main()
     }
   }
 
-  /* Add a small bias so the grid will always
-   * be on top of a mesh with the same depth. */
-  float grid_depth = gl_FragCoord.z - 6e-8 - fwidth(gl_FragCoord.z);
   float scene_depth = texelFetch(depthBuffer, ivec2(gl_FragCoord.xy), 0).r;
   if ((gridFlag & GRID_BACK) != 0) {
     fade *= (scene_depth == 1.0) ? 1.0 : 0.0;
   }
   else {
+    /* Add a small bias so the grid will always be below of a mesh with the same depth. */
+    float grid_depth = gl_FragCoord.z + 4.8e-7;
     /* Manual, non hard, depth test:
      * Progressively fade the grid below occluders
      * (avoids popping visuals due to depth buffer precision) */
     /* Harder settings tend to flicker more,
      * but have less "see through" appearance. */
-    const float test_hardness = 1e7;
-    fade *= 1.0 - clamp((grid_depth - scene_depth) * test_hardness, 0.0, 1.0);
+    float bias = max(fwidth(gl_FragCoord.z), 2.4e-7);
+    fade *= linearstep(grid_depth, grid_depth + bias, scene_depth);
   }
 
   FragColor.a *= fade;

@@ -98,14 +98,13 @@ class Shader : public Node {
   /* synchronization */
   bool need_update;
   bool need_update_geometry;
-  bool need_sync_object;
 
   /* If the shader has only volume components, the surface is assumed to
    * be transparent.
    * However, graph optimization might remove the volume subgraph, but
    * since the user connected something to the volume output the surface
    * should still be transparent.
-   * Therefore, has_volume_connected stores whether some volume subtree
+   * Therefore, has_volume_connected stores whether some volume sub-tree
    * was connected before optimization. */
   bool has_volume_connected;
 
@@ -121,7 +120,6 @@ class Shader : public Node {
   bool has_surface_spatial_varying;
   bool has_volume_spatial_varying;
   bool has_volume_attribute_dependency;
-  bool has_object_dependency;
   bool has_integrator_dependency;
 
   /* displacement */

@@ -4,6 +4,8 @@ uniform bool useColoring;
 uniform bool isTransform;
 uniform bool isObjectColor;
 uniform bool isRandomColor;
+uniform bool isHair;
+uniform vec4 hairDupliMatrix[4];
 
 in vec3 pos;
 in vec3 nor;
@@ -101,10 +103,17 @@ void wire_object_color_get(out vec3 rim_col, out vec3 wire_col)
 
 void main()
 {
-  bool no_attrib = all(equal(nor, vec3(0)));
-  vec3 wnor = no_attrib ? ViewMatrixInverse[2].xyz : normalize(normal_object_to_world(nor));
-
+  bool no_attr = all(equal(nor, vec3(0)));
+  vec3 wnor = no_attr ? ViewMatrixInverse[2].xyz : normalize(normal_object_to_world(nor));
   vec3 wpos = point_object_to_world(pos);
+
+  if (isHair) {
+    mat4 obmat = mat4(
+        hairDupliMatrix[0], hairDupliMatrix[1], hairDupliMatrix[2], hairDupliMatrix[3]);
+
+    wpos = (obmat * vec4(pos, 1.0)).xyz;
+    wnor = -normalize(mat3(obmat) * nor);
+  }
 
   bool is_persp = (ProjectionMatrix[3][3] == 0.0);
   vec3 V = (is_persp) ? normalize(ViewMatrixInverse[3].xyz - wpos) : ViewMatrixInverse[2].xyz;
@@ -152,7 +161,7 @@ void main()
 #endif
 
   /* Cull flat edges below threshold. */
-  if (!no_attrib && (get_edge_sharpness(wd) < 0.0)) {
+  if (!no_attr && (get_edge_sharpness(wd) < 0.0)) {
     edgeStart = vec2(-1.0);
   }
 

@@ -93,9 +93,6 @@ class IMAGE_MT_view(Menu):
         layout.separator()
 
         layout.prop(sima, "use_realtime_update")
-        if show_uvedit:
-            layout.prop(tool_settings, "show_uv_local_view")
-
         layout.prop(uv, "show_metadata")
 
         if paint.brush and (context.image_paint_object or sima.mode == 'PAINT'):
@@ -116,7 +113,7 @@ class IMAGE_MT_view(Menu):
         if show_uvedit:
             layout.operator("image.view_selected", text="Frame Selected")
 
-        layout.operator("image.view_all", text="Frame All")
+        layout.operator("image.view_all")
         layout.operator("image.view_all", text="Frame All Fit").fit_view = True
 
         layout.operator("image.view_center_cursor", text="Center View to Cursor")
@@ -179,12 +176,22 @@ class IMAGE_MT_select(Menu):
         layout.separator()
 
         layout.operator("uv.select_pinned")
-        layout.operator("uv.select_linked")
+        layout.menu("IMAGE_MT_select_linked")
 
         layout.separator()
 
         layout.operator("uv.select_split")
         layout.operator("uv.select_overlap")
+
+
+class IMAGE_MT_select_linked(Menu):
+    bl_label = "Select Linked"
+
+    def draw(self, _context):
+        layout = self.layout
+
+        layout.operator("uv.select_linked", text="Linked")
+        layout.operator("uv.shortest_path_select", text="Shortest Path")
 
 
 class IMAGE_MT_image(Menu):
@@ -324,15 +331,60 @@ class IMAGE_MT_uvs_mirror(Menu):
         layout.operator("transform.mirror", text="Y Axis").constraint_axis[1] = True
 
 
-class IMAGE_MT_uvs_weldalign(Menu):
-    bl_label = "Weld/Align"
+class IMAGE_MT_uvs_align(Menu):
+    bl_label = "Align"
 
     def draw(self, _context):
         layout = self.layout
 
-        layout.operator("uv.weld")  # W, 1.
-        layout.operator("uv.remove_doubles")
-        layout.operator_enum("uv.align", "axis")  # W, 2/3/4.
+        layout.operator_enum("uv.align", "axis")
+
+
+class IMAGE_MT_uvs_merge(Menu):
+    bl_label = "Merge"
+
+    def draw(self, _context):
+        layout = self.layout
+
+        layout.operator("uv.weld", text="At Center")
+        # Mainly to match the mesh menu.
+        layout.operator("uv.snap_selected", text="At Cursor").target = 'CURSOR'
+
+        layout.separator()
+
+        layout.operator("uv.remove_doubles", text="By Distance")
+
+
+class IMAGE_MT_uvs_split(Menu):
+    bl_label = "Split"
+
+    def draw(self, _context):
+        layout = self.layout
+
+        layout.operator("uv.select_split", text="Selection")
+
+
+class IMAGE_MT_uvs_unwrap(Menu):
+    bl_label = "Unwrap"
+
+    def draw(self, context):
+        layout = self.layout
+
+        layout.operator("uv.unwrap")
+
+        layout.separator()
+
+        layout.operator_context = 'INVOKE_DEFAULT'
+        layout.operator("uv.smart_project")
+        layout.operator("uv.lightmap_pack")
+        layout.operator("uv.follow_active_quads")
+
+        layout.separator()
+
+        layout.operator_context = 'EXEC_REGION_WIN'
+        layout.operator("uv.cube_project")
+        layout.operator("uv.cylinder_project")
+        layout.operator("uv.sphere_project")
 
 
 class IMAGE_MT_uvs(Menu):
@@ -353,8 +405,13 @@ class IMAGE_MT_uvs(Menu):
 
         layout.separator()
 
+        layout.menu("IMAGE_MT_uvs_merge")
+        layout.menu("IMAGE_MT_uvs_split")
+
+        layout.separator()
+
         layout.prop(uv, "use_live_unwrap")
-        layout.operator("uv.unwrap")
+        layout.menu("IMAGE_MT_uvs_unwrap")
 
         layout.separator()
 
@@ -376,11 +433,15 @@ class IMAGE_MT_uvs(Menu):
 
         layout.operator("uv.minimize_stretch")
         layout.operator("uv.stitch")
-        layout.menu("IMAGE_MT_uvs_weldalign")
+        layout.menu("IMAGE_MT_uvs_align")
 
         layout.separator()
 
         layout.menu("IMAGE_MT_uvs_showhide")
+
+        layout.separator()
+
+        layout.operator("uv.reset")
 
         layout.separator()
 
@@ -461,9 +522,9 @@ class IMAGE_MT_uvs_context_menu(Menu):
             layout.separator()
 
             # Remove
-            layout.operator("uv.remove_doubles", text="Remove Double UVs")
+            layout.menu("IMAGE_MT_uvs_merge")
             layout.operator("uv.stitch")
-            layout.operator("uv.weld")
+            layout.menu("IMAGE_MT_uvs_split")
 
 
 class IMAGE_MT_pivot_pie(Menu):
@@ -661,7 +722,12 @@ class IMAGE_HT_header(Header):
 
             # Proportional Editing
             row = layout.row(align=True)
-            row.prop(tool_settings, "use_proportional_edit", icon_only=True)
+            row.prop(
+                tool_settings,
+                "use_proportional_edit",
+                icon_only=True,
+                icon='PROP_CON' if tool_settings.use_proportional_connected else 'PROP_ON',
+            )
             sub = row.row(align=True)
             sub.active = tool_settings.use_proportional_edit
             sub.prop_with_popover(
@@ -703,7 +769,7 @@ class IMAGE_HT_header(Header):
                 layout.prop(tool_settings, "uv_select_mode", text="", expand=True)
                 layout.prop(uvedit, "sticky_select_mode", icon_only=True)
 
-        MASK_MT_editor_menus.draw_collapsible(context, layout)
+        IMAGE_MT_editor_menus.draw_collapsible(context, layout)
 
         layout.separator_spacer()
 
@@ -749,8 +815,8 @@ class IMAGE_HT_header(Header):
                 row.operator("image.play_composite", icon='PLAY')
 
 
-class MASK_MT_editor_menus(Menu):
-    bl_idname = "MASK_MT_editor_menus"
+class IMAGE_MT_editor_menus(Menu):
+    bl_idname = "IMAGE_MT_editor_menus"
     bl_label = ""
 
     def draw(self, context):
@@ -920,7 +986,9 @@ class IMAGE_PT_view_display(Panel):
 
         if ima:
             col.prop(ima, "display_aspect", text="Aspect Ratio")
-            col.prop(sima, "show_repeat", text="Repeat Image")
+            row = col.row()
+            row.active = ima.source != 'TILED'
+            row.prop(sima, "show_repeat", text="Repeat Image")
 
         if show_uvedit:
             col.prop(uvedit, "show_pixel_coords", text="Pixel Coordinates")
@@ -953,8 +1021,10 @@ class IMAGE_PT_view_display_uv_edit_overlays(Panel):
         col.prop(uvedit, "show_faces", text="Faces")
 
         col = layout.column()
-        col.prop(uvedit, "show_smooth_edges", text="Smooth")
+        if context.preferences.experimental.use_image_editor_legacy_drawing:
+          col.prop(uvedit, "show_smooth_edges", text="Smooth")
         col.prop(uvedit, "show_modified_edges", text="Modified")
+        col.prop(uvedit, "uv_opacity")
 
 
 class IMAGE_PT_view_display_uv_edit_overlays_stretch(Panel):
@@ -1093,6 +1163,7 @@ class IMAGE_PT_paint_settings_advanced(Panel, ImagePaintPanel):
     bl_parent_id = "IMAGE_PT_paint_settings"
     bl_category = "Tool"
     bl_label = "Advanced"
+    bl_ui_units_x = 12
 
     def draw(self, context):
         layout = self.layout
@@ -1149,6 +1220,7 @@ class IMAGE_PT_tools_brush_display(Panel, BrushButtonsPanel, DisplayPanel):
     bl_category = "Tool"
     bl_label = "Brush Tip"
     bl_options = {'DEFAULT_CLOSED'}
+    bl_ui_units_x = 15
 
 
 class IMAGE_PT_tools_brush_texture(BrushButtonsPanel, Panel):
@@ -1175,6 +1247,7 @@ class IMAGE_PT_tools_mask_texture(Panel, BrushButtonsPanel, TextureMaskPanel):
     bl_parent_id = "IMAGE_PT_paint_settings"
     bl_category = "Tool"
     bl_label = "Texture Mask"
+    bl_ui_units_x = 12
 
 
 class IMAGE_PT_paint_stroke(BrushButtonsPanel, Panel, StrokePanel):
@@ -1407,10 +1480,11 @@ class IMAGE_PT_uv_cursor(Panel):
 
         sima = context.space_data
 
-        col = layout.column()
+        layout.use_property_split = True
+        layout.use_property_decorate = False
 
         col = layout.column()
-        col.prop(sima, "cursor_location", text="Cursor Location")
+        col.prop(sima, "cursor_location", text="Location")
 
 
 class IMAGE_PT_udim_grid(Panel):
@@ -1431,6 +1505,9 @@ class IMAGE_PT_udim_grid(Panel):
         sima = context.space_data
         uvedit = sima.uv_editor
 
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+
         col = layout.column()
         col.prop(uvedit, "tile_grid_shape", text="Grid Shape")
 
@@ -1450,6 +1527,7 @@ classes = (
     IMAGE_MT_view,
     IMAGE_MT_view_zoom,
     IMAGE_MT_select,
+    IMAGE_MT_select_linked,
     IMAGE_MT_image,
     IMAGE_MT_image_invert,
     IMAGE_MT_uvs,
@@ -1457,7 +1535,10 @@ classes = (
     IMAGE_MT_uvs_transform,
     IMAGE_MT_uvs_snap,
     IMAGE_MT_uvs_mirror,
-    IMAGE_MT_uvs_weldalign,
+    IMAGE_MT_uvs_align,
+    IMAGE_MT_uvs_merge,
+    IMAGE_MT_uvs_split,
+    IMAGE_MT_uvs_unwrap,
     IMAGE_MT_uvs_select_mode,
     IMAGE_MT_uvs_context_menu,
     IMAGE_MT_mask_context_menu,
@@ -1465,7 +1546,7 @@ classes = (
     IMAGE_MT_uvs_snap_pie,
     IMAGE_HT_tool_header,
     IMAGE_HT_header,
-    MASK_MT_editor_menus,
+    IMAGE_MT_editor_menus,
     IMAGE_PT_active_tool,
     IMAGE_PT_mask,
     IMAGE_PT_mask_layers,

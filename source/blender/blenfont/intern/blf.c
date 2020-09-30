@@ -92,9 +92,7 @@ static FontBLF *blf_get(int fontid)
 
 int BLF_init(void)
 {
-  int i;
-
-  for (i = 0; i < BLF_MAX_FONT; i++) {
+  for (int i = 0; i < BLF_MAX_FONT; i++) {
     global_font[i] = NULL;
   }
 
@@ -111,11 +109,8 @@ void BLF_default_dpi(int dpi)
 
 void BLF_exit(void)
 {
-  FontBLF *font;
-  int i;
-
-  for (i = 0; i < BLF_MAX_FONT; i++) {
-    font = global_font[i];
+  for (int i = 0; i < BLF_MAX_FONT; i++) {
+    FontBLF *font = global_font[i];
     if (font) {
       blf_font_free(font);
       global_font[i] = NULL;
@@ -125,18 +120,10 @@ void BLF_exit(void)
   blf_font_exit();
 }
 
-void BLF_batch_reset(void)
-{
-  blf_batch_draw_vao_clear();
-}
-
 void BLF_cache_clear(void)
 {
-  FontBLF *font;
-  int i;
-
-  for (i = 0; i < BLF_MAX_FONT; i++) {
-    font = global_font[i];
+  for (int i = 0; i < BLF_MAX_FONT; i++) {
+    FontBLF *font = global_font[i];
     if (font) {
       blf_glyph_cache_clear(font);
       blf_kerning_cache_clear(font);
@@ -146,11 +133,8 @@ void BLF_cache_clear(void)
 
 static int blf_search(const char *name)
 {
-  FontBLF *font;
-  int i;
-
-  for (i = 0; i < BLF_MAX_FONT; i++) {
-    font = global_font[i];
+  for (int i = 0; i < BLF_MAX_FONT; i++) {
+    FontBLF *font = global_font[i];
     if (font && (STREQ(font->name, name))) {
       return i;
     }
@@ -161,9 +145,7 @@ static int blf_search(const char *name)
 
 static int blf_search_available(void)
 {
-  int i;
-
-  for (i = 0; i < BLF_MAX_FONT; i++) {
+  for (int i = 0; i < BLF_MAX_FONT; i++) {
     if (!global_font[i]) {
       return i;
     }
@@ -197,13 +179,10 @@ bool BLF_has_glyph(int fontid, unsigned int unicode)
 
 int BLF_load(const char *name)
 {
-  FontBLF *font;
-  int i;
-
   /* check if we already load this font. */
-  i = blf_search(name);
+  int i = blf_search(name);
   if (i >= 0) {
-    font = global_font[i];
+    FontBLF *font = global_font[i];
     font->reference_count++;
     return i;
   }
@@ -213,26 +192,22 @@ int BLF_load(const char *name)
 
 int BLF_load_unique(const char *name)
 {
-  FontBLF *font;
-  char *filename;
-  int i;
-
   /* Don't search in the cache!! make a new
    * object font, this is for keep fonts threads safe.
    */
-  i = blf_search_available();
+  int i = blf_search_available();
   if (i == -1) {
     printf("Too many fonts!!!\n");
     return -1;
   }
 
-  filename = blf_dir_search(name);
+  char *filename = blf_dir_search(name);
   if (!filename) {
     printf("Can't find font: %s\n", name);
     return -1;
   }
 
-  font = blf_font_new(name, filename);
+  FontBLF *font = blf_font_new(name, filename);
   MEM_freeN(filename);
 
   if (!font) {
@@ -256,9 +231,7 @@ void BLF_metrics_attach(int fontid, unsigned char *mem, int mem_size)
 
 int BLF_load_mem(const char *name, const unsigned char *mem, int mem_size)
 {
-  int i;
-
-  i = blf_search(name);
+  int i = blf_search(name);
   if (i >= 0) {
     /*font = global_font[i];*/ /*UNUSED*/
     return i;
@@ -268,14 +241,11 @@ int BLF_load_mem(const char *name, const unsigned char *mem, int mem_size)
 
 int BLF_load_mem_unique(const char *name, const unsigned char *mem, int mem_size)
 {
-  FontBLF *font;
-  int i;
-
   /*
    * Don't search in the cache, make a new object font!
    * this is to keep the font thread safe.
    */
-  i = blf_search_available();
+  int i = blf_search_available();
   if (i == -1) {
     printf("Too many fonts!!!\n");
     return -1;
@@ -286,7 +256,7 @@ int BLF_load_mem_unique(const char *name, const unsigned char *mem, int mem_size
     return -1;
   }
 
-  font = blf_font_new_from_mem(name, mem, mem_size);
+  FontBLF *font = blf_font_new_from_mem(name, mem, mem_size);
   if (!font) {
     printf("Can't load font: %s from memory!!\n", name);
     return -1;
@@ -299,11 +269,8 @@ int BLF_load_mem_unique(const char *name, const unsigned char *mem, int mem_size
 
 void BLF_unload(const char *name)
 {
-  FontBLF *font;
-  int i;
-
-  for (i = 0; i < BLF_MAX_FONT; i++) {
-    font = global_font[i];
+  for (int i = 0; i < BLF_MAX_FONT; i++) {
+    FontBLF *font = global_font[i];
 
     if (font && (STREQ(font->name, name))) {
       BLI_assert(font->reference_count > 0);
@@ -509,7 +476,7 @@ void BLF_color4fv(int fontid, const float rgba[4])
 
 void BLF_color4f(int fontid, float r, float g, float b, float a)
 {
-  float rgba[4] = {r, g, b, a};
+  const float rgba[4] = {r, g, b, a};
   BLF_color4fv(fontid, rgba);
 }
 
@@ -523,7 +490,7 @@ void BLF_color3fv_alpha(int fontid, const float rgb[3], float alpha)
 
 void BLF_color3f(int fontid, float r, float g, float b)
 {
-  float rgba[4] = {r, g, b, 1.0f};
+  const float rgba[4] = {r, g, b, 1.0f};
   BLF_color4fv(fontid, rgba);
 }
 
@@ -680,6 +647,42 @@ int BLF_draw_mono(int fontid, const char *str, size_t len, int cwidth)
   }
 
   return columns;
+}
+
+/**
+ * Run \a user_fn for each character, with the bound-box that would be used for drawing.
+ *
+ * \param user_fn: Callback that runs on each glyph, returning false early exits.
+ * \param user_data: User argument passed to \a user_fn.
+ *
+ * \note The font position, clipping, matrix and rotation are not applied.
+ */
+void BLF_boundbox_foreach_glyph_ex(int fontid,
+                                   const char *str,
+                                   size_t len,
+                                   BLF_GlyphBoundsFn user_fn,
+                                   void *user_data,
+                                   struct ResultBLF *r_info)
+{
+  FontBLF *font = blf_get(fontid);
+
+  BLF_RESULT_CHECK_INIT(r_info);
+
+  if (font) {
+    if (font->flags & BLF_WORD_WRAP) {
+      /* TODO: word-wrap support. */
+      BLI_assert(0);
+    }
+    else {
+      blf_font_boundbox_foreach_glyph(font, str, len, user_fn, user_data, r_info);
+    }
+  }
+}
+
+void BLF_boundbox_foreach_glyph(
+    int fontid, const char *str, size_t len, BLF_GlyphBoundsFn user_fn, void *user_data)
+{
+  BLF_boundbox_foreach_glyph_ex(fontid, str, len, user_fn, user_data, NULL);
 }
 
 size_t BLF_width_to_strlen(int fontid, const char *str, size_t len, float width, float *r_width)
@@ -910,8 +913,8 @@ void BLF_buffer(int fontid,
   if (font) {
     font->buf_info.fbuf = fbuf;
     font->buf_info.cbuf = cbuf;
-    font->buf_info.w = w;
-    font->buf_info.h = h;
+    font->buf_info.dims[0] = w;
+    font->buf_info.dims[1] = h;
     font->buf_info.ch = nch;
     font->buf_info.display = display;
   }

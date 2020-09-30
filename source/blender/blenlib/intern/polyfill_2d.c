@@ -177,12 +177,11 @@ BLI_INLINE eSign signum_enum(float a)
   if (UNLIKELY(a == 0.0f)) {
     return 0;
   }
-  else if (a > 0.0f) {
+  if (a > 0.0f) {
     return 1;
   }
-  else {
-    return -1;
-  }
+
+  return -1;
 }
 
 /**
@@ -250,7 +249,7 @@ static uint kdtree2d_balance_recursive(
   if (totnode <= 0) {
     return KDNODE_UNSET;
   }
-  else if (totnode == 1) {
+  if (totnode == 1) {
     return 0 + ofs;
   }
 
@@ -330,9 +329,8 @@ static void kdtree2d_node_remove(struct KDTree2D *tree, uint index)
   if (node_index == KDNODE_UNSET) {
     return;
   }
-  else {
-    tree->nodes_map[index] = KDNODE_UNSET;
-  }
+
+  tree->nodes_map[index] = KDNODE_UNSET;
 
   node = &tree->nodes[node_index];
   tree->totnode -= 1;
@@ -909,6 +907,19 @@ void BLI_polyfill_calc(const float (*coords)[2],
                        const int coords_sign,
                        uint (*r_tris)[3])
 {
+  /* Fallback to heap memory for large allocations.
+   * Avoid running out of stack memory on systems with 512kb stack (macOS).
+   * This happens at around 13,000 points, use a much lower value to be safe. */
+  if (UNLIKELY(coords_tot > 8192)) {
+    /* The buffer size only accounts for the index allocation,
+     * worst case we do two allocations when concave, while we should try to be efficient,
+     * any caller that relies on this frequently should use #BLI_polyfill_calc_arena directly. */
+    MemArena *arena = BLI_memarena_new(sizeof(PolyIndex) * coords_tot, __func__);
+    BLI_polyfill_calc_arena(coords, coords_tot, coords_sign, r_tris, arena);
+    BLI_memarena_free(arena);
+    return;
+  }
+
   PolyFill pf;
   PolyIndex *indices = BLI_array_alloca(indices, coords_tot);
 

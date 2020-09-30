@@ -191,7 +191,7 @@ void transform_draw_cursor_draw(bContext *UNUSED(C), int x, int y, void *customd
     }
 
     GPU_line_smooth(true);
-    GPU_blend(true);
+    GPU_blend(GPU_BLEND_ALPHA);
 
     GPU_matrix_push();
 
@@ -313,7 +313,7 @@ void transform_draw_cursor_draw(bContext *UNUSED(C), int x, int y, void *customd
         break;
       }
       case HLP_TRACKBALL: {
-        unsigned char col[3], col2[3];
+        uchar col[3], col2[3];
         UI_GetThemeColor3ubv(TH_GRID, col);
 
         GPU_matrix_translate_3fv(mval);
@@ -339,6 +339,6 @@ void transform_draw_cursor_draw(bContext *UNUSED(C), int x, int y, void *customd
     GPU_matrix_pop();
 
     GPU_line_smooth(false);
-    GPU_blend(false);
+    GPU_blend(GPU_BLEND_NONE);
   }
 }

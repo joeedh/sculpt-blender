@@ -76,8 +76,37 @@ static EnumPropertyItem rna_enum_gpencil_onion_modes_items[] = {
     {0, NULL, 0, NULL, NULL},
 };
 
+static const EnumPropertyItem rna_enum_keyframe_type_items[] = {
+    {BEZT_KEYTYPE_KEYFRAME,
+     "KEYFRAME",
+     ICON_KEYTYPE_KEYFRAME_VEC,
+     "Keyframe",
+     "Normal keyframe - e.g. for key poses"},
+    {BEZT_KEYTYPE_BREAKDOWN,
+     "BREAKDOWN",
+     ICON_KEYTYPE_BREAKDOWN_VEC,
+     "Breakdown",
+     "A breakdown pose - e.g. for transitions between key poses"},
+    {BEZT_KEYTYPE_MOVEHOLD,
+     "MOVING_HOLD",
+     ICON_KEYTYPE_MOVING_HOLD_VEC,
+     "Moving Hold",
+     "A keyframe that is part of a moving hold"},
+    {BEZT_KEYTYPE_EXTREME,
+     "EXTREME",
+     ICON_KEYTYPE_EXTREME_VEC,
+     "Extreme",
+     "An 'extreme' pose, or some other purpose as needed"},
+    {BEZT_KEYTYPE_JITTER,
+     "JITTER",
+     ICON_KEYTYPE_JITTER_VEC,
+     "Jitter",
+     "A filler or baked keyframe for keying on ones, or some other purpose as needed"},
+    {0, NULL, 0, NULL, NULL},
+};
+
 static const EnumPropertyItem rna_enum_onion_keyframe_type_items[] = {
-    {-1, "ALL", ICON_ACTION, "All Types", "Include all Keyframe types"},
+    {-1, "ALL", 0, "All", "Include all Keyframe types"},
     {BEZT_KEYTYPE_KEYFRAME,
      "KEYFRAME",
      ICON_KEYTYPE_KEYFRAME_VEC,
@@ -121,7 +150,7 @@ static const EnumPropertyItem rna_enum_layer_blend_modes_items[] = {
     {eGplBlendMode_Divide, "DIVIDE", 0, "Divide", ""},
     {0, NULL, 0, NULL, NULL}};
 
-static EnumPropertyItem rna_enum_gpencil_caps_modes_items[] = {
+static const EnumPropertyItem rna_enum_gpencil_caps_modes_items[] = {
     {GP_STROKE_CAP_ROUND, "ROUND", 0, "Rounded", ""},
     {GP_STROKE_CAP_FLAT, "FLAT", 0, "Flat", ""},
     {0, NULL, 0, NULL, NULL},
@@ -710,19 +739,19 @@ static void rna_GPencil_stroke_point_pop(ID *id,
 
 static bGPDstroke *rna_GPencil_stroke_new(bGPDframe *frame)
 {
-  bGPDstroke *stroke = MEM_callocN(sizeof(bGPDstroke), "gp_stroke");
-  stroke->hardeness = 1.0f;
-  ARRAY_SET_ITEMS(stroke->aspect_ratio, 1.0f, 1.0f);
-  stroke->uv_scale = 1.0f;
+  bGPDstroke *stroke = BKE_gpencil_stroke_new(0, 0, 1.0f);
   BLI_addtail(&frame->strokes, stroke);
 
   return stroke;
 }
 
-static void rna_GPencil_stroke_remove(bGPDframe *frame,
+static void rna_GPencil_stroke_remove(ID *id,
+                                      bGPDframe *frame,
                                       ReportList *reports,
                                       PointerRNA *stroke_ptr)
 {
+  bGPdata *gpd = (bGPdata *)id;
+
   bGPDstroke *stroke = stroke_ptr->data;
   if (BLI_findindex(&frame->strokes, stroke) == -1) {
     BKE_report(reports, RPT_ERROR, "Stroke not found in grease pencil frame");
@@ -732,7 +761,8 @@ static void rna_GPencil_stroke_remove(bGPDframe *frame,
   BLI_freelinkN(&frame->strokes, stroke);
   RNA_POINTER_INVALIDATE(stroke_ptr);
 
-  WM_main_add_notifier(NC_GPENCIL | NA_EDITED, NULL);
+  DEG_id_tag_update(&gpd->id, ID_RECALC_TRANSFORM | ID_RECALC_GEOMETRY | ID_RECALC_COPY_ON_WRITE);
+  WM_main_add_notifier(NC_GPENCIL | ND_DATA | NA_EDITED, NULL);
 }
 
 static void rna_GPencil_stroke_close(ID *id,
@@ -981,6 +1011,12 @@ static void rna_def_gpencil_stroke_point(BlenderRNA *brna)
   RNA_def_property_ui_text(prop, "UV Rotation", "Internal UV factor for dot mode");
   RNA_def_property_update(prop, NC_GPENCIL | ND_DATA, "rna_GPencil_update");
 
+  prop = RNA_def_property(srna, "uv_fill", PROP_FLOAT, PROP_XYZ);
+  RNA_def_property_float_sdna(prop, NULL, "uv_fill");
+  RNA_def_property_array(prop, 2);
+  RNA_def_property_ui_text(prop, "UV Fill", "Internal UV factor for filling");
+  RNA_def_property_update(prop, NC_GPENCIL | ND_DATA, "rna_GPencil_update");
+
   prop = RNA_def_property(srna, "select", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flag", GP_SPOINT_SELECT);
   RNA_def_property_boolean_funcs(prop, NULL, "rna_GPencil_stroke_point_select_set");
@@ -1164,7 +1200,7 @@ static void rna_def_gpencil_stroke(BlenderRNA *brna)
   RNA_def_property_update(prop, 0, "rna_GPencil_update");
 
   /* Cyclic: Draw a line from end to start point */
-  prop = RNA_def_property(srna, "draw_cyclic", PROP_BOOLEAN, PROP_NONE);
+  prop = RNA_def_property(srna, "use_cyclic", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flag", GP_STROKE_CYCLIC);
   RNA_def_property_ui_text(prop, "Cyclic", "Enable cyclic drawing, closing the stroke");
   RNA_def_property_update(prop, 0, "rna_GPencil_update");
@@ -1186,7 +1222,6 @@ static void rna_def_gpencil_stroke(BlenderRNA *brna)
    * (this is a special flag for fill brush). */
   prop = RNA_def_property(srna, "is_nofill_stroke", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flag", GP_STROKE_NOFILL);
-  RNA_def_property_clear_flag(prop, PROP_EDITABLE);
   RNA_def_property_ui_text(prop, "No Fill", "Special stroke to use as boundary for filling areas");
   RNA_def_property_update(prop, 0, "rna_GPencil_update");
 
@@ -1199,11 +1234,11 @@ static void rna_def_gpencil_stroke(BlenderRNA *brna)
   RNA_def_property_update(prop, NC_GPENCIL | ND_DATA, "rna_GPencil_update");
 
   /* gradient control along y */
-  prop = RNA_def_property(srna, "hardeness", PROP_FLOAT, PROP_FACTOR);
+  prop = RNA_def_property(srna, "hardness", PROP_FLOAT, PROP_FACTOR);
   RNA_def_property_float_sdna(prop, NULL, "hardeness");
   RNA_def_property_range(prop, 0.001f, 1.0f);
   RNA_def_property_float_default(prop, 1.0f);
-  RNA_def_property_ui_text(prop, "Hardeness", "Amount of gradient along section of stroke");
+  RNA_def_property_ui_text(prop, "Hardness", "Amount of gradient along section of stroke");
   RNA_def_parameter_clear_flags(prop, PROP_ANIMATABLE, 0);
   RNA_def_property_update(prop, NC_GPENCIL | ND_DATA, "rna_GPencil_update");
 
@@ -1234,7 +1269,7 @@ static void rna_def_gpencil_stroke(BlenderRNA *brna)
   RNA_def_property_float_sdna(prop, NULL, "uv_translation");
   RNA_def_property_array(prop, 2);
   RNA_def_property_float_default(prop, 0.0f);
-  RNA_def_property_ui_text(prop, "UV Translation", "Translation of default UV postion");
+  RNA_def_property_ui_text(prop, "UV Translation", "Translation of default UV position");
   RNA_def_parameter_clear_flags(prop, PROP_ANIMATABLE, 0);
   RNA_def_property_update(prop, NC_GPENCIL | ND_DATA, "rna_GPencil_uv_update");
 
@@ -1285,7 +1320,7 @@ static void rna_def_gpencil_strokes_api(BlenderRNA *brna, PropertyRNA *cprop)
 
   func = RNA_def_function(srna, "remove", "rna_GPencil_stroke_remove");
   RNA_def_function_ui_description(func, "Remove a grease pencil stroke");
-  RNA_def_function_flag(func, FUNC_USE_REPORTS);
+  RNA_def_function_flag(func, FUNC_USE_REPORTS | FUNC_USE_SELF_ID);
   parm = RNA_def_pointer(func, "stroke", "GPencilStroke", "Stroke", "The stroke to remove");
   RNA_def_parameter_flags(parm, PROP_NEVER_NULL, PARM_REQUIRED | PARM_RNAPTR);
   RNA_def_parameter_clear_flags(parm, PROP_THICK_WRAP, 0);
@@ -1323,6 +1358,13 @@ static void rna_def_gpencil_frame(BlenderRNA *brna)
   /* XXX note: this cannot occur on the same frame as another sketch */
   RNA_def_property_range(prop, -MAXFRAME, MAXFRAME);
   RNA_def_property_ui_text(prop, "Frame Number", "The frame on which this sketch appears");
+
+  prop = RNA_def_property(srna, "keyframe_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "key_type");
+  RNA_def_parameter_clear_flags(prop, PROP_ANIMATABLE, 0);
+  RNA_def_property_enum_items(prop, rna_enum_keyframe_type_items);
+  RNA_def_property_ui_text(prop, "Keyframe Type", "Type of keyframe");
+  RNA_def_property_update(prop, NC_GPENCIL | ND_DATA, "rna_GPencil_update");
 
   /* Flags */
   prop = RNA_def_property(srna, "is_edited", PROP_BOOLEAN, PROP_NONE);
@@ -1470,7 +1512,7 @@ static void rna_def_gpencil_layer(BlenderRNA *brna)
   RNA_def_property_ui_text(prop, "Info", "Layer name");
   RNA_def_property_string_funcs(prop, NULL, NULL, "rna_GPencilLayer_info_set");
   RNA_def_struct_name_property(srna, prop);
-  RNA_def_property_update(prop, NC_GPENCIL | ND_DATA | NA_RENAME, NULL);
+  RNA_def_property_update(prop, NC_GPENCIL | ND_DATA | NA_RENAME, "rna_GPencil_update");
 
   /* Frames */
   prop = RNA_def_property(srna, "frames", PROP_COLLECTION, PROP_NONE);
@@ -1663,13 +1705,11 @@ static void rna_def_gpencil_layer(BlenderRNA *brna)
 
   prop = RNA_def_property(srna, "use_mask_layer", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flag", GP_LAYER_USE_MASK);
-  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_ui_text(prop, "Mask Layer", "Mask pixels from underlying layers drawing");
   RNA_def_property_update(prop, NC_GPENCIL | ND_DATA, "rna_GPencil_update");
 
   prop = RNA_def_property(srna, "use_lights", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flag", GP_LAYER_USE_LIGHTS);
-  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_ui_text(
       prop, "Use Lights", "Enable the use of lights on stroke and fill materials");
   RNA_def_property_update(prop, NC_GPENCIL | ND_DATA, "rna_GPencil_update");
@@ -1719,7 +1759,7 @@ static void rna_def_gpencil_layer(BlenderRNA *brna)
   RNA_def_property_enum_funcs(
       prop, NULL, "rna_GPencilLayer_parent_type_set", "rna_Object_parent_type_itemf");
   RNA_def_property_ui_text(prop, "Parent Type", "Type of parent relation");
-  RNA_def_property_update(prop, NC_GPENCIL | ND_DATA, "rna_GPencil_update");
+  RNA_def_property_update(prop, NC_GPENCIL | ND_DATA, "rna_GPencil_dependency_update");
 
   /* parent bone */
   prop = RNA_def_property(srna, "parent_bone", PROP_STRING, PROP_NONE);
@@ -1727,7 +1767,7 @@ static void rna_def_gpencil_layer(BlenderRNA *brna)
   RNA_def_property_string_funcs(prop, NULL, NULL, "rna_GPencilLayer_parent_bone_set");
   RNA_def_property_ui_text(
       prop, "Parent Bone", "Name of parent bone in case of a bone parenting relation");
-  RNA_def_property_update(prop, NC_GPENCIL | ND_DATA, "rna_GPencil_update");
+  RNA_def_property_update(prop, NC_GPENCIL | ND_DATA, "rna_GPencil_dependency_update");
 
   /* matrix */
   prop = RNA_def_property(srna, "matrix_inverse", PROP_FLOAT, PROP_MATRIX);
@@ -2036,6 +2076,7 @@ static void rna_def_gpencil_data(BlenderRNA *brna)
   RNA_def_property_array(prop, 3);
   RNA_def_property_range(prop, 0.0f, 1.0f);
   RNA_def_property_float_array_default(prop, onion_dft1);
+  RNA_def_parameter_clear_flags(prop, PROP_ANIMATABLE, 0);
   RNA_def_property_ui_text(prop, "Before Color", "Base color for ghosts before the active frame");
   RNA_def_property_update(
       prop, NC_SCREEN | NC_SCENE | ND_TOOLSETTINGS | ND_DATA | NC_GPENCIL, "rna_GPencil_update");
@@ -2045,6 +2086,7 @@ static void rna_def_gpencil_data(BlenderRNA *brna)
   RNA_def_property_array(prop, 3);
   RNA_def_property_range(prop, 0.0f, 1.0f);
   RNA_def_property_float_array_default(prop, onion_dft2);
+  RNA_def_parameter_clear_flags(prop, PROP_ANIMATABLE, 0);
   RNA_def_property_ui_text(prop, "After Color", "Base color for ghosts after the active frame");
   RNA_def_property_update(
       prop, NC_SCREEN | NC_SCENE | ND_TOOLSETTINGS | ND_DATA | NC_GPENCIL, "rna_GPencil_update");

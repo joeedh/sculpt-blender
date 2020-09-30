@@ -17,8 +17,7 @@
  * All rights reserved.
  */
 
-#ifndef __BKE_MASK_H__
-#define __BKE_MASK_H__
+#pragma once
 
 /** \file
  * \ingroup bke
@@ -81,7 +80,7 @@ void BKE_mask_layer_rename(struct Mask *mask,
                            char *oldname,
                            char *newname);
 
-struct MaskLayer *BKE_mask_layer_copy(const struct MaskLayer *layer);
+struct MaskLayer *BKE_mask_layer_copy(const struct MaskLayer *masklay);
 void BKE_mask_layer_copy_list(struct ListBase *masklayers_new, const struct ListBase *masklayers);
 
 /* splines */
@@ -238,10 +237,10 @@ void BKE_mask_clipboard_paste_to_layer(struct Main *bmain, struct MaskLayer *mas
 #define MASKPOINT_ISSEL_KNOT(p) (((p)->bezt.f2 & SELECT) != 0)
 
 #define MASKPOINT_ISSEL_HANDLE(point, which_handle) \
-  (((which_handle == MASK_WHICH_HANDLE_STICK) ? \
+  ((((which_handle) == MASK_WHICH_HANDLE_STICK) ? \
         ((((point)->bezt.f1 | (point)->bezt.f3) & SELECT)) : \
-        ((which_handle == MASK_WHICH_HANDLE_LEFT) ? ((point)->bezt.f1 & SELECT) : \
-                                                    ((point)->bezt.f3 & SELECT))) != 0)
+        (((which_handle) == MASK_WHICH_HANDLE_LEFT) ? ((point)->bezt.f1 & SELECT) : \
+                                                      ((point)->bezt.f3 & SELECT))) != 0)
 
 #define MASKPOINT_SEL_ALL(p) \
   { \
@@ -331,5 +330,3 @@ void BKE_maskrasterize_buffer(MaskRasterHandle *mr_handle,
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __BKE_MASK_H__ */

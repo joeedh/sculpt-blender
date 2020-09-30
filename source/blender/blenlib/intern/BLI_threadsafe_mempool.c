@@ -192,7 +192,7 @@ void* BLI_safepool_alloc(BLI_ThreadSafePool *pool) {
   new_chunk(pool, tdata);
 
   BLI_rw_mutex_unlock(&tdata->lock);
-  return BLI_safepool_alloc(pool, thread);
+  return BLI_safepool_alloc(pool);
 }
 
 int get_elem_thread(BLI_ThreadSafePool* pool, void* elem) {
@@ -206,7 +206,7 @@ int get_elem_thread(BLI_ThreadSafePool* pool, void* elem) {
   return ret;
 }
 
-void BLI_safepool_threaded_free(BLI_ThreadSafePool* pool, void* elem) {
+void BLI_safepool_free(BLI_ThreadSafePool* pool, void* elem) {
   /*hrm.  I could add to the current pool's freelist, couldn't I
     let's try that
 
@@ -233,17 +233,6 @@ void BLI_safepool_threaded_free(BLI_ThreadSafePool* pool, void* elem) {
   pool->length--;
   BLI_rw_mutex_unlock(&pool->lengthlock);
 #endif
-}
-
-void BLI_safepool_free(BLI_ThreadSafePool *pool, void *elem) {
-  int i = get_elem_thread(pool, elem);
-
-  if (i < 0) {
-    fprintf(stderr, "Elem not in pool! %p\n", elem);
-    return;
-  }
-
-  BLI_safepool_threaded_free(pool, elem, i);
 }
 
 #ifdef BLI_SAFEPOOL_HAVE_LENGTH

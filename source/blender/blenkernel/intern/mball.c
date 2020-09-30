@@ -35,6 +35,9 @@
 
 #include "MEM_guardedalloc.h"
 
+/* Allow using deprecated functionality for .blend file I/O. */
+#define DNA_DEPRECATED_ALLOW
+
 #include "DNA_defaults.h"
 #include "DNA_material_types.h"
 #include "DNA_meta_types.h"
@@ -50,17 +53,20 @@
 
 #include "BKE_main.h"
 
-#include "BKE_animsys.h"
+#include "BKE_anim_data.h"
 #include "BKE_curve.h"
 #include "BKE_displist.h"
 #include "BKE_idtype.h"
 #include "BKE_lib_id.h"
+#include "BKE_lib_query.h"
 #include "BKE_material.h"
 #include "BKE_mball.h"
 #include "BKE_object.h"
 #include "BKE_scene.h"
 
 #include "DEG_depsgraph.h"
+
+#include "BLO_read_write.h"
 
 static void metaball_init_data(ID *id)
 {
@@ -102,6 +108,79 @@ static void metaball_free_data(ID *id)
   }
 }
 
+static void metaball_foreach_id(ID *id, LibraryForeachIDData *data)
+{
+  MetaBall *metaball = (MetaBall *)id;
+  for (int i = 0; i < metaball->totcol; i++) {
+    BKE_LIB_FOREACHID_PROCESS(data, metaball->mat[i], IDWALK_CB_USER);
+  }
+}
+
+static void metaball_blend_write(BlendWriter *writer, ID *id, const void *id_address)
+{
+  MetaBall *mb = (MetaBall *)id;
+  if (mb->id.us > 0 || BLO_write_is_undo(writer)) {
+    /* Clean up, important in undo case to reduce false detection of changed datablocks. */
+    BLI_listbase_clear(&mb->disp);
+    mb->editelems = NULL;
+    /* Must always be cleared (meta's don't have their own edit-data). */
+    mb->needs_flush_to_id = 0;
+    mb->lastelem = NULL;
+    mb->batch_cache = NULL;
+
+    /* write LibData */
+    BLO_write_id_struct(writer, MetaBall, id_address, &mb->id);
+    BKE_id_blend_write(writer, &mb->id);
+
+    /* direct data */
+    BLO_write_pointer_array(writer, mb->totcol, mb->mat);
+    if (mb->adt) {
+      BKE_animdata_blend_write(writer, mb->adt);
+    }
+
+    LISTBASE_FOREACH (MetaElem *, ml, &mb->elems) {
+      BLO_write_struct(writer, MetaElem, ml);
+    }
+  }
+}
+
+static void metaball_blend_read_data(BlendDataReader *reader, ID *id)
+{
+  MetaBall *mb = (MetaBall *)id;
+  BLO_read_data_address(reader, &mb->adt);
+  BKE_animdata_blend_read_data(reader, mb->adt);
+
+  BLO_read_pointer_array(reader, (void **)&mb->mat);
+
+  BLO_read_list(reader, &(mb->elems));
+
+  BLI_listbase_clear(&mb->disp);
+  mb->editelems = NULL;
+  /* Must always be cleared (meta's don't have their own edit-data). */
+  mb->needs_flush_to_id = 0;
+  /*  mb->edit_elems.first= mb->edit_elems.last= NULL;*/
+  mb->lastelem = NULL;
+  mb->batch_cache = NULL;
+}
+
+static void metaball_blend_read_lib(BlendLibReader *reader, ID *id)
+{
+  MetaBall *mb = (MetaBall *)id;
+  for (int a = 0; a < mb->totcol; a++) {
+    BLO_read_id_address(reader, mb->id.lib, &mb->mat[a]);
+  }
+
+  BLO_read_id_address(reader, mb->id.lib, &mb->ipo);  // XXX deprecated - old animation system
+}
+
+static void metaball_blend_read_expand(BlendExpander *expander, ID *id)
+{
+  MetaBall *mb = (MetaBall *)id;
+  for (int a = 0; a < mb->totcol; a++) {
+    BLO_expand(expander, mb->mat[a]);
+  }
+}
+
 IDTypeInfo IDType_ID_MB = {
     .id_code = ID_MB,
     .id_filter = FILTER_ID_MB,
@@ -116,6 +195,13 @@ IDTypeInfo IDType_ID_MB = {
     .copy_data = metaball_copy_data,
     .free_data = metaball_free_data,
     .make_local = NULL,
+    .foreach_id = metaball_foreach_id,
+    .foreach_cache = NULL,
+
+    .blend_write = metaball_blend_write,
+    .blend_read_data = metaball_blend_read_data,
+    .blend_read_lib = metaball_blend_read_lib,
+    .blend_read_expand = metaball_blend_read_expand,
 };
 
 /* Functions */
@@ -187,11 +273,11 @@ MetaElem *BKE_mball_element_add(MetaBall *mb, const int type)
   return ml;
 }
 /**
- * Compute bounding box of all MetaElems/MetaBalls.
+ * Compute bounding box of all #MetaElem / #MetaBall
  *
- * Bounding box is computed from polygonized surface. Object *ob is
- * basic MetaBall (usually with name Meta). All other MetaBalls (with
- * names Meta.001, Meta.002, etc) are included in this Bounding Box.
+ * Bounding box is computed from polygonized surface. \a ob is
+ * basic meta-balls (with name `Meta` for example). All other meta-ball objects
+ * (with names `Meta.001`, `Meta.002`, etc) are included in this bounding-box.
  */
 void BKE_mball_texspace_calc(Object *ob)
 {
@@ -272,7 +358,7 @@ float *BKE_mball_make_orco(Object *ob, ListBase *dispbase)
   size[2] = bb->vec[1][2] - loc[2];
 
   dl = dispbase->first;
-  orcodata = MEM_mallocN(sizeof(float) * 3 * dl->nr, "MballOrco");
+  orcodata = MEM_mallocN(sizeof(float[3]) * dl->nr, "MballOrco");
 
   data = dl->verts;
   orco = orcodata;
@@ -289,24 +375,29 @@ float *BKE_mball_make_orco(Object *ob, ListBase *dispbase)
   return orcodata;
 }
 
-/* Note on mball basis stuff 2.5x (this is a can of worms)
- * This really needs a rewrite/refactor its totally broken in anything other then basic cases
- * Multiple Scenes + Set Scenes & mixing mball basis SHOULD work but fails to update the depsgraph
- * on rename and linking into scenes or removal of basis mball.
- * So take care when changing this code.
- *
- * Main idiot thing here is that the system returns find_basis_mball()
- * objects which fail a is_basis_mball() test.
- *
- * Not only that but the depsgraph and their areas depend on this behavior!,
- * so making small fixes here isn't worth it.
- * - Campbell
- */
-
-/** \brief Test, if Object *ob is basic MetaBall.
+/**
+ * \brief Test, if \a ob is a basis meta-ball.
  *
  * It test last character of Object ID name. If last character
  * is digit it return 0, else it return 1.
+ *
+ *
+ * Meta-Ball Basis Notes from Blender-2.5x
+ * =======================================
+ *
+ * This is a can of worms.
+ *
+ * This really needs a rewrite/refactor its totally broken in anything other then basic cases
+ * Multiple Scenes + Set Scenes & mixing meta-ball basis _should_ work but fails to update the
+ * depsgraph on rename and linking into scenes or removal of basis meta-ball.
+ * So take care when changing this code.
+ *
+ * Main idiot thing here is that the system returns #BKE_mball_basis_find()
+ * objects which fail a #BKE_mball_is_basis() test.
+ *
+ * Not only that but the depsgraph and their areas depend on this behavior,
+ * so making small fixes here isn't worth it.
+ * - Campbell
  */
 bool BKE_mball_is_basis(Object *ob)
 {
@@ -332,9 +423,8 @@ bool BKE_mball_is_basis_for(Object *ob1, Object *ob2)
   if (STREQ(basis1name, basis2name)) {
     return BKE_mball_is_basis(ob1);
   }
-  else {
-    return false;
-  }
+
+  return false;
 }
 
 bool BKE_mball_is_any_selected(const MetaBall *mb)
@@ -370,12 +460,12 @@ bool BKE_mball_is_any_unselected(const MetaBall *mb)
 }
 
 /**
- * \brief copy some properties from object to other metaball object with same base name
+ * \brief copy some properties from object to other meta-ball object with same base name
  *
- * When some properties (wiresize, threshold, update flags) of metaball are changed, then this
- * properties are copied to all metaballs in same "group" (metaballs with same base name: MBall,
- * MBall.001, MBall.002, etc). The most important is to copy properties to the base metaball,
- * because this metaball influence polygonization of metaballs. */
+ * When some properties (wire-size, threshold, update flags) of meta-ball are changed, then this
+ * properties are copied to all meta-balls in same "group" (meta-balls with same base name:
+ * `MBall`, `MBall.001`, `MBall.002`, etc). The most important is to copy properties to the base
+ * meta-ball, because this meta-ball influence polygonization of meta-balls. */
 void BKE_mball_properties_copy(Scene *scene, Object *active_object)
 {
   Scene *sce_iter = scene;
@@ -389,7 +479,7 @@ void BKE_mball_properties_copy(Scene *scene, Object *active_object)
   BLI_split_name_num(basisname, &basisnr, active_object->id.name + 2, '.');
 
   /* Pass depsgraph as NULL, which means we will not expand into
-   * duplis unlike when we generate the mball. Expanding duplis
+   * duplis unlike when we generate the meta-ball. Expanding duplis
    * would not be compatible when editing multiple view layers. */
   BKE_scene_base_iter_next(NULL, &iter, &sce_iter, 0, NULL, NULL);
   while (BKE_scene_base_iter_next(NULL, &iter, &sce_iter, 1, &base, &ob)) {
@@ -414,26 +504,24 @@ void BKE_mball_properties_copy(Scene *scene, Object *active_object)
   }
 }
 
-/** \brief This function finds basic MetaBall.
+/** \brief This function finds the basis MetaBall.
  *
- * Basic MetaBall doesn't include any number at the end of
- * its name. All MetaBalls with same base of name can be
- * blended. MetaBalls with different basic name can't be
- * blended.
+ * Basis meta-ball doesn't include any number at the end of
+ * its name. All meta-balls with same base of name can be
+ * blended. meta-balls with different basic name can't be blended.
  *
- * warning!, is_basis_mball() can fail on returned object, see long note above.
+ * \warning #BKE_mball_is_basis() can fail on returned object, see function docs for details.
  */
-Object *BKE_mball_basis_find(Scene *scene, Object *basis)
+Object *BKE_mball_basis_find(Scene *scene, Object *object)
 {
-  Object *bob = basis;
+  Object *bob = object;
   int basisnr, obnr;
   char basisname[MAX_ID_NAME], obname[MAX_ID_NAME];
 
-  BLI_split_name_num(basisname, &basisnr, basis->id.name + 2, '.');
+  BLI_split_name_num(basisname, &basisnr, object->id.name + 2, '.');
 
-  for (ViewLayer *view_layer = scene->view_layers.first; view_layer;
-       view_layer = view_layer->next) {
-    for (Base *base = view_layer->object_bases.first; base; base = base->next) {
+  LISTBASE_FOREACH (ViewLayer *, view_layer, &scene->view_layers) {
+    LISTBASE_FOREACH (Base *, base, &view_layer->object_bases) {
       Object *ob = base->object;
       if ((ob->type == OB_MBALL) && !(base->flag & BASE_FROM_DUPLI)) {
         if (ob != bob) {
@@ -443,7 +531,7 @@ Object *BKE_mball_basis_find(Scene *scene, Object *basis)
            * that it has to have same base of its name. */
           if (STREQ(obname, basisname)) {
             if (obnr < basisnr) {
-              basis = ob;
+              object = ob;
               basisnr = obnr;
             }
           }
@@ -452,7 +540,7 @@ Object *BKE_mball_basis_find(Scene *scene, Object *basis)
     }
   }
 
-  return basis;
+  return object;
 }
 
 bool BKE_mball_minmax_ex(
@@ -464,10 +552,9 @@ bool BKE_mball_minmax_ex(
 
   INIT_MINMAX(min, max);
 
-  for (const MetaElem *ml = mb->elems.first; ml; ml = ml->next) {
+  LISTBASE_FOREACH (const MetaElem *, ml, &mb->elems) {
     if ((ml->flag & flag) == flag) {
       const float scale_mb = (ml->rad * 0.5f) * scale;
-      int i;
 
       if (obmat) {
         mul_v3_m4v3(centroid, obmat, &ml->x);
@@ -477,7 +564,7 @@ bool BKE_mball_minmax_ex(
       }
 
       /* TODO, non circle shapes cubes etc, probably nobody notices - campbell */
-      for (i = -1; i != 3; i += 2) {
+      for (int i = -1; i != 3; i += 2) {
         copy_v3_v3(vec, centroid);
         add_v3_fl(vec, scale_mb * i);
         minmax_v3v3_v3(min, max, vec);
@@ -494,7 +581,7 @@ bool BKE_mball_minmax(const MetaBall *mb, float min[3], float max[3])
 {
   INIT_MINMAX(min, max);
 
-  for (const MetaElem *ml = mb->elems.first; ml; ml = ml->next) {
+  LISTBASE_FOREACH (const MetaElem *, ml, &mb->elems) {
     minmax_v3v3_v3(min, max, &ml->x);
   }
 
@@ -507,7 +594,7 @@ bool BKE_mball_center_median(const MetaBall *mb, float r_cent[3])
 
   zero_v3(r_cent);
 
-  for (const MetaElem *ml = mb->elems.first; ml; ml = ml->next) {
+  LISTBASE_FOREACH (const MetaElem *, ml, &mb->elems) {
     add_v3_v3(r_cent, &ml->x);
     total++;
   }
@@ -539,7 +626,7 @@ void BKE_mball_transform(MetaBall *mb, const float mat[4][4], const bool do_prop
 
   mat4_to_quat(quat, mat);
 
-  for (MetaElem *ml = mb->elems.first; ml; ml = ml->next) {
+  LISTBASE_FOREACH (MetaElem *, ml, &mb->elems) {
     mul_m4_v3(mat, &ml->x);
     mul_qt_qtqt(ml->quat, quat, ml->quat);
 
@@ -559,7 +646,7 @@ void BKE_mball_transform(MetaBall *mb, const float mat[4][4], const bool do_prop
 
 void BKE_mball_translate(MetaBall *mb, const float offset[3])
 {
-  for (MetaElem *ml = mb->elems.first; ml; ml = ml->next) {
+  LISTBASE_FOREACH (MetaElem *, ml, &mb->elems) {
     add_v3_v3(&ml->x, offset);
   }
 }
@@ -568,7 +655,7 @@ void BKE_mball_translate(MetaBall *mb, const float offset[3])
 int BKE_mball_select_count(const MetaBall *mb)
 {
   int sel = 0;
-  for (const MetaElem *ml = mb->editelems->first; ml; ml = ml->next) {
+  LISTBASE_FOREACH (const MetaElem *, ml, mb->editelems) {
     if (ml->flag & SELECT) {
       sel++;
     }
@@ -590,7 +677,7 @@ int BKE_mball_select_count_multi(Base **bases, int bases_len)
 bool BKE_mball_select_all(MetaBall *mb)
 {
   bool changed = false;
-  for (MetaElem *ml = mb->editelems->first; ml; ml = ml->next) {
+  LISTBASE_FOREACH (MetaElem *, ml, mb->editelems) {
     if ((ml->flag & SELECT) == 0) {
       ml->flag |= SELECT;
       changed = true;
@@ -613,7 +700,7 @@ bool BKE_mball_select_all_multi_ex(Base **bases, int bases_len)
 bool BKE_mball_deselect_all(MetaBall *mb)
 {
   bool changed = false;
-  for (MetaElem *ml = mb->editelems->first; ml; ml = ml->next) {
+  LISTBASE_FOREACH (MetaElem *, ml, mb->editelems) {
     if ((ml->flag & SELECT) != 0) {
       ml->flag &= ~SELECT;
       changed = true;
@@ -637,7 +724,7 @@ bool BKE_mball_deselect_all_multi_ex(Base **bases, int bases_len)
 bool BKE_mball_select_swap(MetaBall *mb)
 {
   bool changed = false;
-  for (MetaElem *ml = mb->editelems->first; ml; ml = ml->next) {
+  LISTBASE_FOREACH (MetaElem *, ml, mb->editelems) {
     ml->flag ^= SELECT;
     changed = true;
   }

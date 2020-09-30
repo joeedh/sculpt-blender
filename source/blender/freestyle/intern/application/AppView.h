@@ -14,17 +14,16 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __APPVIEW_H__
-#define __APPVIEW_H__
+#pragma once
 
 /** \file
  * \ingroup freestyle
  */
 
-/* clang-format off */
 #include "AppConfig.h"
-#include "../geometry/Geom.h"
+
 #include "../geometry/BBox.h"
+#include "../geometry/Geom.h"
 #include "../scene_graph/NodeDrawingStyle.h"
 #include "../system/Precision.h"
 
@@ -33,7 +32,6 @@
 #ifdef WITH_CXX_GUARDEDALLOC
 #  include "MEM_guardedalloc.h"
 #endif
-/* clang-format on */
 
 namespace Freestyle {
 
@@ -273,5 +271,3 @@ class AppView {
 };
 
 } /* namespace Freestyle */
-
-#endif  // __APPVIEW_H__

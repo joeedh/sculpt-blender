@@ -81,10 +81,6 @@ static void applySeqSlideValue(TransInfo *t, const float val[2])
   FOREACH_TRANS_DATA_CONTAINER (t, tc) {
     TransData *td = tc->data;
     for (i = 0; i < tc->data_len; i++, td++) {
-      if (td->flag & TD_NOACTION) {
-        break;
-      }
-
       if (td->flag & TD_SKIP) {
         continue;
       }
@@ -97,30 +93,36 @@ static void applySeqSlideValue(TransInfo *t, const float val[2])
 static void applySeqSlide(TransInfo *t, const int mval[2])
 {
   char str[UI_MAX_DRAW_STR];
+  float values_final[2] = {0.0f};
 
   snapSequenceBounds(t, mval);
-
-  if (t->con.mode & CON_APPLY) {
-    float pvec[3] = {0.0f, 0.0f, 0.0f};
-    float tvec[3];
-    t->con.applyVec(t, NULL, NULL, t->values, tvec, pvec);
-    copy_v3_v3(t->values_final, tvec);
+  if (applyNumInput(&t->num, values_final)) {
+    if (t->con.mode & CON_APPLY) {
+      if (t->con.mode & CON_AXIS0) {
+        mul_v2_v2fl(values_final, t->spacemtx[0], values_final[0]);
+      }
+      else {
+        mul_v2_v2fl(values_final, t->spacemtx[1], values_final[0]);
+      }
+    }
+  }
+  else if (t->con.mode & CON_APPLY) {
+    t->con.applyVec(t, NULL, NULL, t->values, values_final);
   }
   else {
-    // snapGridIncrement(t, t->values);
-    applyNumInput(&t->num, t->values);
-    copy_v3_v3(t->values_final, t->values);
+    copy_v2_v2(values_final, t->values);
   }
 
-  t->values_final[0] = floorf(t->values_final[0] + 0.5f);
-  t->values_final[1] = floorf(t->values_final[1] + 0.5f);
+  values_final[0] = floorf(values_final[0] + 0.5f);
+  values_final[1] = floorf(values_final[1] + 0.5f);
+  copy_v2_v2(t->values_final, values_final);
 
   headerSeqSlide(t, t->values_final, str);
   applySeqSlideValue(t, t->values_final);
 
   recalcData(t);
 
-  ED_area_status_text(t->sa, str);
+  ED_area_status_text(t->area, str);
 }
 
 void initSeqSlide(TransInfo *t)

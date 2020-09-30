@@ -54,7 +54,7 @@
 #include "screen_intern.h"
 
 typedef struct ScreenshotData {
-  unsigned int *dumprect;
+  uint *dumprect;
   int dumpsx, dumpsy;
   rcti crop;
 
@@ -76,13 +76,13 @@ static int screenshot_data_create(bContext *C, wmOperator *op)
 
   if (dumprect) {
     ScreenshotData *scd = MEM_callocN(sizeof(ScreenshotData), "screenshot");
-    ScrArea *sa = CTX_wm_area(C);
+    ScrArea *area = CTX_wm_area(C);
 
     scd->dumpsx = dumprect_size[0];
     scd->dumpsy = dumprect_size[1];
     scd->dumprect = dumprect;
-    if (sa) {
-      scd->crop = sa->totrct;
+    if (area) {
+      scd->crop = area->totrct;
     }
 
     BKE_imformat_defaults(&scd->im_format);
@@ -91,10 +91,8 @@ static int screenshot_data_create(bContext *C, wmOperator *op)
 
     return true;
   }
-  else {
-    op->customdata = NULL;
-    return false;
-  }
+  op->customdata = NULL;
+  return false;
 }
 
 static void screenshot_data_free(wmOperator *op)
@@ -206,6 +204,8 @@ static void screenshot_draw(bContext *UNUSED(C), wmOperator *op)
   uiLayout *layout = op->layout;
   ScreenshotData *scd = op->customdata;
   PointerRNA ptr;
+
+  uiLayoutSetPropSep(layout, true);
 
   /* image template */
   RNA_pointer_create(NULL, &RNA_ImageFormatSettings, &scd->im_format, &ptr);
