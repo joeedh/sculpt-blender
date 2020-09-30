@@ -242,4 +242,22 @@ bool pbvh_bmesh_node_nearest_to_ray(PBVHNode *node,
 
 void pbvh_bmesh_normals_update(PBVHNode **nodes, int totnode);
 
+/* pbvh_bmesh.c */
+bool pbvh_trimesh_node_raycast(PBVHNode *node,
+  const float ray_start[3],
+  const float ray_normal[3],
+  struct IsectRayPrecalc *isect_precalc,
+  float *dist,
+  bool use_original,
+  int *r_active_vertex_index,
+  float *r_face_normal);
+bool pbvh_trimesh_node_nearest_to_ray(PBVHNode *node,
+  const float ray_start[3],
+  const float ray_normal[3],
+  float *depth,
+  float *dist_sq,
+  bool use_original);
+
+void pbvh_trimesh_normals_update(PBVHNode **nodes, int totnode);
+
 #endif

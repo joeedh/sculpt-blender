@@ -118,6 +118,13 @@ void BKE_pbvh_build_bmesh(PBVH *bvh,
                           struct BMLog *log,
                           const int cd_vert_node_offset,
                           const int cd_face_node_offset);
+void BKE_pbvh_build_trimesh(PBVH *bvh,
+  struct BLI_TriMesh *bm,
+  bool smooth_shading,
+  struct TriMeshLog *log,
+  const int cd_vert_node_offset,
+  const int cd_face_node_offset);
+
 void BKE_pbvh_free(PBVH *bvh);
 void BKE_pbvh_free_layer_disp(PBVH *bvh);
 
@@ -162,6 +169,11 @@ bool BKE_pbvh_bmesh_node_raycast_detail(PBVHNode *node,
                                         struct IsectRayPrecalc *isect_precalc,
                                         float *depth,
                                         float *r_edge_length);
+bool BKE_pbvh_trimesh_node_raycast_detail(PBVHNode *node,
+  const float ray_start[3],
+  struct IsectRayPrecalc *isect_precalc,
+  float *depth,
+  float *r_edge_length);
 
 /* for orthographic cameras, project the far away ray segment points to the root node so
  * we can have better precision. */
@@ -228,7 +240,8 @@ int BKE_pbvh_get_grid_num_vertices(const PBVH *pbvh);
 
 /* Only valid for type == PBVH_BMESH */
 struct BMesh *BKE_pbvh_get_bmesh(PBVH *pbvh);
-void BKE_pbvh_bmesh_detail_size_set(PBVH *pbvh, float detail_size);
+struct BLI_TriMesh *BKE_pbvh_get_trimesh(PBVH *pbvh);
+void BKE_pbvh_topology_detail_size_set(PBVH *pbvh, float detail_size);
 
 typedef enum {
   PBVH_Subdivide = 1,
@@ -242,6 +255,13 @@ bool BKE_pbvh_bmesh_update_topology(PBVH *bvh,
                                     const bool use_frontface,
                                     const bool use_projected);
 
+bool BKE_pbvh_trimesh_update_topology(PBVH *bvh,
+  PBVHTopologyUpdateMode mode,
+  const float center[3],
+  const float view_normal[3],
+  float radius,
+  const bool use_frontface,
+  const bool use_projected);
 /* Node Access */
 
 void BKE_pbvh_node_mark_update(PBVHNode *node);
@@ -285,6 +305,12 @@ struct GSet *BKE_pbvh_bmesh_node_other_verts(PBVHNode *node);
 struct GSet *BKE_pbvh_bmesh_node_faces(PBVHNode *node);
 void BKE_pbvh_bmesh_node_save_orig(struct BMesh *bm, PBVHNode *node);
 void BKE_pbvh_bmesh_after_stroke(PBVH *bvh);
+
+struct GSet *BKE_pbvh_trimesh_node_unique_verts(PBVHNode *node);
+struct GSet *BKE_pbvh_trimesh_node_other_verts(PBVHNode *node);
+struct GSet *BKE_pbvh_trimesh_node_faces(PBVHNode *node);
+void BKE_pbvh_trimesh_node_save_orig(struct BLI_TriMesh *tm, PBVHNode *node);
+void BKE_pbvh_trimesh_after_stroke(PBVH *bvh);
 
 /* Update Bounding Box/Redraw and clear flags */
 

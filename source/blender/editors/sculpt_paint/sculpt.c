@@ -7941,13 +7941,13 @@ static void sculpt_stroke_update_step(bContext *C,
 
   if (sd->flags & (SCULPT_DYNTOPO_DETAIL_CONSTANT | SCULPT_DYNTOPO_DETAIL_MANUAL)) {
     float object_space_constant_detail = 1.0f / (sd->constant_detail * mat4_to_scale(ob->obmat));
-    BKE_pbvh_bmesh_detail_size_set(ss->pbvh, object_space_constant_detail);
+    BKE_pbvh_topology_detail_size_set(ss->pbvh, object_space_constant_detail);
   }
   else if (sd->flags & SCULPT_DYNTOPO_DETAIL_BRUSH) {
-    BKE_pbvh_bmesh_detail_size_set(ss->pbvh, ss->cache->radius * sd->detail_percent / 100.0f);
+    BKE_pbvh_topology_detail_size_set(ss->pbvh, ss->cache->radius * sd->detail_percent / 100.0f);
   }
   else {
-    BKE_pbvh_bmesh_detail_size_set(ss->pbvh,
+    BKE_pbvh_topology_detail_size_set(ss->pbvh,
                                    (ss->cache->radius / ss->cache->dyntopo_pixel_radius) *
                                        (float)(sd->detail_size * U.pixelsize) / 0.4f);
   }
@@ -9027,7 +9027,7 @@ static int sculpt_detail_flood_fill_exec(bContext *C, wmOperator *UNUSED(op))
 
   /* Update topology size. */
   float object_space_constant_detail = 1.0f / (sd->constant_detail * mat4_to_scale(ob->obmat));
-  BKE_pbvh_bmesh_detail_size_set(ss->pbvh, object_space_constant_detail);
+  BKE_pbvh_topology_detail_size_set(ss->pbvh, object_space_constant_detail);
 
   SCULPT_undo_push_begin("Dynamic topology flood fill");
   SCULPT_undo_push_node(ob, NULL, SCULPT_UNDO_COORDS);

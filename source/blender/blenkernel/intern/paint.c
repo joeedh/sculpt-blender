@@ -74,6 +74,7 @@
 #include "RNA_enum_types.h"
 
 #include "bmesh.h"
+#include "BLI_trimesh.h"
 
 static void palette_init_data(ID *id)
 {
@@ -1158,6 +1159,17 @@ bool paint_is_bmesh_face_hidden(BMFace *f)
   return false;
 }
 
+
+/* Return true if all vertices in the face are visible, false otherwise */
+bool paint_is_trimesh_face_hidden(TMFace *f)
+{
+  bool ret = f->v1->flag & TRIMESH_HIDE;
+  ret = ret || (f->v2->flag & TRIMESH_HIDE);
+  ret = ret || (f->v3->flag & TRIMESH_HIDE);
+
+  return ret;
+}
+
 float paint_grid_paint_mask(const GridPaintMask *gpm, uint level, uint x, uint y)
 {
   int factor = BKE_ccg_factor(level, gpm->level);
@@ -1255,6 +1267,34 @@ void BKE_sculptsession_free_vwpaint_data(struct SculptSession *ss)
   MEM_SAFE_FREE(gmap->vert_map_mem);
   MEM_SAFE_FREE(gmap->vert_to_poly);
   MEM_SAFE_FREE(gmap->poly_map_mem);
+}
+
+/* Write out the sculpt dynamic-topology BMesh to the Mesh */
+static void sculptsession_tm_to_me_update_data_only(Object *ob, bool reorder)
+{
+  SculptSession *ss = ob->sculpt;
+
+  if (ss->bm) {
+    if (ob->data) {
+      BLI_TriMeshIter iter;
+      TMFace *f;
+
+      BLI_trimesh_tri_iternew(ss->tm, &iter);
+      f = BLI_trimesh_iterstep(&iter);
+      for (; f; f = BLI_trimesh_iterstep(&iter)) {
+        TRIMESH_elem_flag_set(f, TRIMESH_SMOOTH, ss->bm_smooth_shading);
+      }
+      //if (reorder) {
+      //  BM_log_mesh_elems_reorder(ss->bm, ss->bm_log);
+      //}
+      BLI_trimesh_mesh_bm_to_me(NULL,
+        ss->tm,
+        ob->data,
+        (&(struct TMeshToMeshParams){
+        .calc_object_remap = false,
+      }));
+    }
+  }
 }
 
 /* Write out the sculpt dynamic-topology BMesh to the Mesh */
@@ -1796,10 +1836,10 @@ static bool check_sculpt_object_deformed(Object *object, const bool for_construc
 static PBVH *build_pbvh_for_dynamic_topology(Object *ob)
 {
   PBVH *pbvh = BKE_pbvh_new();
-  BKE_pbvh_build_bmesh(pbvh,
-                       ob->sculpt->bm,
+  BKE_pbvh_build_trimesh(pbvh,
+                       ob->sculpt->tm,
                        ob->sculpt->bm_smooth_shading,
-                       ob->sculpt->bm_log,
+                       ob->sculpt->tm_log,
                        ob->sculpt->cd_vert_node_offset,
                        ob->sculpt->cd_face_node_offset);
   pbvh_show_mask_set(pbvh, ob->sculpt->show_mask);

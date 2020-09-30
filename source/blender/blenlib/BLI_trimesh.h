@@ -3,6 +3,7 @@
 #include "BLI_threads.h"
 #include "BLI_threadsafe_mempool.h"
 #include "DNA_customdata_types.h"
+#include "DNA_meshdata_types.h"
 
 #include <stdint.h>
 
@@ -10,9 +11,51 @@ struct OptTriVert;
 struct OptTriEdge;
 struct OptTri;
 
-#define TRIMESH_SELECT    (1<<1)
-#define TRIMESH_HIDE      (1<<2)
-#define TRIMESH_VT_ITERFLAG  (1<<7)
+enum {
+  TRIMESH_SELECT = 1<<1,
+  TRIMESH_HIDE = 1<<1,
+  TRIMESH_SMOOTH = 1<<3,
+  TRIMESH_VT_ITERFLAG = 1<<9
+};
+
+static uint8_t BLI_trimesh_vert_flag_to_mflag(int16_t f)  {
+  uint8_t r = 0;
+
+  r = f & TRIMESH_SELECT;
+  if (f & TRIMESH_HIDE) {
+    r |= ME_HIDE;
+  }
+
+  return r;
+}
+
+
+static uint8_t BLI_trimesh_edge_flag_to_mflag(int16_t f)  {
+  uint8_t r = 0;
+
+  //XXX
+  r = f & 255;
+
+  return r;
+}
+
+
+static uint8_t BLI_trimesh_tri_flag_to_mflag(int16_t f)  {
+  uint8_t r = 0;
+
+  if (f & TRIMESH_SELECT) {
+    r |= ME_FACE_SEL;
+  }
+  if (f & TRIMESH_SMOOTH) {
+    r |= ME_SMOOTH;
+  }
+  if (f & TRIMESH_HIDE) {
+    r |= ME_HIDE;
+  }
+
+  return r;
+}
+
 
 #define WITH_TRIMESH_CUSTOMDATA
 
@@ -71,6 +114,7 @@ typedef struct TMFace {
  #endif
 
   float no[3];
+  int mat_nr;
 } TMFace;
 
 typedef struct OptTriIsland {
@@ -150,6 +194,7 @@ void BLI_trimesh_kill_vert(BLI_TriMesh *tm, TMVert *v, int threadnr);
 void BLI_trimesh_kill_tri(BLI_TriMesh *tm, TMFace *tri, int threadnr, bool kill_edges, bool kill_verts);
 
 //primary interface to run threaded jobs
+
 typedef void (*OptTriMeshJob)(BLI_TriMesh *tm, void **elements, int totelem, int threadnr, void *userdata);
 void BLI_trimesh_foreach_tris(BLI_TriMesh *tm, TMFace **tris, int tottri, OptTriMeshJob job, int maxthread, void *userdata);
 
@@ -168,9 +213,12 @@ void BLI_trimesh_tag_thread_boundaries_once(BLI_TriMesh *tm, TMFace **tris, int 
 void BLI_trimesh_build_islands(BLI_TriMesh *tm, TMFace **tris, int tottri, OptTriIsland** r_islands, int *r_totisland);
 
 #define TRIMESH_ELEM_CD_SET_INT(ele, offset, f) (*((int *)((char *)(ele)->customdata + (offset))) = (f))
-#define TRIMESH_ELEM_CD_GET_INT(ele, offset, f) (*((int *)((char *)(ele)->customdata + (offset))))
+#define TRIMESH_ELEM_CD_GET_INT(ele, offset) (*((int *)((char *)(ele)->customdata + (offset))))
 #define TRIMESH_ELEM_CD_SET_FLOAT(ele, offset, f) (*((float *)((char *)(ele)->customdata + (offset))) = (f))
-#define TRIMESH_ELEM_CD_GET_FLOAT(ele, offset, f) (*((float *)((char *)(ele)->customdata + (offset))))
+#define TRIMESH_ELEM_CD_GET_FLOAT(ele, offset) (*((float *)((char *)(ele)->customdata + (offset))))
+
+#define TRIMESH_ELEM_CD_GET_FLOAT_AS_UCHAR(ele, offset) \
+  (assert(offset != -1), (uchar)(TRIMESH_ELEM_CD_GET_FLOAT(ele, offset) * 255.0f))
 
 #define TRIMESH_GET_TRI_VERT(tri, n) ((&(tri)->v1)[n])
 #define TRIMESH_GET_TRI_EDGE(tri, n) ((&(tri)->e1)[n])
@@ -191,6 +239,7 @@ int BLI_trimesh_log_vert_state(TriMeshLog *log, TMVert *v);
 #define TRIMESH_elem_flag_enable(elem, f) ((elem)->flag |= (f))
 #define TRIMESH_elem_flag_disable(elem, f) ((elem)->flag &= ~(f))
 #define TRIMESH_elem_flag_test(elem, f) ((elem)->flag & (f))
+#define TRIMESH_elem_flag_set(elem, f, v) ((v) ? ((elem)->flag |= (f)) : ((elem)->flag &= ~(f)))
 
 #define TRIMESH_TEMP_TAG (1<<4)
 
@@ -199,7 +248,7 @@ static void BLI_trimesh_calc_tri_normal(TMFace *tri, int threadnr) {
 }
 
 static void BLI_trimesh_calc_vert_normal(TMVert *v, int threadnr, bool recalc_tri_normals) {
-  int tot;
+  int tot = 0;
 
   zero_v3(v->no);
 
@@ -242,7 +291,7 @@ static TMEdge *BLI_trimesh_nextEdgeInTri(TMFace *t, TMEdge *e) {
   return t->e1;
 }
 
-static TMEdge *BLI_trimesh_prevEdgeInTri(TMFace *t, TMVert *e) {
+static TMEdge *BLI_trimesh_prevEdgeInTri(TMFace *t, TMEdge *e) {
   if (e == t->e3)
     return t->e2;
   if (e == t->e2)
@@ -410,3 +459,25 @@ static int BLI_trimesh_vert_face_check(TMVert *v) {
 }
 
 #define TRIMESH_elem_flag_test_bool(elem, f) (!!((elem)->flag & (f)))
+
+
+struct TMeshToMeshParams {
+  /** Update object hook indices & vertex parents. */
+  uint calc_object_remap : 1;
+  /**
+  * This re-assigns shape-key indices. Only do if the BMesh will have continued use
+  * to update the mesh & shape key in the future.
+  * In the case the BMesh is freed immediately, this can be left false.
+  *
+  * This is needed when flushing changes from edit-mode into object mode,
+  * so a second flush or edit-mode exit doesn't run with indices
+  * that have become invalid from updating the shape-key, see T71865.
+  */
+  uint update_shapekey_indices : 1;
+  struct CustomData_MeshMasks cd_mask_extra;
+};
+void BLI_trimesh_mesh_bm_to_me(struct Main *bmain,
+  BLI_TriMesh *tm,
+  struct Mesh *me,
+  const struct TMeshToMeshParams *params);
+

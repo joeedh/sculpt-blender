@@ -333,7 +333,7 @@ static bool pbvh_trimesh_node_limit_ensure(PBVH *bvh, int node_index)
     f->index = i; /* set_dirty! */
   }
   /* Likely this is already dirty. */
-  bvh->bm->elem_index_dirty |= BM_FACE;
+  //bvh->tm->elem_index_dirty |= BM_FACE;
 
   pbvh_trimesh_node_split(bvh, bbc_array, node_index);
 
@@ -1271,7 +1271,7 @@ static void pbvh_trimesh_collapse_edge(PBVH *bvh,
   BLI_assert(BLI_trimesh_edge_is_wire(e));
 
   //XXX check threadnr argument!
-  BLI_trimesh_kill_edge(bvh->bm, e, 0, false);
+  BLI_trimesh_kill_edge(bvh->tm, e, 0, false);
 
   /* For all remaining faces of v_del, create a new face that is the
   * same except it uses v_conn instead of v_del */
@@ -1294,7 +1294,7 @@ static void pbvh_trimesh_collapse_edge(PBVH *bvh,
       PBVHNode *n = pbvh_trimesh_node_from_face(bvh, tri);
       int ni = n - bvh->nodes;
 
-      tm_edges_from_tri(bvh->bm, v_tri, e_tri, 0, true);
+      tm_edges_from_tri(bvh->tm, v_tri, e_tri, 0, true);
       pbvh_trimesh_face_create(bvh, ni, v_tri, e_tri, tri);
 
       /* Ensure that v_conn is in the new face's node */
@@ -1344,7 +1344,7 @@ static void pbvh_trimesh_collapse_edge(PBVH *bvh,
           v_conn = NULL;
         }
         BLI_ghash_insert(deleted_verts, v_tri[j], NULL);
-        BLI_trimesh_vert_kill(bvh->bm, v_tri[j]);
+        BLI_trimesh_kill_vert(bvh->tm, v_tri[j], 0); //XXX check threadnr
       }
     }
   }
@@ -1809,7 +1809,7 @@ void BKE_pbvh_build_trimesh(PBVH *bvh,
   bvh->cd_face_node_offset = cd_face_node_offset;
   bvh->tm = tm;
 
-  BKE_pbvh_trimesh_detail_size_set(bvh, 0.75);
+  BKE_pbvh_topology_detail_size_set(bvh, 0.75);
 
   bvh->type = PBVH_TRIMESH;
   bvh->tm_log = log;

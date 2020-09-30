@@ -1887,7 +1887,7 @@ void BKE_pbvh_build_bmesh(PBVH *bvh,
   bvh->cd_face_node_offset = cd_face_node_offset;
   bvh->bm = bm;
 
-  BKE_pbvh_bmesh_detail_size_set(bvh, 0.75);
+  BKE_pbvh_topology_detail_size_set(bvh, 0.75);
 
   bvh->type = PBVH_BMESH;
   bvh->bm_log = log;
@@ -2107,7 +2107,7 @@ void BKE_pbvh_bmesh_after_stroke(PBVH *bvh)
   }
 }
 
-void BKE_pbvh_bmesh_detail_size_set(PBVH *bvh, float detail_size)
+void BKE_pbvh_topology_detail_size_set(PBVH *bvh, float detail_size)
 {
   bvh->bm_max_edge_len = detail_size;
   bvh->bm_min_edge_len = bvh->bm_max_edge_len * 0.4f;

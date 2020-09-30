@@ -36,9 +36,21 @@
 
 #include "../blenkernel/BKE_customdata.h"
 #include "DNA_customdata_types.h"
+#include "DNA_mesh_types.h"
+#include "DNA_meshdata_types.h"
+#include "DNA_modifier_types.h"
+#include "DNA_object_types.h"
 
 #include "BLI_utildefines.h"
 #include "atomic_ops.h"
+
+#include "../blenkernel/BKE_customdata.h"
+#include "../blenkernel/BKE_mesh.h"
+#include "../blenkernel/BKE_mesh_runtime.h"
+#include "../blenkernel/BKE_multires.h"
+
+#include "../blenkernel/BKE_key.h"
+#include "../blenkernel/BKE_main.h"
 
 #include "MEM_guardedalloc.h"
 #ifdef WITH_MEM_VALGRIND
@@ -206,7 +218,7 @@ static TMEdge *ensure_edge(BLI_TriMesh* tm, TMVert* v1, TMVert* v2, int threadnr
   simplelist_append(tm, &e->v2->edges, e, POOL_ELIST, threadnr);
 
 #ifdef WITH_TRIMESH_CUSTOMDATA
-  trimesh_element_init(e, &tm->edata, skipcd);
+  trimesh_element_init(e, &tm->edata);
 #else
   trimesh_element_init(e);
 #endif
@@ -271,9 +283,9 @@ TMFace *BLI_trimesh_make_tri(BLI_TriMesh *tm, TMVert *v1, TMVert *v2, TMVert *v3
   memset(tri, 0, sizeof(*tri));
 
 #ifdef WITH_TRIMESH_CUSTOMDATA
-  trimesh_element_init(tm, tri, &tm->tdata, skipcd);
+  trimesh_element_init(tri, &tm->tdata);
 #else
-  trimesh_element_init(tm, tri);
+  trimesh_element_init(tri);
 #endif
 
 #ifdef WITH_TRIMESH_CUSTOMDATA
@@ -348,7 +360,8 @@ static void **trimesh_tag_step(BLI_TriMesh* tm, TMVert* v, void** stack, int tag
     }
   }
 
-  while (BLI_array_len(stack) && totelem < maxelem) {
+  int len = BLI_array_len(stack);
+  for (; len && totelem < maxelem; len = BLI_array_len(stack)) {
     TMFace *tri = BLI_array_pop(stack);
 
     for (int i = 0; i < 3; i++) {
@@ -567,7 +580,6 @@ CustomData *get_customdata(BLI_TriMesh *tm, int type) {
   }
 }
 
-typedef void (*OptTriMeshJob)(BLI_TriMesh *tm, void **elements, int totelem, int threadnr, void *userdata);
 typedef struct threadjob {
   BLI_TriMesh *tm;
   OptTriMeshJob job;
@@ -687,7 +699,7 @@ static void for_vert_callback(BLI_TriMesh *tm, TMFace **tris, int tottri, int th
   }
 
 
-  if (BLI_array_len(verts)) {
+  if (BLI_array_len(verts) != 0) {
     userdata->job(tm, verts, BLI_array_len(verts), threadnr, userdata->userdata);
   }
 }
@@ -918,7 +930,7 @@ TMVert *BLI_trimesh_split_edge(BLI_TriMesh *tm, TMEdge *e, int threadnr, float f
   }
 
   BLI_trimesh_kill_edge(tm, e, threadnr, false);
-  BLI_trimesh_calc_vert_normal(tm, vc, threadnr, true);
+  BLI_trimesh_calc_vert_normal(vc, threadnr, true);
 
   return vc;
 }
@@ -954,7 +966,7 @@ typedef struct LogEntry {
     float f;
     int i;
     int ivec3[3];
-    int ivec4[3];
+    int ivec4[4];
   } value;
 } LogEntry;
 
@@ -980,7 +992,7 @@ static void trimesh_add_group(TriMeshLog *log, bool set_curgroup) {
   int *groups = log->groups;
   BLI_array_declare(groups);
 
-  BLI_array_setlen(groups, log->totgroup);
+  BLI_array_len_set(groups, log->totgroup);
   BLI_array_append(groups, log->totentries);
 
   log->groups = groups;
@@ -1024,7 +1036,7 @@ static void tlog_truncate(TriMeshLog *log) {
 
 static LogEntry *tlog_push(TriMeshLog *log) {
   LogEntry *entries = log->entries;
-  LogEntry e;
+  LogEntry e = {0,};
 
   BLI_array_declare(entries);
 
@@ -1177,7 +1189,7 @@ int BLI_trimesh_log_vert_add(TriMeshLog *log, TMVert *v, const int cd_mask_offse
 }
 
 int elemhash_has_id(TriMeshLog *log, void *elem) {
-  return elemhash_get_id(elem) != NULL;
+  return elemhash_get_id(log, elem) != NULL;
 }
 
 int elemhash_get_vert_id(TriMeshLog *log, TMVert *v, int cd_vert_mask_offset) {
@@ -1213,7 +1225,7 @@ static int elemhash_get_edge_id(TriMeshLog *log, TMEdge *e, int cd_vert_mask_off
   int ret = elemhash_get_id(log, e);
 
   if (!e) {
-    return BLI_trimesh_log_edge_add(log, e, cd_vert_mask_offset);
+    return BLI_trimesh_log_edge_add(log, e, cd_vert_mask_offset, false);
   }
 
   return ret;
@@ -1435,12 +1447,12 @@ int BLI_trimesh_log_tri_kill(TriMeshLog *log, TMFace *tri, int kill_verts, int k
 
   //make wind list
   tlog_i(log, 6);
-  tlog_i(log, elemhash_get_edge(log, tri->e1, log->cd_vert_mask_index));
-  tlog_i(log, elemhash_get_edge(log, tri->e2, log->cd_vert_mask_index));
-  tlog_i(log, elemhash_get_edge(log, tri->e3, log->cd_vert_mask_index));
-  tlog_i(log, elemhash_get_vert(log, tri->v1, log->cd_vert_mask_index));
-  tlog_i(log, elemhash_get_vert(log, tri->v2, log->cd_vert_mask_index));
-  tlog_i(log, elemhash_get_vert(log, tri->v3, log->cd_vert_mask_index));
+  tlog_i(log, elemhash_get_edge_id(log, tri->e1, log->cd_vert_mask_index));
+  tlog_i(log, elemhash_get_edge_id(log, tri->e2, log->cd_vert_mask_index));
+  tlog_i(log, elemhash_get_edge_id(log, tri->e3, log->cd_vert_mask_index));
+  tlog_i(log, elemhash_get_vert_id(log, tri->v1, log->cd_vert_mask_index));
+  tlog_i(log, elemhash_get_vert_id(log, tri->v2, log->cd_vert_mask_index));
+  tlog_i(log, elemhash_get_vert_id(log, tri->v3, log->cd_vert_mask_index));
 
 #ifdef WITH_TRIMESH_CUSTOMDATA
   trimesh_log_cdata(log, tri->l1, TM_LOOP);
@@ -1588,7 +1600,7 @@ static int meshlog_unwind(TriMeshLog *tlog, int entry_i, int threadnr) {
     float mask = log[i++].value.f;
     int skipcd = log[i++].value.i;
 
-    TMVert *v = elemhash_lookup_id(log, id);
+    TMVert *v = elemhash_lookup_id(tlog, id);
 
     BLI_trimesh_kill_vert(tlog->tm, v, 0);
     break;
@@ -1600,7 +1612,7 @@ static int meshlog_unwind(TriMeshLog *tlog, int entry_i, int threadnr) {
     int *ivec = log[i++].value.ivec3;
     float mask = log[i++].value.f;
 
-    TMVert *v = elemhash_lookup_id(log, id);
+    TMVert *v = elemhash_lookup_id(tlog, id);
     copy_v3_v3(v->co, co);
     copy_v3_v3(v->no, no);
     v->flag = ivec[0];
@@ -1718,5 +1730,296 @@ void BLI_log_unwind(TriMeshLog *tlog, int threadnr) {
   for (int i=start; i >= end; i = log[i].value.i) {
     meshlog_unwind(tlog, i, threadnr);
   }
+}
+
+char BLI_trimesh_mesh_cd_flag_from_bmesh(BLI_TriMesh *tm)
+{
+  char cd_flag = 0;
+  if (CustomData_has_layer(&tm->vdata, CD_BWEIGHT)) {
+    cd_flag |= ME_CDFLAG_VERT_BWEIGHT;
+  }
+  if (CustomData_has_layer(&tm->edata, CD_BWEIGHT)) {
+    cd_flag |= ME_CDFLAG_EDGE_BWEIGHT;
+  }
+  if (CustomData_has_layer(&tm->edata, CD_CREASE)) {
+    cd_flag |= ME_CDFLAG_EDGE_CREASE;
+  }
+  return cd_flag;
+}
+
+BLI_INLINE void tmesh_quick_edgedraw_flag(MEdge *med, TMEdge *e)
+{
+  /* This is a cheap way to set the edge draw, its not precise and will
+  * pick the first 2 faces an edge uses.
+  * The dot comparison is a little arbitrary, but set so that a 5 subd
+  * IcoSphere won't vanish but subd 6 will (as with pre-bmesh Blender). */
+
+  if (e->tris.length > 1) {
+    TMFace *t1 = e->tris.items[0];
+    TMFace *t2 = e->tris.items[1];
+
+    if (dot_v3v3(t1->no, t2->no) > 0.9995f) {
+      med->flag &= ~ME_EDGEDRAW;
+    } else {
+      med->flag |= ME_EDGEDRAW;
+    }
+  }
+}
+
+
+/**
+* \brief BMesh -> Mesh
+*/
+static TMVert **tm_to_mesh_vertex_map(BLI_TriMesh *bm, int ototvert)
+{
+  const int cd_shape_keyindex_offset = CustomData_get_offset(&bm->vdata, CD_SHAPE_KEYINDEX);
+  TMVert **vertMap = NULL;
+  TMVert *eve;
+  int i = 0;
+  BLI_TriMeshIter iter;
+
+  /* Caller needs to ensure this. */
+  BLI_assert(ototvert > 0);
+
+  vertMap = MEM_callocN(sizeof(*vertMap) * ototvert, "vertMap");
+  if (cd_shape_keyindex_offset != -1) {
+    BLI_trimesh_vert_iternew(bm, &iter);
+    eve = BLI_trimesh_iterstep(&iter);
+
+    for (; eve; eve = BLI_trimesh_iterstep(&iter), i++) {
+      const int keyi = TRIMESH_ELEM_CD_GET_INT(eve, cd_shape_keyindex_offset);
+      if ((keyi != ORIGINDEX_NONE) && (keyi < ototvert) &&
+        /* Not fool-proof, but chances are if we have many verts with the same index,
+        * we will want to use the first one,
+        * since the second is more likely to be a duplicate. */
+        (vertMap[keyi] == NULL)) {
+        vertMap[keyi] = eve;
+      }
+    }
+  }
+  else {
+    BLI_trimesh_vert_iternew(bm, &iter);
+    eve = BLI_trimesh_iterstep(&iter);
+
+    for (; eve; eve = BLI_trimesh_iterstep(&iter), i++) {
+      if (i < ototvert) {
+        vertMap[i] = eve;
+      }
+      else {
+        break;
+      }
+    }
+  }
+
+  return vertMap;
+}
+
+void BLI_trimesh_mesh_bm_to_me(struct Main *bmain,
+  BLI_TriMesh *tm,
+  struct Mesh *me,
+  const struct TMeshToMeshParams *params)
+{
+  TMVert *v;
+  TMEdge *e;
+  TMFace *f;
+
+  const int cd_vert_bweight_offset = CustomData_get_offset(&tm->vdata, CD_BWEIGHT);
+  const int cd_edge_bweight_offset = CustomData_get_offset(&tm->edata, CD_BWEIGHT);
+  const int cd_edge_crease_offset = CustomData_get_offset(&tm->edata, CD_CREASE);
+  const int cd_shape_keyindex_offset = CustomData_get_offset(&tm->vdata, CD_SHAPE_KEYINDEX);
+
+  MVert *oldverts = NULL;
+  const int ototvert = me->totvert;
+
+  if (me->key && (cd_shape_keyindex_offset != -1)) {
+    /* Keep the old verts in case we are working on* a key, which is done at the end. */
+
+    /* Use the array in-place instead of duplicating the array. */
+#if 0
+    oldverts = MEM_dupallocN(me->mvert);
+#else
+    oldverts = me->mvert;
+    me->mvert = NULL;
+    CustomData_update_typemap(&me->vdata);
+    CustomData_set_layer(&me->vdata, CD_MVERT, NULL);
+#endif
+  }
+
+  /* Free custom data. */
+  CustomData_free(&me->vdata, me->totvert);
+  CustomData_free(&me->edata, me->totedge);
+  CustomData_free(&me->fdata, me->totface);
+  CustomData_free(&me->ldata, me->totloop);
+  CustomData_free(&me->pdata, me->totpoly);
+
+  /* Add new custom data. */
+  me->totvert = tm->totvert;
+  me->totedge = tm->totedge;
+  me->totloop = tm->tottri*3;
+  me->totpoly = tm->tottri;
+  me->totface = tm->tottri;
+  me->act_face = -1;
+
+  {
+    CustomData_MeshMasks mask = CD_MASK_MESH;
+    CustomData_MeshMasks_update(&mask, &params->cd_mask_extra);
+    CustomData_copy(&tm->vdata, &me->vdata, mask.vmask, CD_CALLOC, me->totvert);
+    CustomData_copy(&tm->edata, &me->edata, mask.emask, CD_CALLOC, me->totedge);
+    CustomData_copy(&tm->ldata, &me->ldata, mask.lmask, CD_CALLOC, me->totloop);
+    CustomData_copy(&tm->tdata, &me->pdata, mask.pmask, CD_CALLOC, me->totpoly);
+  }
+
+  MVert *mvert = me->totvert ? MEM_callocN(sizeof(MVert) * me->totvert, "tm_to_me.vert") : NULL;
+  MEdge *medge = me->totedge ? MEM_callocN(sizeof(MEdge) * me->totedge, "tm_to_me.edge") : NULL;
+  MLoop *mloop = me->totloop ? MEM_callocN(sizeof(MLoop) * me->totloop, "tm_to_me.loop") : NULL;
+  MPoly *mpoly = me->totface ? MEM_callocN(sizeof(MPoly) * me->totpoly, "tm_to_me.poly") : NULL;
+  MFace *mface = me->totface ? MEM_callocN(sizeof(MFace) * me->totface, "tm_to_me.face") : NULL;
+
+  CustomData_add_layer(&me->vdata, CD_MVERT, CD_ASSIGN, mvert, me->totvert);
+  CustomData_add_layer(&me->edata, CD_MEDGE, CD_ASSIGN, medge, me->totedge);
+  CustomData_add_layer(&me->ldata, CD_MLOOP, CD_ASSIGN, mloop, me->totloop);
+  CustomData_add_layer(&me->pdata, CD_MPOLY, CD_ASSIGN, mpoly, me->totpoly);
+
+  me->cd_flag = BLI_trimesh_mesh_cd_flag_from_bmesh(tm);
+
+  /* This is called again, 'dotess' arg is used there. */
+  BKE_mesh_update_customdata_pointers(me, 0);
+
+  BLI_TriMeshIter iter;
+  BLI_trimesh_vert_iternew(tm, &iter);
+  v = BLI_trimesh_iterstep(&iter);
+  int i = 0;
+
+  for (; v; v = BLI_trimesh_iterstep(&iter), mvert++, i++) {
+    copy_v3_v3(mvert->co, v->co);
+    normal_float_to_short_v3(mvert->no, v->no);
+    mvert->flag = BLI_trimesh_vert_flag_to_mflag(v);
+    v->index = i;
+
+    /* Copy over custom-data. */
+    CustomData_from_bmesh_block(&tm->vdata, &me->vdata, v->customdata, i);
+
+    if (cd_vert_bweight_offset != -1) {
+      mvert->bweight = TRIMESH_ELEM_CD_GET_FLOAT_AS_UCHAR(v, cd_vert_bweight_offset);
+    }
+  }
+
+  BLI_trimesh_edge_iternew(tm, &iter);
+  e = BLI_trimesh_iterstep(&iter);
+  i = 0;
+
+  MEdge *med = medge;
+  for (; e; e = BLI_trimesh_iterstep(&iter), i++, med++) {
+    med->v1 = e->v1->index;
+    med->v2 = e->v2->index;
+    e->index = i;
+
+    med->flag = BLI_trimesh_edge_flag_to_mflag(e);
+
+    /* Copy over custom-data. */
+    CustomData_from_bmesh_block(&tm->edata, &me->edata, e->customdata, i);
+
+    tmesh_quick_edgedraw_flag(med, e);
+
+    if (cd_edge_crease_offset != -1) {
+      med->crease = TRIMESH_ELEM_CD_GET_FLOAT_AS_UCHAR(e, cd_edge_crease_offset);
+    }
+    if (cd_edge_bweight_offset != -1) {
+      med->bweight = TRIMESH_ELEM_CD_GET_FLOAT_AS_UCHAR(e, cd_edge_bweight_offset);
+    }
+  }
+
+  BLI_trimesh_tri_iternew(tm, &iter);
+  f = BLI_trimesh_iterstep(&iter);
+  i = 0;
+
+  int j = 0;
+  for (; f; f = BLI_trimesh_iterstep(&iter), i++, mpoly++) {
+    mpoly->loopstart = j;
+    mpoly->totloop = 3;
+    mpoly->mat_nr = f->mat_nr;
+
+    for (int k=0; k<3; k++, j++, mloop++) {
+      TMLoopData *ld = TRIMESH_GET_TRI_LOOP(f, k);
+
+      mloop->e = TRIMESH_GET_TRI_EDGE(f, k)->index;
+      mloop->e = TRIMESH_GET_TRI_VERT(f, k)->index;
+
+      /* Copy over custom-data. */
+      CustomData_from_bmesh_block(&tm->ldata, &me->ldata, ld->customdata, j);
+    }
+
+    /* Copy over custom-data. */
+    CustomData_from_bmesh_block(&tm->tdata, &me->pdata, f->customdata, i);
+  }
+
+  /* Patch hook indices and vertex parents. */
+  if (params->calc_object_remap && (ototvert > 0)) {
+    BLI_assert(bmain != NULL);
+    Object *ob;
+    ModifierData *md;
+    TMVert **vertMap = NULL;
+    TMVert *eve = NULL;
+
+    for (ob = bmain->objects.first; ob; ob = ob->id.next) {
+      if ((ob->parent) && (ob->parent->data == me) && ELEM(ob->partype, PARVERT1, PARVERT3)) {
+
+        if (vertMap == NULL) {
+          vertMap = tm_to_mesh_vertex_map(tm, ototvert);
+        }
+
+        if (ob->par1 < ototvert) {
+          eve = vertMap[ob->par1];
+          if (eve) {
+            ob->par1 = eve->index;
+          }
+        }
+        if (ob->par2 < ototvert) {
+          eve = vertMap[ob->par2];
+          if (eve) {
+            ob->par2 = eve->index;
+          }
+        }
+        if (ob->par3 < ototvert) {
+          eve = vertMap[ob->par3];
+          if (eve) {
+            ob->par3 = eve->index;
+          }
+        }
+      }
+      if (ob->data == me) {
+        for (md = ob->modifiers.first; md; md = md->next) {
+          if (md->type == eModifierType_Hook) {
+            HookModifierData *hmd = (HookModifierData *)md;
+
+            if (vertMap == NULL) {
+              vertMap = tm_to_mesh_vertex_map(tm, ototvert);
+            }
+
+            for (i = j = 0; i < hmd->totindex; i++) {
+              if (hmd->indexar[i] < ototvert) {
+                eve = vertMap[hmd->indexar[i]];
+
+                if (eve) {
+                  hmd->indexar[j++] = eve->index;
+                }
+              }
+              else {
+                j++;
+              }
+            }
+
+            hmd->totindex = j;
+          }
+        }
+      }
+    }
+
+    if (vertMap) {
+      MEM_freeN(vertMap);
+    }
+  }
+
+  BKE_mesh_update_customdata_pointers(me, false);
 }
 
