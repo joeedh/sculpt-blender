@@ -178,9 +178,11 @@ struct PBVH {
   struct BMLog *bm_log;
 
   /* trimesh data */
-  struct TriMesh *tm;
+  struct BLI_TriMesh *tm;
   float tm_max_edge_len;
   float tm_min_edge_len;
+
+  struct TriMeshLog *tm_log;
 };
 
 /* pbvh.c */
