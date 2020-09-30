@@ -94,6 +94,8 @@
 #include "bmesh.h"
 #include "bmesh_tools.h"
 
+#include "trimesh.h"
+
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -111,6 +113,9 @@ void SCULPT_vertex_random_access_init(SculptSession *ss)
   if (BKE_pbvh_type(ss->pbvh) == PBVH_BMESH) {
     BM_mesh_elem_index_ensure(ss->bm, BM_VERT);
     BM_mesh_elem_table_ensure(ss->bm, BM_VERT);
+  } else if (BKE_pbvh_type(ss->pbvh) == PBVH_TRIMESH) {
+    TM_mesh_elem_index_ensure(ss->tm, TM_VERTEX);
+    TM_mesh_elem_table_ensure(ss->tm, TM_VERTEX);
   }
 }
 
@@ -123,6 +128,8 @@ int SCULPT_vertex_count_get(SculptSession *ss)
       return BM_mesh_elem_count(BKE_pbvh_get_bmesh(ss->pbvh), BM_VERT);
     case PBVH_GRIDS:
       return BKE_pbvh_get_grid_num_vertices(ss->pbvh);
+    case PBVH_TRIMESH:
+      return ss->tm->totvert;
   }
 
   return 0;
@@ -142,6 +149,8 @@ const float *SCULPT_vertex_co_get(SculptSession *ss, int index)
     }
     case PBVH_BMESH:
       return BM_vert_at_index(BKE_pbvh_get_bmesh(ss->pbvh), index)->co;
+    case PBVH_TRIMESH:
+      return TM_vert_at_index(BKE_pbvh_get_trimesh(ss->pbvh), index)->co;
     case PBVH_GRIDS: {
       const CCGKey *key = BKE_pbvh_get_grid_key(ss->pbvh);
       const int grid_index = index / key->grid_area;
@@ -170,6 +179,10 @@ static void SCULPT_vertex_normal_get(SculptSession *ss, int index, float no[3])
       copy_v3_v3(no, CCG_elem_no(key, CCG_elem_offset(key, elem, vertex_index)));
       break;
     }
+    case PBVH_TRIMESH: {
+      copy_v3_v3(no, TM_vert_at_index(BKE_pbvh_get_trimesh(ss->pbvh), index)->no);
+      break;
+    }
   }
 }
 
@@ -180,6 +193,11 @@ float SCULPT_vertex_mask_get(SculptSession *ss, int index)
   switch (BKE_pbvh_type(ss->pbvh)) {
     case PBVH_FACES:
       return ss->vmask[index];
+    case PBVH_TRIMESH: {
+      TMVert *tv = TM_vert_at_index(BKE_pbvh_get_trimesh(ss->pbvh), index);
+      mask = TM_ELEM_CD_GET_VOID_P(tv, CustomData_get_offset(&ss->tm->vdata, CD_PAINT_MASK));
+      return *mask;
+    }
     case PBVH_BMESH:
       v = BM_vert_at_index(BKE_pbvh_get_bmesh(ss->pbvh), index);
       mask = BM_ELEM_CD_GET_VOID_P(v, CustomData_get_offset(&ss->bm->vdata, CD_PAINT_MASK));
@@ -198,7 +216,7 @@ float SCULPT_vertex_mask_get(SculptSession *ss, int index)
 
 int SCULPT_active_vertex_get(SculptSession *ss)
 {
-  if (ELEM(BKE_pbvh_type(ss->pbvh), PBVH_FACES, PBVH_BMESH, PBVH_GRIDS)) {
+  if (ELEM(BKE_pbvh_type(ss->pbvh), PBVH_FACES, PBVH_TRIMESH, PBVH_BMESH, PBVH_GRIDS)) {
     return ss->active_vertex_index;
   }
   return 0;
@@ -226,6 +244,9 @@ static void SCULPT_vertex_visible_set(SculptSession *ss, int index, bool visible
     case PBVH_BMESH:
       BM_elem_flag_set(BM_vert_at_index(ss->bm, index), BM_ELEM_HIDDEN, !visible);
       break;
+    case PBVH_TRIMESH:
+      TM_elem_flag_set(TM_vert_at_index(ss->tm, index), TRIMESH_HIDE, !visible);
+      break;
     case PBVH_GRIDS:
       break;
   }
@@ -238,6 +259,8 @@ static bool SCULPT_vertex_visible_get(SculptSession *ss, int index)
       return !(ss->mvert[index].flag & ME_HIDE);
     case PBVH_BMESH:
       return !BM_elem_flag_test(BM_vert_at_index(ss->bm, index), BM_ELEM_HIDDEN);
+    case PBVH_TRIMESH:
+      return !TM_elem_flag_test(TM_vert_at_index(ss->tm, index), TRIMESH_HIDE);
     case PBVH_GRIDS:
       return true;
   }
@@ -261,6 +284,8 @@ static void SCULPT_face_set_visibility_set(SculptSession *ss, int face_set, bool
       break;
     case PBVH_BMESH:
       break;
+    case PBVH_TRIMESH:
+      break;
     case PBVH_GRIDS:
       break;
   }
@@ -273,6 +298,8 @@ static void SCULPT_face_sets_visibility_invert(SculptSession *ss)
       for (int i = 0; i < ss->totpoly; i++) {
         ss->face_sets[i] *= -1;
       }
+      break;
+    case PBVH_TRIMESH:
       break;
     case PBVH_BMESH:
       break;
@@ -304,6 +331,8 @@ static void SCULPT_face_sets_visibility_all_set(SculptSession *ss, bool visible)
       break;
     case PBVH_BMESH:
       break;
+    case PBVH_TRIMESH:
+      break;
     case PBVH_GRIDS:
       break;
   }
@@ -321,6 +350,8 @@ static bool SCULPT_vertex_any_face_set_visible_get(SculptSession *ss, int index)
       }
       return false;
     }
+    case PBVH_TRIMESH:
+      return true;
     case PBVH_BMESH:
       return true;
     case PBVH_GRIDS:
@@ -341,6 +372,8 @@ static bool SCULPT_vertex_all_face_sets_visible_get(SculptSession *ss, int index
       }
       return true;
     }
+    case PBVH_TRIMESH:
+      return true;
     case PBVH_BMESH:
       return true;
     case PBVH_GRIDS:
@@ -360,6 +393,8 @@ static void SCULPT_vertex_face_set_set(SculptSession *ss, int index, int face_se
         }
       }
     } break;
+    case PBVH_TRIMESH:
+      break;
     case PBVH_BMESH:
       break;
     case PBVH_GRIDS:
@@ -380,6 +415,8 @@ int SCULPT_vertex_face_set_get(SculptSession *ss, int index)
       }
       return face_set;
     }
+    case PBVH_TRIMESH:
+      return 0;
     case PBVH_BMESH:
       return 0;
     case PBVH_GRIDS:
@@ -400,6 +437,8 @@ bool SCULPT_vertex_has_face_set(SculptSession *ss, int index, int face_set)
       }
       return false;
     }
+    case PBVH_TRIMESH:
+      return true;
     case PBVH_BMESH:
       return true;
     case PBVH_GRIDS:
@@ -478,6 +517,8 @@ bool SCULPT_vertex_has_unique_face_set(SculptSession *ss, int index)
     }
     case PBVH_BMESH:
       return false;
+    case PBVH_TRIMESH:
+      return false;
     case PBVH_GRIDS:
       return false;
   }
@@ -498,6 +539,8 @@ static int SCULPT_face_set_next_available_get(SculptSession *ss)
       return next_face_set;
     }
     case PBVH_BMESH:
+      return 0;
+    case PBVH_TRIMESH:
       return 0;
     case PBVH_GRIDS:
       return 0;
@@ -555,6 +598,34 @@ static void sculpt_vertex_neighbors_get_bmesh(SculptSession *ss,
       }
     }
   }
+}
+
+
+static void sculpt_vertex_neighbors_get_trimesh(SculptSession *ss,
+  int index,
+  SculptVertexNeighborIter *iter)
+{
+  TMVert *v = TM_vert_at_index(ss->tm, index);
+
+  iter->size = 0;
+  iter->num_duplicates = 0;
+  iter->capacity = SCULPT_VERTEX_NEIGHBOR_FIXED_CAPACITY;
+  iter->neighbors = iter->neighbors_fixed;
+
+  TM_ITER_VERT_TRIEDGES(v, tri, e) {
+    TMVert *adj_v[2];
+
+    adj_v[0] = TM_prevVertInTri(tri, v);
+    adj_v[1] = TM_nextVertInTri(tri, v);
+
+    for (int i=0; i<2; i++) {
+      TMVert *v_other = adj_v[i];
+
+      if (v_other->index != (int)index) {
+        sculpt_vertex_neighbor_add(iter, v_other->index);
+      }
+    }
+  } TM_ITER_VERT_TRIEDGES_END
 }
 
 static void sculpt_vertex_neighbors_get_faces(SculptSession *ss,
@@ -627,6 +698,9 @@ void SCULPT_vertex_neighbors_get(SculptSession *ss,
     case PBVH_BMESH:
       sculpt_vertex_neighbors_get_bmesh(ss, index, iter);
       return;
+    case PBVH_TRIMESH:
+      sculpt_vertex_neighbors_get_trimesh(ss, index, iter);
+      return;
     case PBVH_GRIDS:
       sculpt_vertex_neighbors_get_grids(ss, index, include_duplicates, iter);
       return;
@@ -665,7 +739,10 @@ static bool sculpt_vertex_is_boundary(SculptSession *ss, const int index)
       BMVert *v = BM_vert_at_index(ss->bm, index);
       return BM_vert_is_boundary(v);
     }
-
+    case PBVH_TRIMESH: {
+      TMVert *v = TM_vert_at_index(ss->tm, index);
+      return TM_vert_is_boundary(v);
+    }
     case PBVH_GRIDS:
       return true;
   }
@@ -996,14 +1073,16 @@ static void sculpt_orig_vert_data_unode_init(SculptOrigVertData *data,
 {
   SculptSession *ss = ob->sculpt;
   BMesh *bm = ss->bm;
+  TM_TriMesh *tm = ss->tm;
 
   memset(data, 0, sizeof(*data));
   data->unode = unode;
 
-  if (bm) {
+  if (tm) {
+    data->tm_log = ss->tm_log;
+  } else if (bm) {
     data->bm_log = ss->bm_log;
-  }
-  else {
+  } else {
     data->coords = data->unode->co;
     data->normals = data->unode->no;
     data->vmasks = data->unode->mask;
@@ -1024,7 +1103,9 @@ void SCULPT_orig_vert_data_init(SculptOrigVertData *data, Object *ob, PBVHNode *
 void SCULPT_orig_vert_data_update(SculptOrigVertData *orig_data, PBVHVertexIter *iter)
 {
   if (orig_data->unode->type == SCULPT_UNDO_COORDS) {
-    if (orig_data->bm_log) {
+    if (orig_data->tm_log) {
+      TM_log_original_vert_data(orig_data->tm_log, iter->tm_vert, &orig_data->co, &orig_data->no);
+    } else if (orig_data->bm_log) {
       BM_log_original_vert_data(orig_data->bm_log, iter->bm_vert, &orig_data->co, &orig_data->no);
     }
     else {
@@ -1035,6 +1116,8 @@ void SCULPT_orig_vert_data_update(SculptOrigVertData *orig_data, PBVHVertexIter 
   else if (orig_data->unode->type == SCULPT_UNDO_MASK) {
     if (orig_data->bm_log) {
       orig_data->mask = BM_log_original_mask(orig_data->bm_log, iter->bm_vert);
+    } else if (orig_data->tm_log) {
+      orig_data->mask = TM_log_original_mask(orig_data->tm_log, iter->tm_vert);
     }
     else {
       orig_data->mask = orig_data->vmasks[iter->i];
@@ -1157,7 +1240,7 @@ static void sculpt_project_v3(const SculptProjectVector *spvc, const float vec[3
  * key smoothing. */
 static bool sculpt_stroke_is_dynamic_topology(const SculptSession *ss, const Brush *brush)
 {
-  return ((BKE_pbvh_type(ss->pbvh) == PBVH_BMESH) &&
+  return ((ELEM(BKE_pbvh_type(ss->pbvh), PBVH_BMESH, PBVH_TRIMESH)) &&
 
           (!ss->cache || (!ss->cache->alt_smooth)) &&
 
@@ -2805,6 +2888,42 @@ static float neighbor_average_mask(SculptSession *ss, uint vert)
   }
 }
 
+/* Same logic as neighbor_average(), but for trimesh rather than mesh. */
+static void trimesh_neighbor_average(float avg[3], TMVert *v)
+{
+  /* logic for 3 or more is identical. */
+  const int vfcount = TM_vert_face_count_at_most(v, 3);
+
+  /* Don't modify corner vertices. */
+  if (vfcount > 1) {
+    int total = 0;
+
+    zero_v3(avg);
+
+    TM_ITER_VERT_TRIEDGES(v, tri, e) {
+      TMVert *adj_v[2];
+      adj_v[0] = TM_prevVertInTri(tri, v);
+      adj_v[1] = TM_nextVertInTri(tri, v);
+
+      for (int i=0; i<2; i++) {
+        TMVert *v_other = adj_v[i];
+
+        if (vfcount != 2 || TM_vert_face_count_at_most(v_other, 2) <= 2) {
+          add_v3_v3(avg, v_other->co);
+          total++;
+        }
+      }
+    } TM_ITER_VERT_TRIEDGES_END;
+
+    if (total > 0) {
+      mul_v3_fl(avg, 1.0f / total);
+      return;
+    }
+  }
+
+  copy_v3_v3(avg, v->co);
+}
+
 /* Same logic as neighbor_average(), but for bmesh rather than mesh. */
 static void bmesh_neighbor_average(float avg[3], BMVert *v)
 {
@@ -2838,6 +2957,53 @@ static void bmesh_neighbor_average(float avg[3], BMVert *v)
   }
 
   copy_v3_v3(avg, v->co);
+}
+
+/* For bmesh: Average surrounding verts based on an orthogonality measure.
+* Naturally converges to a quad-like structure. */
+static void trimesh_four_neighbor_average(float avg[3], float direction[3], TMVert *v)
+{
+
+  float avg_co[3] = {0.0f, 0.0f, 0.0f};
+  float tot_co = 0.0f;
+
+  for (int i=0; i<v->edges.length; i++) {
+    TMEdge *e = v->edges.items[i];
+
+    if (TM_edge_is_boundary(e)) {
+      copy_v3_v3(avg, v->co);
+      return;
+    }
+
+    TMVert *v_other = (e->v1 == v) ? e->v2 : e->v1;
+    float vec[3];
+    sub_v3_v3v3(vec, v_other->co, v->co);
+    madd_v3_v3fl(vec, v->no, -dot_v3v3(vec, v->no));
+    normalize_v3(vec);
+
+    /* fac is a measure of how orthogonal or parallel the edge is
+    * relative to the direction. */
+    float fac = dot_v3v3(vec, direction);
+    fac = fac * fac - 0.5f;
+    fac *= fac;
+    madd_v3_v3fl(avg_co, v_other->co, fac);
+    tot_co += fac;
+  }
+
+  /* In case vert has no Edge s. */
+  if (tot_co > 0.0f) {
+    mul_v3_v3fl(avg, avg_co, 1.0f / tot_co);
+
+    /* Preserve volume. */
+    float vec[3];
+    sub_v3_v3(avg, v->co);
+    mul_v3_v3fl(vec, v->no, dot_v3v3(avg, v->no));
+    sub_v3_v3(avg, vec);
+    add_v3_v3(avg, v->co);
+  }
+  else {
+    zero_v3(avg);
+  }
 }
 
 /* For bmesh: Average surrounding verts based on an orthogonality measure.
@@ -2912,6 +3078,33 @@ static float bmesh_neighbor_average_mask(BMVert *v, const int cd_vert_mask_offse
   }
   else {
     const float *vmask = BM_ELEM_CD_GET_VOID_P(v, cd_vert_mask_offset);
+    return (*vmask);
+  }
+}
+
+static float trimesh_neighbor_average_mask(TMVert *v, const int cd_vert_mask_offset)
+{
+  float avg = 0.0f;
+  int total = 0;
+
+  TM_ITER_VERT_TRIS(v, tri) {
+    /* Skip this vertex. */
+    TMVert *adj_v[2];
+
+    TM_getOtherVerts(tri, v, adj_v);
+    for (int i=0; i<2; i++) {
+      TMVert *v_other = adj_v[i];
+      float *vmask = TM_ELEM_CD_GET_VOID_P(v_other, cd_vert_mask_offset);
+      avg += (*vmask);
+      total++;
+    }
+  } TM_ITER_VERT_TRIS_END;
+
+  if (total > 0) {
+    return avg / (float)total;
+  }
+  else {
+    const float *vmask = TM_ELEM_CD_GET_VOID_P(v, cd_vert_mask_offset);
     return (*vmask);
   }
 }
@@ -3106,6 +3299,62 @@ static void do_smooth_brush_bmesh_task_cb_ex(void *__restrict userdata,
   BKE_pbvh_vertex_iter_end;
 }
 
+static void do_smooth_brush_trimesh_task_cb_ex(void *__restrict userdata,
+  const int n,
+  const TaskParallelTLS *__restrict tls)
+{
+  SculptThreadedTaskData *data = userdata;
+  SculptSession *ss = data->ob->sculpt;
+  Sculpt *sd = data->sd;
+  const Brush *brush = data->brush;
+  const bool smooth_mask = data->smooth_mask;
+  float bstrength = data->strength;
+
+  PBVHVertexIter vd;
+
+  CLAMP(bstrength, 0.0f, 1.0f);
+
+  SculptBrushTest test;
+  SculptBrushTestFn sculpt_brush_test_sq_fn = SCULPT_brush_test_init_with_falloff_shape(
+    ss, &test, data->brush->falloff_shape);
+
+  BKE_pbvh_vertex_iter_begin(ss->pbvh, data->nodes[n], vd, PBVH_ITER_UNIQUE)
+  {
+    if (sculpt_brush_test_sq_fn(&test, vd.co)) {
+      const float fade = bstrength * SCULPT_brush_strength_factor(ss,
+        brush,
+        vd.co,
+        sqrtf(test.dist),
+        vd.no,
+        vd.fno,
+        smooth_mask ? 0.0f : *vd.mask,
+        vd.index,
+        tls->thread_id);
+      if (smooth_mask) {
+        float val = trimesh_neighbor_average_mask(vd.tm_vert, vd.cd_vert_mask_offset) - *vd.mask;
+        val *= fade * bstrength;
+        *vd.mask += val;
+        CLAMP(*vd.mask, 0.0f, 1.0f);
+      }
+      else {
+        float avg[3], val[3];
+
+        trimesh_neighbor_average(avg, vd.tm_vert);
+        sub_v3_v3v3(val, avg, vd.co);
+
+        madd_v3_v3v3fl(val, vd.co, val, fade);
+
+        sculpt_clip(sd, ss, vd.co, val);
+      }
+
+      if (vd.mvert) {
+        vd.mvert->flag |= ME_VERT_PBVH_UPDATE;
+      }
+    }
+  }
+  BKE_pbvh_vertex_iter_end;
+}
+
 static void do_topology_rake_bmesh_task_cb_ex(void *__restrict userdata,
                                               const int n,
                                               const TaskParallelTLS *__restrict tls)
@@ -3155,6 +3404,71 @@ static void do_topology_rake_bmesh_task_cb_ex(void *__restrict userdata,
       float avg[3], val[3];
 
       bmesh_four_neighbor_average(avg, direction, vd.bm_vert);
+
+      sub_v3_v3v3(val, avg, vd.co);
+
+      madd_v3_v3v3fl(val, vd.co, val, fade);
+
+      sculpt_clip(sd, ss, vd.co, val);
+
+      if (vd.mvert) {
+        vd.mvert->flag |= ME_VERT_PBVH_UPDATE;
+      }
+    }
+  }
+  BKE_pbvh_vertex_iter_end;
+}
+
+
+static void do_topology_rake_trimesh_task_cb_ex(void *__restrict userdata,
+  const int n,
+  const TaskParallelTLS *__restrict tls)
+{
+  SculptThreadedTaskData *data = userdata;
+  SculptSession *ss = data->ob->sculpt;
+  Sculpt *sd = data->sd;
+  const Brush *brush = data->brush;
+
+  float direction[3];
+  copy_v3_v3(direction, ss->cache->grab_delta_symmetry);
+
+  float tmp[3];
+  mul_v3_v3fl(
+    tmp, ss->cache->sculpt_normal_symm, dot_v3v3(ss->cache->sculpt_normal_symm, direction));
+  sub_v3_v3(direction, tmp);
+  normalize_v3(direction);
+
+  /* Cancel if there's no grab data. */
+  if (is_zero_v3(direction)) {
+    return;
+  }
+
+  float bstrength = data->strength;
+  CLAMP(bstrength, 0.0f, 1.0f);
+
+  SculptBrushTest test;
+  SculptBrushTestFn sculpt_brush_test_sq_fn = SCULPT_brush_test_init_with_falloff_shape(
+    ss, &test, data->brush->falloff_shape);
+
+  PBVHVertexIter vd;
+  BKE_pbvh_vertex_iter_begin(ss->pbvh, data->nodes[n], vd, PBVH_ITER_UNIQUE)
+  {
+    if (sculpt_brush_test_sq_fn(&test, vd.co)) {
+      const float fade = bstrength *
+        SCULPT_brush_strength_factor(ss,
+          brush,
+          vd.co,
+          sqrtf(test.dist),
+          vd.no,
+          vd.fno,
+          *vd.mask,
+          vd.index,
+          tls->thread_id) *
+        ss->cache->pressure;
+
+      float avg[3], val[3];
+
+      trimesh_four_neighbor_average(avg, direction, vd.tm_vert);
 
       sub_v3_v3v3(val, avg, vd.co);
 
@@ -3271,6 +3585,9 @@ static void smooth(Sculpt *sd,
       case PBVH_BMESH:
         BKE_pbvh_parallel_range(0, totnode, &data, do_smooth_brush_bmesh_task_cb_ex, &settings);
         break;
+      case PBVH_TRIMESH:
+        BKE_pbvh_parallel_range(0, totnode, &data, do_smooth_brush_trimesh_task_cb_ex, &settings);
+        break;
     }
   }
 }
@@ -3301,6 +3618,35 @@ static void bmesh_topology_rake(
     BKE_pbvh_parallel_range_settings(&settings, (sd->flags & SCULPT_USE_OPENMP), totnode);
 
     BKE_pbvh_parallel_range(0, totnode, &data, do_topology_rake_bmesh_task_cb_ex, &settings);
+  }
+}
+
+static void trimesh_topology_rake(
+  Sculpt *sd, Object *ob, PBVHNode **nodes, const int totnode, float bstrength)
+{
+  Brush *brush = BKE_paint_brush(&sd->paint);
+  CLAMP(bstrength, 0.0f, 1.0f);
+
+  /* Interactions increase both strength and quality. */
+  const int iterations = 3;
+
+  int iteration;
+  const int count = iterations * bstrength + 1;
+  const float factor = iterations * bstrength / count;
+
+  for (iteration = 0; iteration <= count; iteration++) {
+
+    SculptThreadedTaskData data = {
+      .sd = sd,
+      .ob = ob,
+      .brush = brush,
+      .nodes = nodes,
+      .strength = factor,
+    };
+    PBVHParallelSettings settings;
+    BKE_pbvh_parallel_range_settings(&settings, (sd->flags & SCULPT_USE_OPENMP), totnode);
+
+    BKE_pbvh_parallel_range(0, totnode, &data, do_topology_rake_trimesh_task_cb_ex, &settings);
   }
 }
 
@@ -6069,6 +6415,9 @@ static void sculpt_topology_update(Sculpt *sd,
       if (BKE_pbvh_type(ss->pbvh) == PBVH_BMESH) {
         BKE_pbvh_node_mark_topology_update(nodes[n]);
         BKE_pbvh_bmesh_node_save_orig(ss->bm, nodes[n]);
+      } else if (BKE_pbvh_type(ss->pbvh) == PBVH_TRIMESH) {
+        BKE_pbvh_node_mark_topology_update(nodes[n]);
+        BKE_pbvh_trimesh_node_save_orig(ss->tm, nodes[n]);
       }
     }
 
@@ -6080,6 +6429,14 @@ static void sculpt_topology_update(Sculpt *sd,
                                      ss->cache->radius,
                                      (brush->flag & BRUSH_FRONTFACE) != 0,
                                      (brush->falloff_shape != PAINT_FALLOFF_SHAPE_SPHERE));
+    } else if (BKE_pbvh_type(ss->pbvh) == PBVH_BMESH) {
+      BKE_pbvh_trimesh_update_topology(ss->pbvh,
+        mode,
+        ss->cache->location,
+        ss->cache->view_normal,
+        ss->cache->radius,
+        (brush->flag & BRUSH_FRONTFACE) != 0,
+        (brush->falloff_shape != PAINT_FALLOFF_SHAPE_SPHERE));
     }
 
     MEM_SAFE_FREE(nodes);
@@ -7393,7 +7750,7 @@ static void sculpt_raycast_cb(PBVHNode *node, void *data_v, float *tmin)
     bool use_origco = false;
 
     if (srd->original && srd->ss->cache) {
-      if (BKE_pbvh_type(srd->ss->pbvh) == PBVH_BMESH) {
+      if (ELEM(BKE_pbvh_type(srd->ss->pbvh), PBVH_BMESH, PBVH_TRIMESH)) {
         use_origco = true;
       }
       else {
@@ -7428,7 +7785,7 @@ static void sculpt_find_nearest_to_ray_cb(PBVHNode *node, void *data_v, float *t
     bool use_origco = false;
 
     if (srd->original && srd->ss->cache) {
-      if (BKE_pbvh_type(srd->ss->pbvh) == PBVH_BMESH) {
+      if (ELEM(BKE_pbvh_type(srd->ss->pbvh), PBVH_BMESH, PBVH_TRIMESH)) {
         use_origco = true;
       }
       else {
@@ -7457,7 +7814,7 @@ static void sculpt_raycast_detail_cb(PBVHNode *node, void *data_v, float *tmin)
 {
   if (BKE_pbvh_node_get_tmin(node) < *tmin) {
     SculptDetailRaycastData *srd = data_v;
-    if (BKE_pbvh_bmesh_node_raycast_detail(
+    if (BKE_pbvh_trimesh_node_raycast_detail(
             node, srd->ray_start, &srd->isect_precalc, &srd->depth, &srd->edge_length)) {
       srd->hit = true;
       *tmin = srd->depth;
@@ -7648,6 +8005,9 @@ bool SCULPT_stroke_get_location(bContext *C, float out[3], const float mouse[2])
   if (BKE_pbvh_type(ss->pbvh) == PBVH_BMESH) {
     BM_mesh_elem_table_ensure(ss->bm, BM_VERT);
     BM_mesh_elem_index_ensure(ss->bm, BM_VERT);
+  } else if (BKE_pbvh_type(ss->pbvh) == PBVH_TRIMESH) {
+    TM_mesh_elem_table_ensure(ss->tm, TM_VERTEX);
+    TM_mesh_elem_index_ensure(ss->tm, TM_VERTEX);
   }
 
   bool hit = false;
@@ -7874,6 +8234,8 @@ static void sculpt_flush_update_done(const bContext *C, Object *ob, SculptUpdate
 
   if (BKE_pbvh_type(ss->pbvh) == PBVH_BMESH) {
     BKE_pbvh_bmesh_after_stroke(ss->pbvh);
+  } else if (BKE_pbvh_type(ss->pbvh) == PBVH_TRIMESH) {
+    BKE_pbvh_trimesh_after_stroke(ss->pbvh);
   }
 
   /* Optimization: if there is locked key and active modifiers present in */
@@ -8233,7 +8595,41 @@ void sculpt_pbvh_clear(Object *ob)
   DEG_id_tag_update(&ob->id, ID_RECALC_GEOMETRY);
 }
 
-void sculpt_dyntopo_node_layers_add(SculptSession *ss)
+
+void sculpt_bmesh_dyntopo_node_layers_add(SculptSession *ss)
+{
+  int cd_node_layer_index;
+
+  char layer_id[] = "_dyntopo_node_id";
+
+  cd_node_layer_index = CustomData_get_named_layer_index(&ss->bm->vdata, CD_PROP_INT, layer_id);
+  if (cd_node_layer_index == -1) {
+    BM_data_layer_add_named(ss->bm, &ss->bm->vdata, CD_PROP_INT, layer_id);
+    cd_node_layer_index = CustomData_get_named_layer_index(&ss->bm->vdata, CD_PROP_INT, layer_id);
+  }
+
+  ss->cd_vert_node_offset = CustomData_get_n_offset(
+    &ss->bm->vdata,
+    CD_PROP_INT,
+    cd_node_layer_index - CustomData_get_layer_index(&ss->bm->vdata, CD_PROP_INT));
+
+  ss->bm->vdata.layers[cd_node_layer_index].flag |= CD_FLAG_TEMPORARY;
+
+  cd_node_layer_index = CustomData_get_named_layer_index(&ss->bm->pdata, CD_PROP_INT, layer_id);
+  if (cd_node_layer_index == -1) {
+    BM_data_layer_add_named(ss->bm, &ss->bm->pdata, CD_PROP_INT, layer_id);
+    cd_node_layer_index = CustomData_get_named_layer_index(&ss->bm->pdata, CD_PROP_INT, layer_id);
+  }
+
+  ss->cd_face_node_offset = CustomData_get_n_offset(
+    &ss->bm->pdata,
+    CD_PROP_INT,
+    cd_node_layer_index - CustomData_get_layer_index(&ss->bm->pdata, CD_PROP_INT));
+
+  ss->bm->pdata.layers[cd_node_layer_index].flag |= CD_FLAG_TEMPORARY;
+}
+
+void sculpt_trimesh_dyntopo_node_layers_add(SculptSession *ss)
 {
   int cd_node_layer_index;
 
@@ -8266,7 +8662,16 @@ void sculpt_dyntopo_node_layers_add(SculptSession *ss)
   ss->bm->pdata.layers[cd_node_layer_index].flag |= CD_FLAG_TEMPORARY;
 }
 
-static void sculpt_dynamic_topology_enable_ex(Main *bmain,
+void sculpt_dyntopo_node_layers_add(SculptSession *ss)
+{
+  if (BKE_pbvh_type(ss->pbvh) == PBVH_BMESH) {
+    sculpt_bmesh_dyntopo_node_layers_add(ss);
+  } else {
+    sculpt_trimesh_dyntopo_node_layers_add(ss);
+  }
+}
+
+static void bmesh_sculpt_dynamic_topology_enable_ex(Main *bmain,
                                               Depsgraph *depsgraph,
                                               Scene *scene,
                                               Object *ob)
@@ -8314,6 +8719,64 @@ static void sculpt_dynamic_topology_enable_ex(Main *bmain,
    * are re-evaluated and the PBVH is re-created. */
   DEG_id_tag_update(&ob->id, ID_RECALC_GEOMETRY);
   BKE_scene_graph_update_tagged(depsgraph, bmain);
+}
+
+static void trimesh_sculpt_dynamic_topology_enable_ex(Main *bmain,
+  Depsgraph *depsgraph,
+  Scene *scene,
+  Object *ob)
+{
+  SculptSession *ss = ob->sculpt;
+  Mesh *me = ob->data;
+  
+  sculpt_pbvh_clear(ob);
+
+  ss->bm_smooth_shading = (scene->toolsettings->sculpt->flags & SCULPT_DYNTOPO_SMOOTH_SHADING) !=
+    0;
+
+  /* Dynamic topology doesn't ensure selection state is valid, so remove [#36280]. */
+  BKE_mesh_mselect_clear(me);
+
+  ss->tm = TMesh_new(TRIMESH_THREADS);
+
+  TM_mesh_tm_from_me(ss->tm,
+    me,
+    (&(struct TriMeshFromMeshParams){
+    .calc_face_normal = true,
+      .use_shapekey = true,
+      .active_shapekey = ob->shapenr,
+  }));
+  //sculpt_dynamic_topology_triangulate(ss->tm);
+  TM_data_layer_add(ss->tm, &ss->tm->vdata, CD_PAINT_MASK);
+  sculpt_dyntopo_node_layers_add(ss);
+
+  /* Make sure the data for existing faces are initialized. */
+  if (me->totpoly != ss->tm->tottri) {
+    TM_mesh_normals_update(ss->tm);
+  }
+
+  /* Enable dynamic topology. */
+  me->flag |= ME_SCULPT_DYNAMIC_TOPOLOGY;
+
+  /* Enable logging for undo/redo. */
+  ss->tm_log = TM_log_new(ss->tm, CustomData_get_layer_index(&ss->tm->vdata, CD_PAINT_MASK));
+
+  /* Update dependency graph, so modifiers that depend on dyntopo being enabled
+  * are re-evaluated and the PBVH is re-created. */
+  DEG_id_tag_update(&ob->id, ID_RECALC_GEOMETRY);
+  BKE_scene_graph_update_tagged(depsgraph, bmain);
+}
+
+static void sculpt_dynamic_topology_enable_ex(Main *bmain,
+  Depsgraph *depsgraph,
+  Scene *scene,
+  Object *ob)
+{
+  if (BKE_pbvh_type(ob->sculpt->pbvh) == PBVH_BMESH) {
+    bmesh_sculpt_dynamic_topology_enable_ex(bmain, depsgraph, scene, ob);
+  } else {
+    trimesh_sculpt_dynamic_topology_enable_ex(bmain, depsgraph, scene, ob);
+  }
 }
 
 /* Free the sculpt BMesh and BMLog
@@ -8588,7 +9051,7 @@ static bool sculpt_and_dynamic_topology_poll(bContext *C)
 {
   Object *ob = CTX_data_active_object(C);
 
-  return SCULPT_mode_poll(C) && ob->sculpt->bm;
+  return SCULPT_mode_poll(C) && ob->sculpt->tm;
 }
 
 /* The BVH gets less optimal more quickly with dynamic topology than
@@ -8662,6 +9125,38 @@ static int sculpt_symmetrize_exec(bContext *C, wmOperator *UNUSED(op))
       BM_log_all_added(ss->bm, ss->bm_log);
       SCULPT_undo_push_end();
 
+      break;
+    case PBVH_TRIMESH:
+#if 0
+      /* Dyntopo Symmetrize. */
+
+      /* To simplify undo for symmetrize, all BMesh elements are logged
+      * as deleted, then after symmetrize operation all BMesh elements
+      * are logged as added (as opposed to attempting to store just the
+      * parts that symmetrize modifies). */
+      SCULPT_undo_push_begin("Dynamic topology symmetrize");
+      SCULPT_undo_push_node(ob, NULL, SCULPT_UNDO_DYNTOPO_SYMMETRIZE);
+      BM_log_before_all_removed(ss->bm, ss->bm_log);
+
+      BM_mesh_toolflags_set(ss->bm, true);
+
+      /* Symmetrize and re-triangulate. */
+      BMO_op_callf(ss->bm,
+        (BMO_FLAG_DEFAULTS & ~BMO_FLAG_RESPECT_HIDE),
+        "symmetrize input=%avef direction=%i  dist=%f",
+        sd->symmetrize_direction,
+        0.00001f);
+      sculpt_dynamic_topology_triangulate(ss->bm);
+
+      /* Bisect operator flags edges (keep tags clean for edge queue). */
+      BM_mesh_elem_hflag_disable_all(ss->bm, BM_EDGE, BM_ELEM_TAG, false);
+
+      BM_mesh_toolflags_set(ss->bm, false);
+
+      /* Finish undo. */
+      BM_log_all_added(ss->bm, ss->bm_log);
+      SCULPT_undo_push_end();
+#endif
       break;
     case PBVH_FACES:
       /* Mesh Symmetrize. */
@@ -8888,7 +9383,7 @@ void ED_object_sculptmode_exit_ex(Main *bmain, Depsgraph *depsgraph, Scene *scen
 
   /* Always for now, so leaving sculpt mode always ensures scene is in
    * a consistent state. */
-  if (true || /* flush_recalc || */ (ob->sculpt && ob->sculpt->bm)) {
+  if (true || /* flush_recalc || */ (ob->sculpt && ob->sculpt->tm)) {
     DEG_id_tag_update(&ob->id, ID_RECALC_GEOMETRY);
   }
 
@@ -8995,7 +9490,7 @@ static bool sculpt_and_constant_or_manual_detail_poll(bContext *C)
   Object *ob = CTX_data_active_object(C);
   Sculpt *sd = CTX_data_tool_settings(C)->sculpt;
 
-  return SCULPT_mode_poll(C) && ob->sculpt->bm &&
+  return SCULPT_mode_poll(C) && ob->sculpt->tm &&
          (sd->flags & (SCULPT_DYNTOPO_DETAIL_CONSTANT | SCULPT_DYNTOPO_DETAIL_MANUAL));
 }
 
@@ -9528,6 +10023,9 @@ static void mesh_filter_task_cb(void *__restrict userdata,
           case PBVH_GRIDS:
             SCULPT_neighbor_coords_average(ss, avg, vd.index);
             break;
+          case PBVH_TRIMESH:
+            trimesh_neighbor_average(avg, vd.tm_vert);
+            break;
         }
         sub_v3_v3v3(val, avg, orig_co);
         madd_v3_v3v3fl(val, orig_co, val, fade);
@@ -9910,6 +10408,9 @@ static void mask_filter_task_cb(void *__restrict userdata,
             break;
           case PBVH_GRIDS:
             val = grids_neighbor_average_mask(ss, vd.index);
+            break;
+          case PBVH_TRIMESH:
+            val = trimesh_neighbor_average_mask(vd.tm_vert, vd.cd_vert_mask_offset);
             break;
         }
 

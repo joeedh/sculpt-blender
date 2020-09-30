@@ -904,7 +904,7 @@ static void mesh_calc_modifiers(struct Depsgraph *depsgraph,
   const bool has_multires = (mmd && BKE_multires_sculpt_level_get(mmd) != 0);
   bool multires_applied = false;
   const bool sculpt_mode = ob->mode & OB_MODE_SCULPT && ob->sculpt && !use_render;
-  const bool sculpt_dyntopo = (sculpt_mode && ob->sculpt->bm) && !use_render;
+  const bool sculpt_dyntopo = (sculpt_mode && (ob->sculpt->bm || ob->sculpt->tm)) && !use_render;
 
   /* Modifier evaluation contexts for different types of modifiers. */
   ModifierApplyFlag app_render = use_render ? MOD_APPLY_RENDER : 0;

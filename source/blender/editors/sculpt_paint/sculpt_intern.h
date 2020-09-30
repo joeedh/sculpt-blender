@@ -128,9 +128,12 @@ void SCULPT_vertex_neighbors_get(struct SculptSession *ss,
 int SCULPT_active_vertex_get(SculptSession *ss);
 const float *SCULPT_active_vertex_co_get(SculptSession *ss);
 
+struct TriMeshLog;
+
 /* Sculpt Original Data */
 typedef struct {
   struct BMLog *bm_log;
+  struct TriMeshLog *tm_log;
 
   struct SculptUndoNode *unode;
   float (*coords)[3];

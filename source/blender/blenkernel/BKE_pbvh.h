@@ -352,6 +352,8 @@ bool BKE_pbvh_is_deformed(struct PBVH *pbvh);
 #define PBVH_ITER_ALL 0
 #define PBVH_ITER_UNIQUE 1
 
+struct TMVert;
+
 typedef struct PBVHVertexIter {
   /* iteration */
   int g;
@@ -381,12 +383,18 @@ typedef struct PBVHVertexIter {
   struct GSetIterator bm_unique_verts;
   struct GSetIterator bm_other_verts;
   struct CustomData *bm_vdata;
+
+  struct GSetIterator tm_unique_verts;
+  struct GSetIterator tm_other_verts;
+  struct CustomData *tm_vdata;
+
   int cd_vert_mask_offset;
 
   /* result: these are all computed in the macro, but we assume
    * that compiler optimization's will skip the ones we don't use */
   struct MVert *mvert;
   struct BMVert *bm_vert;
+  struct TMVert *tm_vert;
   float *co;
   short *no;
   float *fno;

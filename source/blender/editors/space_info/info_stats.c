@@ -62,6 +62,8 @@
 
 #include "GPU_extensions.h"
 
+#include "trimesh.h"
+
 #define MAX_INFO_LEN 512
 #define MAX_INFO_NUM_LEN 16
 
@@ -351,13 +353,13 @@ static void stats_object_pose(Object *ob, SceneStats *stats)
 
 static void stats_object_sculpt_dynamic_topology(Object *ob, SceneStats *stats)
 {
-  stats->totvert = ob->sculpt->bm->totvert;
-  stats->tottri = ob->sculpt->bm->totface;
+  stats->totvert = ob->sculpt->tm->totvert;
+  stats->tottri = ob->sculpt->tm->tottri;
 }
 
 static bool stats_is_object_dynamic_topology_sculpt(Object *ob, const eObjectMode object_mode)
 {
-  return (ob && (object_mode & OB_MODE_SCULPT) && ob->sculpt && ob->sculpt->bm);
+  return (ob && (object_mode & OB_MODE_SCULPT) && ob->sculpt && ob->sculpt->tm);
 }
 
 /* Statistics displayed in info header. Called regularly on scene changes. */

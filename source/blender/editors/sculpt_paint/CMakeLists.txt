@@ -22,6 +22,7 @@ set(INC
   ../../blenlib
   ../../blentranslation
   ../../bmesh
+  ../../trimesh
   ../../depsgraph
   ../../draw
   ../../gpu
@@ -72,6 +73,7 @@ set(SRC
 set(LIB
   bf_blenkernel
   bf_blenlib
+  bf_trimesh
 )
 
 if(WITH_INTERNATIONAL)

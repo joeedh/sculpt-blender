@@ -23,13 +23,15 @@ struct BLI_ThreadSafePool;
 typedef struct BLI_ThreadSafePool BLI_ThreadSafePool;
 
 struct BLI_ThreadSafePool* BLI_safepool_create(int elemsize, int chunksize, int maxthread);
-void* BLI_safepool_alloc(struct BLI_ThreadSafePool *pool, int threadnr);
+void* BLI_safepool_alloc(struct BLI_ThreadSafePool *pool);
 
 void BLI_safepool_free(struct BLI_ThreadSafePool*pool, void *elem);
 int BLI_safepool_elem_is_dead(void *elem);
 
 void BLI_safepool_threaded_free(struct BLI_ThreadSafePool*pool, void *elem, int threadnr);
+#ifdef BLI_SAFEPOOL_HAVE_LENGTH
 int BLI_safepool_length(struct BLI_ThreadSafePool*pool);
+#endif
 void BLI_safepool_destroy(struct BLI_ThreadSafePool* pool);
 
 typedef struct ThreadSafePoolIter {
@@ -43,6 +45,10 @@ void BLI_safepool_iternew(struct BLI_ThreadSafePool* pool, ThreadSafePoolIter* i
 void BLI_safepool_iterfree(ThreadSafePoolIter* iter);
 void* BLI_safepool_iterstep(ThreadSafePoolIter* iter);
 void BLI_safepool_threaded_free(struct BLI_ThreadSafePool* pool, void* elem, int thread);
+
+/*not sure how to pass thread number to customdata functions, so this evilness here
+is used for now*/
+void BLI_safepool_threadnr_set(int threadnr);
 
 #endif /* _BLI_THREADSAFE_MEMPOOL_H */
 

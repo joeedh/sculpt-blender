@@ -1,9 +1,18 @@
+#ifndef _TRIMESH_H
+#define _TRIMESH_H
+
 //optimized thread-safe triangle mesh library with topological info
 
+//XXX get from user settings as appropriate
+#define TRIMESH_THREADS 4
+
+#include "BLI_assert.h"
 #include "BLI_threads.h"
 #include "BLI_threadsafe_mempool.h"
 #include "DNA_customdata_types.h"
 #include "DNA_meshdata_types.h"
+
+#include "BLI_compiler_compat.h"
 
 #include <stdint.h>
 
@@ -14,13 +23,24 @@ struct TMTri;
 struct Mesh;
 
 enum {
+  TM_VERTEX = 1,
+  TM_EDGE = 2,
+  TM_LOOP = 4,
+  TM_TRI = 8
+};
+
+enum {
   TRIMESH_SELECT = 1<<1,
   TRIMESH_HIDE = 1<<1,
   TRIMESH_SMOOTH = 1<<3,
-  TRIMESH_VT_ITERFLAG = 1<<9
+  TRIMESH_SEAM = 1<<4,
+  TRIMESH_SHARP = 1<<5,
+  TRIMESH_EDGEDRAW = 1<<6,
+  TRIMESH_VT_ITERFLAG = 1<<9,
+  TRIMESH_TEMP_TAG = 1<<10
 };
 
-static uint8_t BLI_trimesh_vert_flag_to_mflag(int16_t f)  {
+BLI_INLINE uint8_t BLI_trimesh_vert_flag_to_mflag(int16_t f)  {
   uint8_t r = 0;
 
   r = f & TRIMESH_SELECT;
@@ -32,7 +52,7 @@ static uint8_t BLI_trimesh_vert_flag_to_mflag(int16_t f)  {
 }
 
 
-static uint8_t BLI_trimesh_edge_flag_to_mflag(int16_t f)  {
+BLI_INLINE uint8_t BLI_trimesh_edge_flag_to_mflag(int16_t f)  {
   uint8_t r = 0;
 
   //XXX
@@ -42,7 +62,7 @@ static uint8_t BLI_trimesh_edge_flag_to_mflag(int16_t f)  {
 }
 
 
-static uint8_t BLI_trimesh_tri_flag_to_mflag(int16_t f)  {
+BLI_INLINE uint8_t BLI_trimesh_tri_flag_to_mflag(int16_t f)  {
   uint8_t r = 0;
 
   if (f & TRIMESH_SELECT) {
@@ -140,6 +160,15 @@ typedef struct TM_TriMesh {
 
   int totvert, tottri, totedge;
   int maxthread;
+  int elem_table_dirty, elem_index_dirty;
+
+  int shapenr;
+
+  TMVert **vtable;
+  TMEdge **etable;
+  TMFace **ttable;
+  int vtable_tot, etable_tot, ttable_tot;
+
   SpinLock global_lock;
 
 #ifdef WITH_TRIMESH_CUSTOMDATA
@@ -163,17 +192,51 @@ typedef struct TM_TriMeshIter {
 
 void TM_index_update(TM_TriMesh *tm);
 
+enum { //same as TM_VERTEX/EDGE/LOOP/TRI
+  TM_VERTS_OF_MESH=1,
+  TM_EDGES_OF_MESH=2,
+  TM_LOOPS_OF_MESH=4,
+  TM_TRIS_OF_MESH=8
+};
+
+
 TM_TriMesh* TMesh_new(int maxthread);
 void TMesh_free(TM_TriMesh *tm);
 void TM_vert_iternew(TM_TriMesh *tm, TM_TriMeshIter* iter);
 void TM_edge_iternew(TM_TriMesh *tm, TM_TriMeshIter* iter);
+void TM_loop_iternew(TM_TriMesh *tm, TM_TriMeshIter* iter);
 void TM_tri_iternew(TM_TriMesh *tm, TM_TriMeshIter* iter);
 void *TM_iterstep(TM_TriMeshIter* iter);
 void TM_add(TM_TriMesh *tm, float* vertCos, float* vertNos, int totvert, int* triIndices, int tottri, int threadnr, bool skipcd);
 
+BLI_INLINE void TM_iterate(TM_TriMesh *tm, TM_TriMeshIter *iter, int type) {
+  switch (type) {
+    case TM_VERTS_OF_MESH:
+      TM_vert_iternew(tm, iter);
+      break;
+    case TM_EDGES_OF_MESH:
+      TM_edge_iternew(tm, iter);
+      break;
+    case TM_LOOPS_OF_MESH:
+      TM_loop_iternew(tm, iter);
+      break;
+    case TM_TRIS_OF_MESH:
+      TM_tri_iternew(tm, iter);
+      break;
+    default:
+      BLI_assert(0);
+      memset(iter, 0, sizeof(*iter));
+      break;
+  }
+}
+
+#define TM_ITER_MESH(elem, iter, tm, type) TM_iterate(tm, iter, type);\
+elem = TM_iterstep(iter);\
+for (; elem; elem=TM_iterstep(iter))
+
 TMVert *TM_make_vert(TM_TriMesh *tm, float co[3], float no[3], int threadnr, bool skipcd);
 
-static TMEdge *TM_edge_exists(TMVert *v1, TMVert *v2) {
+BLI_INLINE TMEdge *TM_edge_exists(TMVert *v1, TMVert *v2) {
   for (int i=0; i<v1->edges.length; i++) {
     TMEdge *e = v1->edges.items[i];
 
@@ -215,17 +278,17 @@ void TM_tag_thread_boundaries_once(TM_TriMesh *tm, TMFace **tris, int tottri);
 void TM_build_islands(TM_TriMesh *tm, TMFace **tris, int tottri, TMTriIsland** r_islands, int *r_totisland);
 void TM_free_islands(TMTriIsland* islands, int totisland, bool free_islands);
 
-#define TRIMESH_ELEM_CD_SET_INT(ele, offset, f) (*((int *)((char *)(ele)->customdata + (offset))) = (f))
-#define TRIMESH_ELEM_CD_GET_INT(ele, offset) (*((int *)((char *)(ele)->customdata + (offset))))
-#define TRIMESH_ELEM_CD_SET_FLOAT(ele, offset, f) (*((float *)((char *)(ele)->customdata + (offset))) = (f))
-#define TRIMESH_ELEM_CD_GET_FLOAT(ele, offset) (*((float *)((char *)(ele)->customdata + (offset))))
+#define TM_ELEM_CD_SET_INT(ele, offset, f) (*((int *)((char *)(ele)->customdata + (offset))) = (f))
+#define TM_ELEM_CD_GET_INT(ele, offset) (*((int *)((char *)(ele)->customdata + (offset))))
+#define TM_ELEM_CD_SET_FLOAT(ele, offset, f) (*((float *)((char *)(ele)->customdata + (offset))) = (f))
+#define TM_ELEM_CD_GET_FLOAT(ele, offset) (*((float *)((char *)(ele)->customdata + (offset))))
 
-#define TRIMESH_ELEM_CD_GET_FLOAT_AS_UCHAR(ele, offset) \
-  (assert(offset != -1), (uchar)(TRIMESH_ELEM_CD_GET_FLOAT(ele, offset) * 255.0f))
+#define TM_ELEM_CD_GET_FLOAT_AS_UCHAR(ele, offset) \
+  (assert(offset != -1), (uchar)(TM_ELEM_CD_GET_FLOAT(ele, offset) * 255.0f))
 
-#define TRIMESH_GET_TRI_VERT(tri, n) ((&(tri)->v1)[n])
-#define TRIMESH_GET_TRI_EDGE(tri, n) ((&(tri)->e1)[n])
-#define TRIMESH_GET_TRI_LOOP(tri, n) ((&(tri)->l1)[n])
+#define TM_GET_TRI_VERT(tri, n) ((&(tri)->v1)[n])
+#define TM_GET_TRI_EDGE(tri, n) ((&(tri)->e1)[n])
+#define TM_GET_TRI_LOOP(tri, n) ((&(tri)->l1)[n])
 
 TMVert *TM_split_edge(TM_TriMesh *tm, TMEdge *e, int threadnr, float fac, bool skipcd);
 void TM_collapse_edge(TM_TriMesh *tm, TMEdge *e, int threadnr);
@@ -238,19 +301,23 @@ int BLI_trimesh_log_tri(TriMeshLog *log, TMFace *tri, bool skipcd);
 int BLI_trimesh_log_vert_kill(TriMeshLog *log, TMVert *v);
 int BLI_trimesh_log_tri_kill(TriMeshLog *log, TMFace *tri);
 int BLI_trimesh_log_vert_state(TriMeshLog *log, TMVert *v);
+void TM_log_original_vert_data(TriMeshLog *tlog, TMVert *v, const float **r_co, const short **r_no);
+float TM_log_original_mask(TriMeshLog *tlog, TMVert *v);
+void TM_data_layer_add(TM_TriMesh *tm, struct CustomData *data, int type);
+void TM_mesh_cd_flag_apply(TM_TriMesh *bm, const char cd_flag);
 
-#define TRIMESH_elem_flag_enable(elem, f) ((elem)->flag |= (f))
-#define TRIMESH_elem_flag_disable(elem, f) ((elem)->flag &= ~(f))
-#define TRIMESH_elem_flag_test(elem, f) ((elem)->flag & (f))
-#define TRIMESH_elem_flag_set(elem, f, v) ((v) ? ((elem)->flag |= (f)) : ((elem)->flag &= ~(f)))
+#define TM_elem_flag_enable(elem, f) ((elem)->flag |= (f))
+#define TM_elem_flag_disable(elem, f) ((elem)->flag &= ~(f))
+#define TM_elem_flag_test(elem, f) ((elem)->flag & (f))
+#define TM_elem_flag_set(elem, f, v) ((v) ? ((elem)->flag |= (f)) : ((elem)->flag &= ~(f)))
 
-#define TRIMESH_TEMP_TAG (1<<4)
+void TM_mesh_normals_update(TM_TriMesh *tm);
 
-static void TM_calc_tri_normal(TMFace *tri, int threadnr) {
+BLI_INLINE void TM_calc_tri_normal(TMFace *tri) {
   normal_tri_v3(tri->no, tri->v1->co, tri->v2->co, tri->v3->co);
 }
 
-static void TM_calc_vert_normal(TMVert *v, int threadnr, bool recalc_tri_normals) {
+BLI_INLINE void TM_calc_vert_normal(TMVert *v, bool recalc_tri_normals) {
   int tot = 0;
 
   zero_v3(v->no);
@@ -276,7 +343,7 @@ static void TM_calc_vert_normal(TMVert *v, int threadnr, bool recalc_tri_normals
     normalize_v3(v->no);
   }
 }
-static float TM_edge_calc_length_squared(TMEdge *e) {
+BLI_INLINE float TM_edge_calc_length_squared(TMEdge *e) {
   float f = 0.0;
 
   f += (e->v2->co[0] - e->v1->co[0])*(e->v2->co[0] - e->v1->co[0]);
@@ -286,7 +353,7 @@ static float TM_edge_calc_length_squared(TMEdge *e) {
   return f;
 }
 
-static TMEdge *TM_nextEdgeInTri(TMFace *t, TMEdge *e) {
+BLI_INLINE TMEdge *TM_nextEdgeInTri(TMFace *t, TMEdge *e) {
   if (e == t->e1)
     return t->e2;
   if (e == t->e2)
@@ -294,7 +361,7 @@ static TMEdge *TM_nextEdgeInTri(TMFace *t, TMEdge *e) {
   return t->e1;
 }
 
-static TMEdge *TM_prevEdgeInTri(TMFace *t, TMEdge *e) {
+BLI_INLINE TMEdge *TM_prevEdgeInTri(TMFace *t, TMEdge *e) {
   if (e == t->e3)
     return t->e2;
   if (e == t->e2)
@@ -302,7 +369,7 @@ static TMEdge *TM_prevEdgeInTri(TMFace *t, TMEdge *e) {
   return t->e3;
 }
 
-static TMVert *TM_nextVertInTri(TMFace *t, TMVert *v) {
+BLI_INLINE TMVert *TM_nextVertInTri(TMFace *t, TMVert *v) {
   if (v == t->v1)
     return t->v2;
   if (v == t->v2)
@@ -310,7 +377,7 @@ static TMVert *TM_nextVertInTri(TMFace *t, TMVert *v) {
   return t->v1;
 }
 
-static TMVert *TM_prevVertInTri(TMFace *t, TMVert *v) {
+BLI_INLINE TMVert *TM_prevVertInTri(TMFace *t, TMVert *v) {
   if (v == t->v3)
     return t->v2;
   if (v == t->v2)
@@ -318,7 +385,7 @@ static TMVert *TM_prevVertInTri(TMFace *t, TMVert *v) {
   return t->v3;
 }
 
-static int TM_edgeTriIndex(TMEdge *e, TMFace *t) {
+BLI_INLINE int TM_edgeTriIndex(TMEdge *e, TMFace *t) {
   for (int i=0; i<e->tris.length; i++) {
     TMFace *t2 = e->tris.items[i];
 
@@ -330,7 +397,7 @@ static int TM_edgeTriIndex(TMEdge *e, TMFace *t) {
   return -1;
 }
 
-static TMFace *TM_nextTriInEdge(TMEdge *e, TMFace *t) {
+BLI_INLINE TMFace *TM_nextTriInEdge(TMEdge *e, TMFace *t) {
   int i = TM_edgeTriIndex(e, t);
 
   if (i < 0) {
@@ -344,7 +411,7 @@ static TMFace *TM_nextTriInEdge(TMEdge *e, TMFace *t) {
   return e->tris.items[i];
 }
 
-static TMFace *TM_prevTriInEdge(TMEdge *e, TMFace *t) {
+BLI_INLINE TMFace *TM_prevTriInEdge(TMEdge *e, TMFace *t) {
   int i = TM_edgeTriIndex(e, t);
 
   if (i < 0) {
@@ -358,7 +425,7 @@ static TMFace *TM_prevTriInEdge(TMEdge *e, TMFace *t) {
   return e->tris.items[i];
 }
 
-static TMVert *TM_getAdjVert(TMEdge *e, TMFace *t) {
+BLI_INLINE TMVert *TM_getAdjVert(TMEdge *e, TMFace *t) {
   if (e == t->e1) {
     return t->v3;
   }
@@ -375,7 +442,7 @@ static TMVert *TM_getAdjVert(TMEdge *e, TMFace *t) {
   return t->v1; //NULL?
 }
 
-static int TM_vert_in_tri(TMFace *t, TMVert *v) {
+BLI_INLINE int TM_vert_in_tri(TMFace *t, TMVert *v) {
   if (v == t->v1) return true;
   if (v == t->v2) return true;
   if (v == t->v3) return true;
@@ -383,7 +450,7 @@ static int TM_vert_in_tri(TMFace *t, TMVert *v) {
   return false;
 }
 
-static int TM_edge_in_tri(TMFace *t, TMEdge *e) {
+BLI_INLINE int TM_edge_in_tri(TMFace *t, TMEdge *e) {
   if (e == t->e1) return true;
   if (e == t->e2) return true;
   if (e == t->e3) return true;
@@ -391,7 +458,7 @@ static int TM_edge_in_tri(TMFace *t, TMEdge *e) {
   return false;
 }
 
-static TMFace *TM_tri_exists(TMVert *v1, TMVert *v2, TMVert *v3) {
+BLI_INLINE TMFace *TM_tri_exists(TMVert *v1, TMVert *v2, TMVert *v3) {
   TMEdge *e = TM_edge_exists(v1, v2);
 
   if (!e) {
@@ -449,7 +516,7 @@ for (int _i=0; _i<v->edges.length; _i++) {\
 
 
 //returns true if any faces exist around v
-static int TM_vert_face_check(TMVert *v) {
+BLI_INLINE int TM_vert_face_check(TMVert *v) {
   for (int i=0; i<v->edges.length; i++) {
     TMEdge *e = v->edges.items[i];
 
@@ -484,3 +551,87 @@ void TM_mesh_bm_to_me(struct Main *bmain,
   struct Mesh *me,
   const struct TMeshToMeshParams *params);
 
+void TM_mesh_elem_table_ensure(TM_TriMesh *tm, int typemask);
+void TM_mesh_elem_index_ensure(TM_TriMesh *tm, int typemask);
+
+BLI_INLINE TMVert *TM_vert_at_index(TM_TriMesh *bm, const int index)
+{
+  BLI_assert((index >= 0) && (index < bm->totvert));
+  BLI_assert((bm->elem_table_dirty & BM_VERT) == 0);
+  return bm->vtable[index];
+}
+
+#if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
+#  define TM_ELEM_CD_GET_VOID_P(ele, offset) \
+    (assert(offset != -1), \
+     _Generic(ele, \
+              GENERIC_TYPE_ANY(POINTER_OFFSET((ele)->head.data, offset), \
+                               _BM_GENERIC_TYPE_ELEM_NONCONST), \
+              GENERIC_TYPE_ANY((const void *)POINTER_OFFSET((ele)->customdata, offset), \
+                               _BM_GENERIC_TYPE_ELEM_CONST)))
+#else
+#  define TM_ELEM_CD_GET_VOID_P(ele, offset) \
+    (assert(offset != -1), (void *)((char *)(ele)->customdata + (offset)))
+#endif
+
+BLI_INLINE int TM_vert_is_boundary(TMVert *v) {
+  if (v->edges.length == 0) {
+    return false; //bmesh returns false in this situation
+  }
+  for (int i=0; i<v->edges.length; i++) {
+    TMEdge *e = v->edges.items[i];
+    if (e->tris.length < 2) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+BLI_INLINE int TM_vert_face_count(TMVert *v) {
+  int i = 0;
+
+  TM_ITER_VERT_TRIS(v, tri) {
+    i++;
+  } TM_ITER_VERT_TRIS_END
+
+  return i;
+}
+
+BLI_INLINE bool TM_edge_is_boundary(TMEdge *e) {
+  return e->tris.length < 2;
+}
+
+BLI_INLINE int TM_vert_face_count_at_most(TMVert *v, int n) {
+  int i = 0;
+
+  TM_ITER_VERT_TRIS(v, tri) {
+    if (i >= n) {
+      return n;
+    }
+    i++;
+  } TM_ITER_VERT_TRIS_END
+
+  return i;
+}
+
+BLI_INLINE void TM_getOtherVerts(TMFace *t, TMVert *v, TMVert **vs) {
+  vs[0] = TM_prevVertInTri(t, v);
+  vs[1] = TM_nextVertInTri(t, v);
+}
+
+struct TriMeshFromMeshParams {
+  uint calc_face_normal : 1;
+  /* add a vertex CD_SHAPE_KEYINDEX layer */
+  uint add_key_index : 1;
+  /* set vertex coordinates from the shapekey */
+  uint use_shapekey : 1;
+  /* define the active shape key (index + 1) */
+  int active_shapekey;
+  struct CustomData_MeshMasks cd_mask_extra;
+};
+
+struct Mesh;
+void TM_mesh_tm_from_me(TM_TriMesh *bm, const struct Mesh *me, const struct TriMeshFromMeshParams *params);
+
+#endif /* _TRIMESH_H */

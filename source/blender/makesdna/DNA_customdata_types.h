@@ -32,6 +32,8 @@ extern "C" {
 
 #include "DNA_defs.h"
 
+struct BLI_ThreadSafePool;
+
 /** Descriptor and storage for a custom data layer. */
 typedef struct CustomDataLayer {
   /** Type of data in layer. */
@@ -82,7 +84,8 @@ typedef struct CustomData {
   /** In editmode, total size of all data layers. */
   int totsize;
   /** (BMesh Only): Memory pool for allocation of blocks. */
-  struct BLI_mempool *pool;
+  //struct BLI_mempool *pool;
+  struct BLI_ThreadSafePool *tpool;
   /** External file storing customdata layers. */
   CustomDataExternal *external;
 } CustomData;

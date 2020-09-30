@@ -394,7 +394,6 @@ typedef struct SculptSession {
    * Set #Main.is_memfile_undo_flush_needed when enabling.
    */
   char needs_flush_to_id;
-
 } SculptSession;
 
 void BKE_sculptsession_free(struct Object *ob);
@@ -402,6 +401,9 @@ void BKE_sculptsession_free_deformMats(struct SculptSession *ss);
 void BKE_sculptsession_free_vwpaint_data(struct SculptSession *ss);
 void BKE_sculptsession_bm_to_me(struct Object *ob, bool reorder);
 void BKE_sculptsession_bm_to_me_for_render(struct Object *object);
+
+void BKE_sculptsession_tm_to_me(struct Object *ob, bool reorder);
+void BKE_sculptsession_tm_to_me_for_render(struct Object *object);
 
 void BKE_sculpt_update_object_for_edit(struct Depsgraph *depsgraph,
                                        struct Object *ob_orig,

@@ -90,7 +90,7 @@ static bool object_remesh_poll(bContext *C)
     return false;
   }
 
-  if (ob->mode == OB_MODE_SCULPT && ob->sculpt->bm) {
+  if (ob->mode == OB_MODE_SCULPT && (ob->sculpt->bm || ob->sculpt->tm)) {
     CTX_wm_operator_poll_msg_set(C, "The remesher cannot run with dyntopo activated");
     return false;
   }

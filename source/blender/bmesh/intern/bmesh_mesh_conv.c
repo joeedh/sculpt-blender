@@ -105,9 +105,9 @@ void BM_mesh_cd_flag_ensure(BMesh *bm, Mesh *mesh, const char cd_flag)
 void BM_mesh_cd_flag_apply(BMesh *bm, const char cd_flag)
 {
   /* CustomData_bmesh_init_pool() must run first */
-  BLI_assert(bm->vdata.totlayer == 0 || bm->vdata.pool != NULL);
-  BLI_assert(bm->edata.totlayer == 0 || bm->edata.pool != NULL);
-  BLI_assert(bm->pdata.totlayer == 0 || bm->pdata.pool != NULL);
+  BLI_assert(bm->vdata.totlayer == 0 || bm->vdata.tpool != NULL);
+  BLI_assert(bm->edata.totlayer == 0 || bm->edata.tpool != NULL);
+  BLI_assert(bm->pdata.totlayer == 0 || bm->pdata.tpool != NULL);
 
   if (cd_flag & ME_CDFLAG_VERT_BWEIGHT) {
     if (!CustomData_has_layer(&bm->vdata, CD_BWEIGHT)) {

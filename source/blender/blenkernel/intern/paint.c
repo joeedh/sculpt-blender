@@ -1274,7 +1274,7 @@ static void sculptsession_tm_to_me_update_data_only(Object *ob, bool reorder)
 {
   SculptSession *ss = ob->sculpt;
 
-  if (ss->bm) {
+  if (ss->tm) {
     if (ob->data) {
       TM_TriMeshIter iter;
       TMFace *f;
@@ -1282,10 +1282,10 @@ static void sculptsession_tm_to_me_update_data_only(Object *ob, bool reorder)
       TM_tri_iternew(ss->tm, &iter);
       f = TM_iterstep(&iter);
       for (; f; f = TM_iterstep(&iter)) {
-        TRIMESH_elem_flag_set(f, TRIMESH_SMOOTH, ss->bm_smooth_shading);
+        TM_elem_flag_set(f, TRIMESH_SMOOTH, ss->bm_smooth_shading);
       }
       //if (reorder) {
-      //  BM_log_mesh_elems_reorder(ss->bm, ss->bm_log);
+      //  BM_log_mesh_elems_reorder(ss->tm, ss->tm_log);
       //}
       TM_mesh_bm_to_me(NULL,
         ss->tm,
@@ -1333,6 +1333,17 @@ void BKE_sculptsession_bm_to_me(Object *ob, bool reorder)
   }
 }
 
+void BKE_sculptsession_tm_to_me(Object *ob, bool reorder)
+{
+  if (ob && ob->sculpt) {
+    sculptsession_tm_to_me_update_data_only(ob, reorder);
+
+    /* Ensure the objects evaluated mesh doesn't hold onto arrays
+    * now realloc'd in the mesh T34473. */
+    DEG_id_tag_update(&ob->id, ID_RECALC_GEOMETRY);
+  }
+}
+
 static void sculptsession_free_pbvh(Object *object)
 {
   SculptSession *ss = object->sculpt;
@@ -1376,6 +1387,28 @@ void BKE_sculptsession_bm_to_me_for_render(Object *object)
   }
 }
 
+void BKE_sculptsession_tm_to_me_for_render(Object *object)
+{
+  if (object && object->sculpt) {
+    if (object->sculpt->tm) {
+      /* Ensure no points to old arrays are stored in DM
+      *
+      * Apparently, we could not use DEG_id_tag_update
+      * here because this will lead to the while object
+      * surface to disappear, so we'll release DM in place.
+      */
+      BKE_object_free_derived_caches(object);
+
+      sculptsession_tm_to_me_update_data_only(object, false);
+
+      /* In contrast with sculptsession_bm_to_me no need in
+      * DAG tag update here - derived mesh was freed and
+      * old pointers are nowhere stored.
+      */
+    }
+  }
+}
+
 void BKE_sculptsession_free(Object *ob)
 {
   if (ob && ob->sculpt) {
@@ -1384,6 +1417,11 @@ void BKE_sculptsession_free(Object *ob)
     if (ss->bm) {
       BKE_sculptsession_bm_to_me(ob, true);
       BM_mesh_free(ss->bm);
+    }
+
+    if (ss->tm) {
+      BKE_sculptsession_tm_to_me(ob, true);
+      TMesh_free(ss->tm);
     }
 
     sculptsession_free_pbvh(ob);
@@ -1444,7 +1482,7 @@ MultiresModifierData *BKE_sculpt_multires_active(Scene *scene, Object *ob)
   ModifierData *md;
   VirtualModifierData virtualModifierData;
 
-  if (ob->sculpt && ob->sculpt->bm) {
+  if (ob->sculpt && (ob->sculpt->bm || ob->sculpt->tm)) {
     /* can't combine multires and dynamic topology */
     return NULL;
   }
@@ -1488,7 +1526,7 @@ static bool sculpt_modifiers_active(Scene *scene, Sculpt *sd, Object *ob)
   MultiresModifierData *mmd = BKE_sculpt_multires_active(scene, ob);
   VirtualModifierData virtualModifierData;
 
-  if (mmd || ob->sculpt->bm) {
+  if (mmd || ob->sculpt->bm || ob->sculpt->tm) {
     return false;
   }
 
@@ -1920,8 +1958,8 @@ PBVH *BKE_sculpt_object_pbvh_ensure(Depsgraph *depsgraph, Object *ob)
     return pbvh;
   }
 
-  if (ob->sculpt->bm != NULL) {
-    /* Sculpting on a BMesh (dynamic-topology) gets a special PBVH. */
+  if (ob->sculpt->tm != NULL) {
+    /* Sculpting on a TriMesh (dynamic-topology) gets a special PBVH. */
     pbvh = build_pbvh_for_dynamic_topology(ob);
   }
   else {

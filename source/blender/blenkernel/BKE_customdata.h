@@ -310,6 +310,15 @@ void CustomData_bmesh_interp(struct CustomData *data,
                              int count,
                              void *dst_block);
 
+struct TM_TriMesh;
+void CustomData_trimesh_init_pool(struct TM_TriMesh *tm, struct CustomData *data, int totelem, const char htype);
+bool CustomData_trimesh_merge(const struct CustomData *source,
+  struct CustomData *dest,
+  CustomDataMask mask,
+  eCDAllocType alloctype,
+  struct TM_TriMesh *bm,
+  const char htype);
+
 /* swaps the data in the element corners, to new corners with indices as
  * specified in corner_indices. for edges this is an array of length 2, for
  * faces an array of length 4 */

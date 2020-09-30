@@ -146,20 +146,20 @@ static void pbvh_trimesh_node_finalize(PBVH *bvh,
     TMFace *f = BLI_gsetIterator_getKey(&gs_iter);
 
     /* Update ownership of faces */
-    TRIMESH_ELEM_CD_SET_INT(f, cd_face_node_offset, node_index);
+    TM_ELEM_CD_SET_INT(f, cd_face_node_offset, node_index);
 
     /* Update vertices */
     for (int i=0; i<3; i++) {
-      TMVert *v = TRIMESH_GET_TRI_VERT(f, i);
-      TMEdge *e = TRIMESH_GET_TRI_EDGE(f, i);
-      TMLoopData *l = TRIMESH_GET_TRI_LOOP(f, i);
+      TMVert *v = TM_GET_TRI_VERT(f, i);
+      TMEdge *e = TM_GET_TRI_EDGE(f, i);
+      TMLoopData *l = TM_GET_TRI_LOOP(f, i);
 
-      if (TRIMESH_ELEM_CD_GET_INT(v, cd_vert_node_offset) != DYNTOPO_NODE_NONE) {
+      if (TM_ELEM_CD_GET_INT(v, cd_vert_node_offset) != DYNTOPO_NODE_NONE) {
         BLI_gset_add(n->tm_other_verts, v);
       }
       else {
         BLI_gset_insert(n->tm_unique_verts, v);
-        TRIMESH_ELEM_CD_SET_INT(v, cd_vert_node_offset, node_index);
+        TM_ELEM_CD_SET_INT(v, cd_vert_node_offset, node_index);
       }
 
       /* Update node bounding box */
@@ -258,7 +258,7 @@ static void pbvh_trimesh_node_split(PBVH *bvh, const BBC *bbc_array, int node_in
   if (n->tm_unique_verts) {
     GSET_ITER (gs_iter, n->tm_unique_verts) {
       TMVert *v = BLI_gsetIterator_getKey(&gs_iter);
-      TRIMESH_ELEM_CD_SET_INT(v, cd_vert_node_offset, DYNTOPO_NODE_NONE);
+      TM_ELEM_CD_SET_INT(v, cd_vert_node_offset, DYNTOPO_NODE_NONE);
     }
     BLI_gset_free(n->tm_unique_verts, NULL);
   }
@@ -266,7 +266,7 @@ static void pbvh_trimesh_node_split(PBVH *bvh, const BBC *bbc_array, int node_in
   /* Unclaim faces */
   GSET_ITER (gs_iter, n->tm_faces) {
     TMFace *f = BLI_gsetIterator_getKey(&gs_iter);
-    TRIMESH_ELEM_CD_SET_INT(f, cd_face_node_offset, DYNTOPO_NODE_NONE);
+    TM_ELEM_CD_SET_INT(f, cd_face_node_offset, DYNTOPO_NODE_NONE);
   }
   BLI_gset_free(n->tm_faces, NULL);
 
@@ -333,7 +333,7 @@ static bool pbvh_trimesh_node_limit_ensure(PBVH *bvh, int node_index)
     f->index = i; /* set_dirty! */
   }
   /* Likely this is already dirty. */
-  //bvh->tm->elem_index_dirty |= BM_FACE;
+  bvh->tm->elem_index_dirty |= BM_FACE;
 
   pbvh_trimesh_node_split(bvh, bbc_array, node_index);
 
@@ -382,7 +382,7 @@ static PBVHNode *pbvh_trimesh_node_from_elem(PBVH *bvh, void *key)
 
 BLI_INLINE int pbvh_trimesh_node_index_from_vert(PBVH *bvh, const TMVert *key)
 {
-  const int node_index = TRIMESH_ELEM_CD_GET_INT((const TMElement *)key, bvh->cd_vert_node_offset);
+  const int node_index = TM_ELEM_CD_GET_INT((const TMElement *)key, bvh->cd_vert_node_offset);
   BLI_assert(node_index != DYNTOPO_NODE_NONE);
   BLI_assert(node_index < bvh->totnode);
   return node_index;
@@ -390,7 +390,7 @@ BLI_INLINE int pbvh_trimesh_node_index_from_vert(PBVH *bvh, const TMVert *key)
 
 BLI_INLINE int pbvh_trimesh_node_index_from_face(PBVH *bvh, const TMFace *key)
 {
-  const int node_index = TRIMESH_ELEM_CD_GET_INT((const TMElement *)key, bvh->cd_face_node_offset);
+  const int node_index = TM_ELEM_CD_GET_INT((const TMElement *)key, bvh->cd_face_node_offset);
   BLI_assert(node_index != DYNTOPO_NODE_NONE);
   BLI_assert(node_index < bvh->totnode);
   return node_index;
@@ -418,7 +418,7 @@ static TMVert *pbvh_trimesh_vert_create(
   CustomData_bmesh_set_default(&bvh->tm->vdata, &v->customdata);
 
   BLI_gset_insert(node->tm_unique_verts, v);
-  TRIMESH_ELEM_CD_SET_INT(v, bvh->cd_vert_node_offset, node_index);
+  TM_ELEM_CD_SET_INT(v, bvh->cd_vert_node_offset, node_index);
 
   node->flag |= PBVH_UpdateDrawBuffers | PBVH_UpdateBB;
 
@@ -443,7 +443,7 @@ static TMFace *pbvh_trimesh_face_create(
   //f->head.hflag = f_example->head.hflag;
 
   BLI_gset_insert(node->tm_faces, f);
-  TRIMESH_ELEM_CD_SET_INT(f, bvh->cd_face_node_offset, node_index);
+  TM_ELEM_CD_SET_INT(f, bvh->cd_face_node_offset, node_index);
 
   /* mark node for update */
   node->flag |= PBVH_UpdateDrawBuffers | PBVH_UpdateNormals;
@@ -530,7 +530,7 @@ static void pbvh_trimesh_vert_ownership_transfer(PBVH *bvh, PBVHNode *new_owner,
   BLI_gset_remove(current_owner->tm_unique_verts, v, NULL);
 
   /* Set new ownership */
-  TRIMESH_ELEM_CD_SET_INT(v, bvh->cd_vert_node_offset, new_owner - bvh->nodes);
+  TM_ELEM_CD_SET_INT(v, bvh->cd_vert_node_offset, new_owner - bvh->nodes);
   BLI_gset_insert(new_owner->tm_unique_verts, v);
   BLI_gset_remove(new_owner->tm_other_verts, v, NULL);
   BLI_assert(!BLI_gset_haskey(new_owner->tm_other_verts, v));
@@ -546,7 +546,7 @@ static void pbvh_trimesh_vert_remove(PBVH *bvh, TMVert *v)
 
   PBVHNode *v_node = pbvh_trimesh_node_from_vert(bvh, v);
   BLI_gset_remove(v_node->tm_unique_verts, v, NULL);
-  TRIMESH_ELEM_CD_SET_INT(v, bvh->cd_vert_node_offset, DYNTOPO_NODE_NONE);
+  TM_ELEM_CD_SET_INT(v, bvh->cd_vert_node_offset, DYNTOPO_NODE_NONE);
 
   /* Have to check each neighboring face's node */
   TMFace *f;
@@ -579,7 +579,7 @@ static void pbvh_trimesh_face_remove(PBVH *bvh, TMFace *f)
   * from the node */
 
   for (int i=0; i<3; i++) {
-    TMVert *v = TRIMESH_GET_TRI_VERT(f, i);
+    TMVert *v = TM_GET_TRI_VERT(f, i);
 
     if (pbvh_trimesh_node_vert_use_count_is_equal(bvh, f_node, v, 1)) {
       if (BLI_gset_haskey(f_node->tm_unique_verts, v)) {
@@ -602,7 +602,7 @@ static void pbvh_trimesh_face_remove(PBVH *bvh, TMFace *f)
 
   /* Remove face from node and top level */
   BLI_gset_remove(f_node->tm_faces, f, NULL);
-  TRIMESH_ELEM_CD_SET_INT(f, bvh->cd_face_node_offset, DYNTOPO_NODE_NONE);
+  TM_ELEM_CD_SET_INT(f, bvh->cd_face_node_offset, DYNTOPO_NODE_NONE);
 
   /* Log removed face */
   BLI_trimesh_log_tri_kill(bvh->tm_log, f);
@@ -658,11 +658,11 @@ typedef struct {
 
 /* only tag'd edges are in the queue */
 #ifdef USE_EDGEQUEUE_TAG
-#  define EDGE_QUEUE_TEST(e) (TRIMESH_elem_flag_test((CHECK_TYPE_INLINE(e, TMEdge *), e), TRIMESH_TEMP_TAG))
+#  define EDGE_QUEUE_TEST(e) (TM_elem_flag_test((CHECK_TYPE_INLINE(e, TMEdge *), e), TRIMESH_TEMP_TAG))
 #  define EDGE_QUEUE_ENABLE(e) \
-    TRIMESH_elem_flag_enable((CHECK_TYPE_INLINE(e, TMEdge *), e), TRIMESH_TEMP_TAG)
+    TM_elem_flag_enable((CHECK_TYPE_INLINE(e, TMEdge *), e), TRIMESH_TEMP_TAG)
 #  define EDGE_QUEUE_DISABLE(e) \
-    TRIMESH_elem_flag_disable((CHECK_TYPE_INLINE(e, TMEdge *), e), TRIMESH_TEMP_TAG)
+    TM_elem_flag_disable((CHECK_TYPE_INLINE(e, TMEdge *), e), TRIMESH_TEMP_TAG)
 #endif
 
 #ifdef USE_EDGEQUEUE_TAG_VERIFY
@@ -726,7 +726,7 @@ static bool edge_queue_tri_in_circle(const EdgeQueue *q, TMFace *f)
 /* Return true if the vertex mask is less than 1.0, false otherwise */
 static bool check_mask(EdgeQueueContext *eq_ctx, TMVert *v)
 {
-  return TRIMESH_ELEM_CD_GET_FLOAT(v, eq_ctx->cd_vert_mask_offset) < 1.0f;
+  return TM_ELEM_CD_GET_FLOAT(v, eq_ctx->cd_vert_mask_offset) < 1.0f;
 }
 
 static void edge_queue_insert(EdgeQueueContext *eq_ctx, TMEdge *e, float priority)
@@ -869,7 +869,7 @@ static void long_edge_queue_face_add(EdgeQueueContext *eq_ctx, TMFace *f)
     /* Check each edge of the face */
 #ifdef USE_EDGEQUEUE_EVEN_SUBDIV
     for (int i=0; i<3; i++) {
-      TMEdge *e = TRIMESH_GET_TRI_EDGE(f, i);
+      TMEdge *e = TM_GET_TRI_EDGE(f, i);
 
       const float len_sq = TM_edge_calc_length_squared(e);
       if (len_sq > eq_ctx->q->limit_len_squared) {
@@ -895,7 +895,7 @@ static void short_edge_queue_face_add(EdgeQueueContext *eq_ctx, TMFace *f)
 
   if (eq_ctx->q->edge_queue_tri_in_range(eq_ctx->q, f)) {
     for (int i=0; i<3; i++) {
-      TMEdge *e = TRIMESH_GET_TRI_EDGE(f, i);
+      TMEdge *e = TM_GET_TRI_EDGE(f, i);
       short_edge_queue_edge_add(eq_ctx, e);
     }
   }
@@ -1050,7 +1050,7 @@ static void pbvh_trimesh_split_edge(EdgeQueueContext *eq_ctx,
 
       TMVert *v_opp = TM_getAdjVert(e2, f_adj);
 
-      int ni = TRIMESH_ELEM_CD_GET_INT(f_adj, eq_ctx->cd_face_node_offset);
+      int ni = TM_ELEM_CD_GET_INT(f_adj, eq_ctx->cd_face_node_offset);
 
       /* Ensure new vertex is in the node */
       if (!BLI_gset_haskey(bvh->nodes[ni].tm_unique_verts, v_new)) {
@@ -1216,8 +1216,8 @@ static bool pbvh_trimesh_subdivide_long_edges(EdgeQueueContext *eq_ctx,
     * possible that an edge collapse has deleted adjacent faces
     * and the node has been split, thus leaving wire edges and
     * associated vertices. */
-    if ((TRIMESH_ELEM_CD_GET_INT(e->v1, eq_ctx->cd_vert_node_offset) == DYNTOPO_NODE_NONE) ||
-      (TRIMESH_ELEM_CD_GET_INT(e->v2, eq_ctx->cd_vert_node_offset) == DYNTOPO_NODE_NONE)) {
+    if ((TM_ELEM_CD_GET_INT(e->v1, eq_ctx->cd_vert_node_offset) == DYNTOPO_NODE_NONE) ||
+      (TM_ELEM_CD_GET_INT(e->v2, eq_ctx->cd_vert_node_offset) == DYNTOPO_NODE_NONE)) {
       continue;
     }
 
@@ -1244,8 +1244,8 @@ static void pbvh_trimesh_collapse_edge(PBVH *bvh,
   TMVert *v_del, *v_conn;
 
   /* one of the two vertices may be masked, select the correct one for deletion */
-  if (TRIMESH_ELEM_CD_GET_FLOAT(v1, eq_ctx->cd_vert_mask_offset) <
-    TRIMESH_ELEM_CD_GET_FLOAT(v2, eq_ctx->cd_vert_mask_offset)) {
+  if (TM_ELEM_CD_GET_FLOAT(v1, eq_ctx->cd_vert_mask_offset) <
+    TM_ELEM_CD_GET_FLOAT(v2, eq_ctx->cd_vert_mask_offset)) {
     v_del = v1;
     v_conn = v2;
   }
@@ -1419,8 +1419,8 @@ static bool pbvh_trimesh_collapse_short_edges(EdgeQueueContext *eq_ctx,
     * possible that an edge collapse has deleted adjacent faces
     * and the node has been split, thus leaving wire edges and
     * associated vertices. */
-    if ((TRIMESH_ELEM_CD_GET_INT(e->v1, eq_ctx->cd_vert_node_offset) == DYNTOPO_NODE_NONE) ||
-      (TRIMESH_ELEM_CD_GET_INT(e->v2, eq_ctx->cd_vert_node_offset) == DYNTOPO_NODE_NONE)) {
+    if ((TM_ELEM_CD_GET_INT(e->v1, eq_ctx->cd_vert_node_offset) == DYNTOPO_NODE_NONE) ||
+      (TM_ELEM_CD_GET_INT(e->v2, eq_ctx->cd_vert_node_offset) == DYNTOPO_NODE_NONE)) {
       continue;
     }
 
@@ -1466,7 +1466,7 @@ bool pbvh_trimesh_node_raycast(PBVHNode *node,
       TMFace *f = BLI_gsetIterator_getKey(&gs_iter);
 
       BLI_assert(f->len == 3);
-      if (!TRIMESH_elem_flag_test(f, TRIMESH_HIDE)) {
+      if (!TM_elem_flag_test(f, TRIMESH_HIDE)) {
         TMVert **v_tri = &f->v1;
 
         if (ray_face_intersection_tri(
@@ -1514,7 +1514,7 @@ bool BKE_pbvh_trimesh_node_raycast_detail(PBVHNode *node,
     TMFace *f = BLI_gsetIterator_getKey(&gs_iter);
 
     BLI_assert(f->len == 3);
-    if (!TRIMESH_elem_flag_test(f, TRIMESH_HIDE)) {
+    if (!TM_elem_flag_test(f, TRIMESH_HIDE)) {
       TMVert **v_tri = &f->v1;
       bool hit_local;
       hit_local = ray_face_intersection_tri(
@@ -1568,7 +1568,7 @@ bool pbvh_trimesh_node_nearest_to_ray(PBVHNode *node,
     GSET_ITER (gs_iter, node->tm_faces) {
       TMFace *f = BLI_gsetIterator_getKey(&gs_iter);
 
-      if (!TRIMESH_elem_flag_test(f, TRIMESH_HIDE)) {
+      if (!TM_elem_flag_test(f, TRIMESH_HIDE)) {
         hit |= ray_face_nearest_tri(
           ray_start, ray_normal, f->v1->co, f->v2->co, f->v3->co, depth, dist_sq);
       }
@@ -1587,14 +1587,14 @@ void pbvh_trimesh_normals_update(PBVHNode **nodes, int totnode)
       GSetIterator gs_iter;
 
       GSET_ITER (gs_iter, node->tm_faces) {
-        TM_calc_tri_normal(BLI_gsetIterator_getKey(&gs_iter), 0);
+        TM_calc_tri_normal(BLI_gsetIterator_getKey(&gs_iter));
       }
       GSET_ITER (gs_iter, node->tm_unique_verts) {
-        TM_calc_vert_normal(BLI_gsetIterator_getKey(&gs_iter), 0, false);
+        TM_calc_vert_normal(BLI_gsetIterator_getKey(&gs_iter), false);
       }
       /* This should be unneeded normally */
       GSET_ITER (gs_iter, node->tm_other_verts) {
-        TM_calc_vert_normal(BLI_gsetIterator_getKey(&gs_iter), 0, false);
+        TM_calc_vert_normal(BLI_gsetIterator_getKey(&gs_iter), false);
       }
       node->flag &= ~PBVH_UpdateNormals;
     }
@@ -1757,25 +1757,25 @@ static void pbvh_trimesh_create_nodes_fast_recursive(
 
       /* Update ownership of faces */
       BLI_gset_insert(n->tm_faces, f);
-      TRIMESH_ELEM_CD_SET_INT(f, cd_face_node_offset, node_index);
+      TM_ELEM_CD_SET_INT(f, cd_face_node_offset, node_index);
 
       /* Update vertices */
       for (int j=0; j<3; j++)  {
-        TMVert *v = TRIMESH_GET_TRI_VERT(f, j);
+        TMVert *v = TM_GET_TRI_VERT(f, j);
 
         if (!BLI_gset_haskey(n->tm_unique_verts, v)) {
-          if (TRIMESH_ELEM_CD_GET_INT(v, cd_vert_node_offset) != DYNTOPO_NODE_NONE) {
+          if (TM_ELEM_CD_GET_INT(v, cd_vert_node_offset) != DYNTOPO_NODE_NONE) {
             BLI_gset_add(n->tm_other_verts, v);
           }
           else {
             BLI_gset_insert(n->tm_unique_verts, v);
-            TRIMESH_ELEM_CD_SET_INT(v, cd_vert_node_offset, node_index);
+            TM_ELEM_CD_SET_INT(v, cd_vert_node_offset, node_index);
           }
         }
         /* Update node bounding box */
       }
 
-      if (!TRIMESH_elem_flag_test(f, TRIMESH_HIDE)) {
+      if (!TM_elem_flag_test(f, TRIMESH_HIDE)) {
         has_visible = true;
       }
 
@@ -1844,15 +1844,15 @@ void BKE_pbvh_build_trimesh(PBVH *bvh,
     /* so we can do direct lookups on 'bbc_array' */
     f->index = i; /* set_dirty! */
     nodeinfo[i] = f;
-    TRIMESH_ELEM_CD_SET_INT(f, cd_face_node_offset, DYNTOPO_NODE_NONE);
+    TM_ELEM_CD_SET_INT(f, cd_face_node_offset, DYNTOPO_NODE_NONE);
   }
   /* Likely this is already dirty. */
-  //bm->elem_index_dirty |= BM_FACE;
+  tm->elem_index_dirty |= BM_FACE;
 
   TM_vert_iternew(tm, &iter);
   TMVert *v = TM_iterstep(&iter);
   for (; v; v=TM_iterstep(&iter)) {
-    TRIMESH_ELEM_CD_SET_INT(v, cd_vert_node_offset, DYNTOPO_NODE_NONE);
+    TM_ELEM_CD_SET_INT(v, cd_vert_node_offset, DYNTOPO_NODE_NONE);
   }
 
   /* setup root node */
@@ -1994,14 +1994,14 @@ void BKE_pbvh_trimesh_node_save_orig(TM_TriMesh *tm, PBVHNode *node)
     i++;
   }
   /* Likely this is already dirty. */
-  //tm->elem_index_dirty |= BM_VERT;
+  tm->elem_index_dirty |= BM_VERT;
 
   /* Copy the triangles */
   i = 0;
   GSET_ITER (gs_iter, node->tm_faces) {
     TMFace *f = BLI_gsetIterator_getKey(&gs_iter);
 
-    if (TRIMESH_elem_flag_test(f, TRIMESH_HIDE)) {
+    if (TM_elem_flag_test(f, TRIMESH_HIDE)) {
       continue;
     }
 

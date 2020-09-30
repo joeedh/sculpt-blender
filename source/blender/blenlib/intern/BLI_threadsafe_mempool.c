@@ -20,25 +20,29 @@ typedef struct poolchunk {
   unsigned int threadnr, magic;
 } poolchunk;
 
-typedef struct deadelem {
-  struct deadelem *next;
-  int dead_magic;
-} deadelem;
+struct pool_thread_data;
+
+/*this structure is always aligned to the pointer size*/
+typedef struct poolelem { 
+  struct pool_thread_data *poolthread;
+  struct poolelem *next; //eats into returned memory
+  intptr_t dead_magic; //eats into returned memory
+} poolelem;
 
 typedef struct pool_thread_data {
   ListBase chunks;
   void* freehead;
-  SpinLock lock;
-  unsigned int used;
+  ThreadRWMutex lock;
+  unsigned int used, threadnr;
 } pool_thread_data;
 
 typedef struct BLI_ThreadSafePool {
   pool_thread_data* threadchunks;
   int maxthread;
-  SpinLock global_lock;
 
 #ifdef BLI_SAFEPOOL_HAVE_LENGTH
   unsigned int length;
+  ThreadRWMutex lengthlock;
 #endif
   size_t esize, csize;
 } BLI_ThreadSafePool;
@@ -51,27 +55,26 @@ static int getalign(int size) {
   return size;
 }
 
+/*not sure how to pass thread number to customdata functions, so this evilness here
+  is used for now*/
+ThreadLocal(int) curthread = 0;
+BLI_thread_local_create(curthread);
+
+void BLI_safepool_threadnr_set(int threadnr) {
+  BLI_thread_local_set(curthread, threadnr);
+}
+
 static size_t get_chunk_size(BLI_ThreadSafePool* pool) {
   return getalign(sizeof(pool_thread_data) + pool->esize*pool->csize);
 }
 
-static poolchunk* get_chunk_from_elem(BLI_ThreadSafePool *pool, void* elem) {
-  uintptr_t addr = (uintptr_t) elem;
-  uintptr_t size = get_chunk_size(pool);
+#define getelem(elem) ((poolelem*) ((char*) (elem) - sizeof(void*)))
 
-  if (!elem) {
-    return NULL;
-  }
+static pool_thread_data* get_poolthread_from_elem(BLI_ThreadSafePool *pool, void* elem) {
+  //version of code for if elements are allowed to link themselves to other thread pools
+  poolelem *de = getelem(elem);
 
-  addr = addr - (addr % size);
-
-  poolchunk *chunk = (poolchunk*)addr;
-
-  if (chunk->magic != POOL_CHUNK_MAGIC) {
-    return NULL;
-  }
-
-  return chunk;
+  return de->poolthread;
 }
 
 static poolchunk *new_chunk(BLI_ThreadSafePool *pool, pool_thread_data* thread_data) {
@@ -90,10 +93,10 @@ static poolchunk *new_chunk(BLI_ThreadSafePool *pool, pool_thread_data* thread_d
   chunk->threadnr = thread_data - pool->threadchunks;
 
   BLI_addtail(&thread_data->chunks, chunk);
-  deadelem *first = NULL;
+  poolelem *first = NULL;
 
   for (size_t i = 0; i < pool->csize-1; i++) {
-    deadelem *de = (deadelem*)(((char*)chunk) + sizeof(poolchunk) + esize*i);
+    poolelem *de = (poolelem*)(((char*)chunk) + sizeof(poolchunk) + esize*i);
 
     if (i ==  0) {
       first = de;
@@ -103,7 +106,7 @@ static poolchunk *new_chunk(BLI_ThreadSafePool *pool, pool_thread_data* thread_d
     de->dead_magic = DEAD_MAGIC;
   }
 
-  deadelem *de = (deadelem*)(((char*)chunk) + sizeof(poolchunk) + esize*(pool->csize-1));
+  poolelem *de = (poolelem*)(((char*)chunk) + sizeof(poolchunk) + esize*(pool->csize-1));
   de->next = thread_data->freehead;
   de->dead_magic = DEAD_MAGIC;
 
@@ -119,21 +122,24 @@ BLI_ThreadSafePool* BLI_safepool_create(int elemsize, int chunksize, int maxthre
 
   pool->maxthread = maxthread;
   pool->threadchunks = MEM_callocN(sizeof(pool_thread_data) * maxthread, "pool->threadchunks");
-  pool->esize = elemsize;
+  pool->esize = elemsize + sizeof(void*); //add header pointer to owning chunk
   pool->csize = chunksize;
 
-  BLI_spin_init(&pool->global_lock);
+#ifdef BLI_SAFEPOOL_HAVE_LENGTH
+  BLI_rw_mutex_init(&pool->length_lock);
+#endif
 
   for (int i = 0; i < maxthread; i++) {
-    BLI_spin_init(&pool->threadchunks[i].lock);
-    new_chunk(pool, pool->threadchunks);
+    BLI_rw_mutex_init(&pool->threadchunks[i].lock);
+    pool->threadchunks[i].threadnr = i;
+    new_chunk(pool, pool->threadchunks + i);
   }
 
   return pool;
 }
 
 int BLI_safepool_elem_is_dead(void *elem) {
-  deadelem *de = (deadelem*)elem;
+  poolelem *de = getelem(elem);
 
   return de->dead_magic == DEAD_MAGIC;
 }
@@ -143,11 +149,9 @@ void BLI_safepool_destroy(BLI_ThreadSafePool* pool) {
   int i;
 
   //wait for all threads to end?
-  //BLI_spin_lock(&pool->global_lock);
-  //BLI_spin_unlock(&pool->global_lock);
 
   for (i = 0; i < pool->maxthread; i++) {
-    BLI_spin_end(&pool->threadchunks[i].lock);
+    BLI_rw_mutex_end(&pool->threadchunks[i].lock);
     poolchunk* next;
 
     for (chunk = pool->threadchunks[i].chunks.first; chunk; chunk = next) {
@@ -155,69 +159,66 @@ void BLI_safepool_destroy(BLI_ThreadSafePool* pool) {
       MEM_freeN(chunk);
     }
   }
+#ifdef BLI_SAFEPOOL_HAVE_LENGTH
+  BLI_rw_mutex_end(&pool->length_lock);
+#endif
 
-  BLI_spin_end(&pool->global_lock);
   MEM_freeN(pool->threadchunks);
   MEM_freeN(pool);
 }
 
-void* BLI_safepool_alloc(BLI_ThreadSafePool *pool, int thread) {
+void* BLI_safepool_alloc(BLI_ThreadSafePool *pool) {
+  int thread = BLI_thread_local_get(curthread);
+
   pool_thread_data *tdata = pool->threadchunks + thread;
 
-  if (tdata->freehead) {
-    //lock?
-    BLI_spin_lock(&tdata->lock);
+  BLI_rw_mutex_lock(&tdata->lock, THREAD_LOCK_WRITE);
 
-    deadelem *de = (deadelem*) tdata->freehead;
+  if (tdata->freehead) {
+    poolelem *de = (poolelem*) tdata->freehead;
     tdata->freehead = de->next;
     tdata->used++;
 
-    BLI_spin_unlock(&tdata->lock);
+    BLI_rw_mutex_unlock(&tdata->lock);
 
 #ifdef BLI_SAFEPOOL_HAVE_LENGTH
-    BLI_spin_lock(&pool->global_lock);
+    BLI_rw_mutex_lock(&pool->lengthlock, THREAD_LOCK_WRITE);
     pool->length++;
-    BLI_spin_unlock(&pool->global_lock);
+    BLI_rw_mutex_unlock(&pool->lengthlock);
 #endif
-    return (void*) de;
+    return (void*) &de->next;
   }
 
   new_chunk(pool, tdata);
 
+  BLI_rw_mutex_unlock(&tdata->lock);
   return BLI_safepool_alloc(pool, thread);
 }
 
-
 int get_elem_thread(BLI_ThreadSafePool* pool, void* elem) {
-  for (int i = 0; i < pool->maxthread; i++) {
-    BLI_spin_lock(&pool->threadchunks[i].lock);
-  }
-
-  poolchunk *chunk = get_chunk_from_elem(pool, elem);
-
-  if (!chunk) {
-    for (int i = 0; i < pool->maxthread; i++) {
-      BLI_spin_unlock(&pool->threadchunks[i].lock);
-    }
-
+  pool_thread_data *threadpool = get_poolthread_from_elem(pool, elem);
+  
+  if (!threadpool) {
     return -1;
   }
 
-  int ret = chunk->threadnr;
-
-  for (int i = 0; i < pool->maxthread; i++) {
-    BLI_spin_unlock(&pool->threadchunks[i].lock);
-  }
-
+  int ret = threadpool->threadnr;
   return ret;
 }
 
-void BLI_safepool_threaded_free(BLI_ThreadSafePool* pool, void* elem, int thread) {
+void BLI_safepool_threaded_free(BLI_ThreadSafePool* pool, void* elem) {
+  /*hrm.  I could add to the current pool's freelist, couldn't I
+    let's try that
+
+    int thread = get_elem_thread(pool, elem);
+   */
+
+  int thread = BLI_thread_local_get(curthread);
+
   pool_thread_data *tdata = pool->threadchunks + thread;
+  BLI_rw_mutex_lock(&tdata->lock, THREAD_LOCK_WRITE);
 
-  BLI_spin_lock(&tdata->lock);
-
-  deadelem *de = (deadelem*)elem;
+  poolelem *de = getelem(elem);
 
   de->next = tdata->freehead;
   de->dead_magic = DEAD_MAGIC;
@@ -225,12 +226,12 @@ void BLI_safepool_threaded_free(BLI_ThreadSafePool* pool, void* elem, int thread
   
   tdata->used--;
 
-  BLI_spin_unlock(&tdata->lock);
+  BLI_rw_mutex_unlock(&tdata->lock);
 
 #ifdef BLI_SAFEPOOL_HAVE_LENGTH
-  BLI_spin_lock(&pool->global_lock);
+  BLI_rw_mutex_lock(&pool->lengthlock, THREAD_LOCK_WRITE);
   pool->length--;
-  BLI_spin_unlock(&pool->global_lock);
+  BLI_rw_mutex_unlock(&pool->lengthlock);
 #endif
 }
 
@@ -253,13 +254,13 @@ int BLI_safepool_length(BLI_ThreadSafePool *pool) {
 
 void lock_all_threads(BLI_ThreadSafePool* pool) {
   for (int i = 0; i < pool->maxthread; i++) {
-    BLI_spin_lock(&pool->threadchunks[i].lock);
+    BLI_rw_mutex_lock(&pool->threadchunks[i].lock, THREAD_LOCK_WRITE);
   }
 }
 
 void unlock_all_threads(BLI_ThreadSafePool* pool) {
   for (int i = 0; i < pool->maxthread; i++) {
-    BLI_spin_unlock(&pool->threadchunks[i].lock);
+    BLI_rw_mutex_unlock(&pool->threadchunks[i].lock);
   }
 }
 
@@ -302,12 +303,12 @@ void* BLI_safepool_iterstep(ThreadSafePoolIter* iter) {
     iter->i = -1; //flag end of iteration
   }
 
-  deadelem *de = (deadelem*) ptr;
+  poolelem *de = getelem(ptr);
 
   if (!ptr || de->dead_magic == DEAD_MAGIC) {
     return BLI_safepool_iterstep(iter);
   }
 
-  return (void*) ptr;
+  return (void*) &de->next;
 }
 

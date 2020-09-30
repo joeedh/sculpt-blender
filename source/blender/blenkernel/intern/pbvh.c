@@ -41,6 +41,7 @@
 
 #include "GPU_buffers.h"
 
+#include "trimesh.h"
 #include "bmesh.h"
 
 #include "atomic_ops.h"
@@ -1694,6 +1695,12 @@ BMesh *BKE_pbvh_get_bmesh(PBVH *bvh)
   return bvh->bm;
 }
 
+TM_TriMesh *BKE_pbvh_get_trimesh(PBVH *bvh)
+{
+  BLI_assert(bvh->type == PBVH_TRIMESH);
+  return bvh->tm;
+}
+
 /***************************** Node Access ***********************************/
 
 void BKE_pbvh_node_mark_update(PBVHNode *node)
@@ -2912,6 +2919,13 @@ void pbvh_vertex_iter_init(PBVH *bvh, PBVHNode *node, PBVHVertexIter *vi, int mo
     vi->cd_vert_mask_offset = CustomData_get_offset(vi->bm_vdata, CD_PAINT_MASK);
   }
 
+  if (bvh->type == PBVH_TRIMESH) {
+    BLI_gsetIterator_init(&vi->tm_unique_verts, node->tm_unique_verts);
+    BLI_gsetIterator_init(&vi->tm_other_verts, node->tm_other_verts);
+    vi->tm_vdata = &bvh->tm->vdata;
+    vi->cd_vert_mask_offset = CustomData_get_offset(vi->tm_vdata, CD_PAINT_MASK);
+  }
+
   vi->gh = NULL;
   if (vi->grids && mode == PBVH_ITER_UNIQUE) {
     vi->grid_hidden = bvh->grid_hidden;
@@ -2932,6 +2946,8 @@ bool pbvh_has_mask(PBVH *bvh)
       return (bvh->vdata && CustomData_get_layer(bvh->vdata, CD_PAINT_MASK));
     case PBVH_BMESH:
       return (bvh->bm && (CustomData_get_offset(&bvh->bm->vdata, CD_PAINT_MASK) != -1));
+    case PBVH_TRIMESH:
+      return (bvh->tm && (CustomData_get_offset(&bvh->tm->vdata, CD_PAINT_MASK) != -1));
   }
 
   return false;
@@ -2944,6 +2960,8 @@ bool pbvh_has_face_sets(PBVH *bvh)
       return false;
     case PBVH_FACES:
       return (bvh->pdata && CustomData_get_layer(bvh->pdata, CD_SCULPT_FACE_SETS));
+    case PBVH_TRIMESH:
+      return false;
     case PBVH_BMESH:
       return false;
   }
