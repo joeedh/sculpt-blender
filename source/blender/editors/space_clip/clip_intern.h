@@ -21,8 +21,7 @@
  * \ingroup spclip
  */
 
-#ifndef __CLIP_INTERN_H__
-#define __CLIP_INTERN_H__
+#pragma once
 
 struct ARegion;
 struct MovieClip;
@@ -112,7 +111,7 @@ void CLIP_OT_cursor_set(struct wmOperatorType *ot);
 void CLIP_OT_lock_selection_toggle(struct wmOperatorType *ot);
 
 /* clip_toolbar.c */
-struct ARegion *ED_clip_has_properties_region(struct ScrArea *sa);
+struct ARegion *ED_clip_has_properties_region(struct ScrArea *area);
 
 /* clip_utils.c */
 
@@ -245,5 +244,3 @@ void CLIP_OT_select_box(struct wmOperatorType *ot);
 void CLIP_OT_select_lasso(struct wmOperatorType *ot);
 void CLIP_OT_select_circle(struct wmOperatorType *ot);
 void CLIP_OT_select_grouped(struct wmOperatorType *ot);
-
-#endif /* __CLIP_INTERN_H__ */

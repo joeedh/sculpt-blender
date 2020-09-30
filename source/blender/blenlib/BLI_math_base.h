@@ -20,8 +20,7 @@
  *
  * */
 
-#ifndef __BLI_MATH_BASE_H__
-#define __BLI_MATH_BASE_H__
+#pragma once
 
 /** \file
  * \ingroup bli
@@ -33,6 +32,7 @@
 
 #include "BLI_assert.h"
 #include "BLI_math_inline.h"
+#include "BLI_sys_types.h"
 #include <math.h>
 
 #ifndef M_PI
@@ -90,6 +90,10 @@ static const int NAN_INT = 0x7FC00000;
 #ifdef BLI_MATH_GCC_WARN_PRAGMA
 #  pragma GCC diagnostic push
 #  pragma GCC diagnostic ignored "-Wredundant-decls"
+#endif
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 /******************************* Float ******************************/
@@ -150,6 +154,9 @@ MINLINE int max_iiii(int a, int b, int c, int d);
 
 MINLINE size_t min_zz(size_t a, size_t b);
 MINLINE size_t max_zz(size_t a, size_t b);
+
+MINLINE char min_cc(char a, char b);
+MINLINE char max_cc(char a, char b);
 
 MINLINE int clamp_i(int value, int min, int max);
 MINLINE float clamp_f(float value, float min, float max);
@@ -235,6 +242,14 @@ double double_round(double x, int ndigits);
     } \
     (void)0
 
+#  define BLI_ASSERT_UNIT_V3_DB(v) \
+    { \
+      const double _test_unit = len_squared_v3_db(v); \
+      BLI_assert(!(fabs(_test_unit - 1.0) >= BLI_ASSERT_UNIT_EPSILON) || \
+                 !(fabs(_test_unit) >= BLI_ASSERT_UNIT_EPSILON)); \
+    } \
+    (void)0
+
 #  define BLI_ASSERT_UNIT_V2(v) \
     { \
       const float _test_unit = len_squared_v2(v); \
@@ -278,4 +293,6 @@ double double_round(double x, int ndigits);
 #  define BLI_ASSERT_UNIT_M3(m) (void)(m)
 #endif
 
-#endif /* __BLI_MATH_BASE_H__ */
+#ifdef __cplusplus
+}
+#endif

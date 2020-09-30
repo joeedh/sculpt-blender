@@ -58,11 +58,11 @@
 
 /********************************** Free *************************************/
 
-static void render_result_views_free(RenderResult *res)
+static void render_result_views_free(RenderResult *rr)
 {
-  while (res->views.first) {
-    RenderView *rv = res->views.first;
-    BLI_remlink(&res->views, rv);
+  while (rr->views.first) {
+    RenderView *rv = rr->views.first;
+    BLI_remlink(&rr->views, rv);
 
     if (rv->rect32) {
       MEM_freeN(rv->rect32);
@@ -79,17 +79,17 @@ static void render_result_views_free(RenderResult *res)
     MEM_freeN(rv);
   }
 
-  res->have_combined = false;
+  rr->have_combined = false;
 }
 
-void render_result_free(RenderResult *res)
+void render_result_free(RenderResult *rr)
 {
-  if (res == NULL) {
+  if (rr == NULL) {
     return;
   }
 
-  while (res->layers.first) {
-    RenderLayer *rl = res->layers.first;
+  while (rr->layers.first) {
+    RenderLayer *rl = rr->layers.first;
 
     while (rl->passes.first) {
       RenderPass *rpass = rl->passes.first;
@@ -99,31 +99,31 @@ void render_result_free(RenderResult *res)
       BLI_remlink(&rl->passes, rpass);
       MEM_freeN(rpass);
     }
-    BLI_remlink(&res->layers, rl);
+    BLI_remlink(&rr->layers, rl);
     MEM_freeN(rl);
   }
 
-  render_result_views_free(res);
+  render_result_views_free(rr);
 
-  if (res->rect32) {
-    MEM_freeN(res->rect32);
+  if (rr->rect32) {
+    MEM_freeN(rr->rect32);
   }
-  if (res->rectz) {
-    MEM_freeN(res->rectz);
+  if (rr->rectz) {
+    MEM_freeN(rr->rectz);
   }
-  if (res->rectf) {
-    MEM_freeN(res->rectf);
+  if (rr->rectf) {
+    MEM_freeN(rr->rectf);
   }
-  if (res->text) {
-    MEM_freeN(res->text);
+  if (rr->text) {
+    MEM_freeN(rr->text);
   }
-  if (res->error) {
-    MEM_freeN(res->error);
+  if (rr->error) {
+    MEM_freeN(rr->error);
   }
 
-  BKE_stamp_data_free(res->stamp_data);
+  BKE_stamp_data_free(rr->stamp_data);
 
-  MEM_freeN(res);
+  MEM_freeN(rr);
 }
 
 /* version that's compatible with fullsample buffers */
@@ -213,12 +213,12 @@ static void set_pass_full_name(
 
 /********************************** New **************************************/
 
-static RenderPass *render_layer_add_pass(RenderResult *rr,
-                                         RenderLayer *rl,
-                                         int channels,
-                                         const char *name,
-                                         const char *viewname,
-                                         const char *chan_id)
+RenderPass *render_layer_add_pass(RenderResult *rr,
+                                  RenderLayer *rl,
+                                  int channels,
+                                  const char *name,
+                                  const char *viewname,
+                                  const char *chan_id)
 {
   const int view_id = BLI_findstringindex(&rr->views, viewname, offsetof(RenderView, name));
   RenderPass *rpass = MEM_callocN(sizeof(RenderPass), name);
@@ -255,7 +255,7 @@ static RenderPass *render_layer_add_pass(RenderResult *rr,
     float *rect;
     int x;
 
-    rpass->rect = MEM_mapallocN(sizeof(float) * rectsize, name);
+    rpass->rect = MEM_callocN(sizeof(float) * rectsize, name);
     if (rpass->rect == NULL) {
       MEM_freeN(rpass);
       return NULL;
@@ -279,12 +279,6 @@ static RenderPass *render_layer_add_pass(RenderResult *rr,
   BLI_addtail(&rl->passes, rpass);
 
   return rpass;
-}
-/* wrapper called from render_opengl */
-RenderPass *gp_add_pass(
-    RenderResult *rr, RenderLayer *rl, int channels, const char *name, const char *viewname)
-{
-  return render_layer_add_pass(rr, rl, channels, name, viewname, "RGBA");
 }
 
 /* called by main render as well for parts */
@@ -481,7 +475,7 @@ RenderResult *render_result_new(Render *re,
       const char *view = rv->name;
 
       if (viewname && viewname[0]) {
-        if (strcmp(view, viewname) != 0) {
+        if (!STREQ(view, viewname)) {
           continue;
         }
       }
@@ -585,8 +579,10 @@ static int passtype_from_name(const char *name)
   int len = BLI_str_partition(name, delim, &sep, &suf);
 
 #define CHECK_PASS(NAME) \
-  if (STREQLEN(name, RE_PASSNAME_##NAME, len)) \
-  return SCE_PASS_##NAME
+  if (STREQLEN(name, RE_PASSNAME_##NAME, len)) { \
+    return SCE_PASS_##NAME; \
+  } \
+  ((void)0)
 
   CHECK_PASS(COMBINED);
   CHECK_PASS(Z);
@@ -715,7 +711,7 @@ static int order_render_passes(const void *a, const void *b)
     if (passtype_a > passtype_b) {
       return 1;
     }
-    else if (passtype_a < passtype_b) {
+    if (passtype_a < passtype_b) {
       return 0;
     }
   }
@@ -734,7 +730,7 @@ static int order_render_passes(const void *a, const void *b)
   if (STREQ(rpa->view, STEREO_LEFT_NAME)) {
     return 0;
   }
-  else if (STREQ(rpb->view, STEREO_LEFT_NAME)) {
+  if (STREQ(rpb->view, STEREO_LEFT_NAME)) {
     return 1;
   }
 
@@ -742,7 +738,7 @@ static int order_render_passes(const void *a, const void *b)
   if (STREQ(rpa->view, STEREO_RIGHT_NAME)) {
     return 0;
   }
-  else if (STREQ(rpb->view, STEREO_RIGHT_NAME)) {
+  if (STREQ(rpb->view, STEREO_RIGHT_NAME)) {
     return 1;
   }
 
@@ -883,7 +879,7 @@ void render_result_merge(RenderResult *rr, RenderResult *rrpart)
           continue;
         }
         /* Renderresult have all passes, renderpart only the active view's passes. */
-        if (strcmp(rpassp->fullname, rpass->fullname) != 0) {
+        if (!STREQ(rpassp->fullname, rpass->fullname)) {
           continue;
         }
 
@@ -917,7 +913,7 @@ bool RE_WriteRenderResult(ReportList *reports,
 
   /* First add views since IMB_exr_add_channel checks number of views. */
   if (render_result_has_views(rr)) {
-    for (RenderView *rview = rr->views.first; rview; rview = rview->next) {
+    LISTBASE_FOREACH (RenderView *, rview, &rr->views) {
       if (!view || STREQ(view, rview->name)) {
         IMB_exr_add_view(exrhandle, rview->name);
       }
@@ -926,7 +922,7 @@ bool RE_WriteRenderResult(ReportList *reports,
 
   /* Compositing result. */
   if (rr->have_combined) {
-    for (RenderView *rview = rr->views.first; rview; rview = rview->next) {
+    LISTBASE_FOREACH (RenderView *, rview, &rr->views) {
       if (!rview->rectf) {
         continue;
       }
@@ -936,9 +932,8 @@ bool RE_WriteRenderResult(ReportList *reports,
         if (!STREQ(view, viewname)) {
           continue;
         }
-        else {
-          viewname = "";
-        }
+
+        viewname = "";
       }
 
       /* Skip compositing if only a single other layer is requested. */
@@ -986,7 +981,7 @@ bool RE_WriteRenderResult(ReportList *reports,
       continue;
     }
 
-    for (RenderPass *rp = rl->passes.first; rp; rp = rp->next) {
+    LISTBASE_FOREACH (RenderPass *, rp, &rl->passes) {
       /* Skip non-RGBA and Z passes if not using multi layer. */
       if (!multi_layer && !(STREQ(rp->name, RE_PASSNAME_COMBINED) || STREQ(rp->name, "") ||
                             (STREQ(rp->name, RE_PASSNAME_Z) && write_z))) {
@@ -999,9 +994,8 @@ bool RE_WriteRenderResult(ReportList *reports,
         if (!STREQ(view, viewname)) {
           continue;
         }
-        else {
-          viewname = "";
-        }
+
+        viewname = "";
       }
 
       /* We only store RGBA passes as half float, for
@@ -1240,7 +1234,7 @@ void render_result_exr_file_begin(Render *re, RenderEngine *engine)
   char str[FILE_MAX];
 
   for (RenderResult *rr = re->result; rr; rr = rr->next) {
-    for (RenderLayer *rl = rr->layers.first; rl; rl = rl->next) {
+    LISTBASE_FOREACH (RenderLayer *, rl, &rr->layers) {
       /* Get passes needed by engine. Normally we would wait for the
        * engine to create them, but for EXR file we need to know in
        * advance. */
@@ -1250,7 +1244,7 @@ void render_result_exr_file_begin(Render *re, RenderEngine *engine)
       /* Create render passes requested by engine. Only this part is
        * mutex locked to avoid deadlock with Python GIL. */
       BLI_rw_mutex_lock(&re->resultmutex, THREAD_LOCK_WRITE);
-      for (RenderPass *pass = templates.first; pass; pass = pass->next) {
+      LISTBASE_FOREACH (RenderPass *, pass, &templates) {
         RE_create_render_pass(
             re->result, pass->name, pass->channels, pass->chan_id, rl->name, NULL);
       }
@@ -1271,7 +1265,7 @@ void render_result_exr_file_end(Render *re, RenderEngine *engine)
 {
   /* Close EXR files. */
   for (RenderResult *rr = re->result; rr; rr = rr->next) {
-    for (RenderLayer *rl = rr->layers.first; rl; rl = rl->next) {
+    LISTBASE_FOREACH (RenderLayer *, rl, &rr->layers) {
       IMB_exr_close(rl->exrhandle);
       rl->exrhandle = NULL;
     }
@@ -1285,7 +1279,7 @@ void render_result_exr_file_end(Render *re, RenderEngine *engine)
   re->result = render_result_new(re, &re->disprect, 0, RR_USE_MEM, RR_ALL_LAYERS, RR_ALL_VIEWS);
   BLI_rw_mutex_unlock(&re->resultmutex);
 
-  for (RenderLayer *rl = re->result->layers.first; rl; rl = rl->next) {
+  LISTBASE_FOREACH (RenderLayer *, rl, &re->result->layers) {
     /* Get passes needed by engine. */
     ListBase templates;
     render_result_get_pass_templates(engine, re, rl, &templates);
@@ -1293,7 +1287,7 @@ void render_result_exr_file_end(Render *re, RenderEngine *engine)
     /* Create render passes requested by engine. Only this part is
      * mutex locked to avoid deadlock with Python GIL. */
     BLI_rw_mutex_lock(&re->resultmutex, THREAD_LOCK_WRITE);
-    for (RenderPass *pass = templates.first; pass; pass = pass->next) {
+    LISTBASE_FOREACH (RenderPass *, pass, &templates) {
       RE_create_render_pass(re->result, pass->name, pass->channels, pass->chan_id, rl->name, NULL);
     }
 
@@ -1515,10 +1509,10 @@ void RE_render_result_rect_from_ibuf(RenderResult *rr,
     rr->have_combined = true;
 
     if (!rv->rectf) {
-      rv->rectf = MEM_mallocN(4 * sizeof(float) * rr->rectx * rr->recty, "render_seq rectf");
+      rv->rectf = MEM_mallocN(sizeof(float[4]) * rr->rectx * rr->recty, "render_seq rectf");
     }
 
-    memcpy(rv->rectf, ibuf->rect_float, 4 * sizeof(float) * rr->rectx * rr->recty);
+    memcpy(rv->rectf, ibuf->rect_float, sizeof(float[4]) * rr->rectx * rr->recty);
 
     /* TSK! Since sequence render doesn't free the *rr render result, the old rect32
      * can hang around when sequence render has rendered a 32 bits one before */
@@ -1543,7 +1537,7 @@ void render_result_rect_fill_zero(RenderResult *rr, const int view_id)
   RenderView *rv = RE_RenderViewGetById(rr, view_id);
 
   if (rv->rectf) {
-    memset(rv->rectf, 0, 4 * sizeof(float) * rr->rectx * rr->recty);
+    memset(rv->rectf, 0, sizeof(float[4]) * rr->rectx * rr->recty);
   }
   else if (rv->rect32) {
     memset(rv->rect32, 0, 4 * rr->rectx * rr->recty);
@@ -1584,15 +1578,15 @@ void render_result_rect_get_pixels(RenderResult *rr,
 
 /*************************** multiview functions *****************************/
 
-bool RE_HasCombinedLayer(RenderResult *res)
+bool RE_HasCombinedLayer(RenderResult *rr)
 {
   RenderView *rv;
 
-  if (res == NULL) {
+  if (rr == NULL) {
     return false;
   }
 
-  rv = res->views.first;
+  rv = rr->views.first;
   if (rv == NULL) {
     return false;
   }
@@ -1600,11 +1594,11 @@ bool RE_HasCombinedLayer(RenderResult *res)
   return (rv->rect32 || rv->rectf);
 }
 
-bool RE_HasFloatPixels(RenderResult *res)
+bool RE_HasFloatPixels(RenderResult *rr)
 {
   RenderView *rview;
 
-  for (rview = res->views.first; rview; rview = rview->next) {
+  for (rview = rr->views.first; rview; rview = rview->next) {
     if (rview->rect32 && !rview->rectf) {
       return false;
     }
@@ -1613,31 +1607,31 @@ bool RE_HasFloatPixels(RenderResult *res)
   return true;
 }
 
-bool RE_RenderResult_is_stereo(RenderResult *res)
+bool RE_RenderResult_is_stereo(RenderResult *rr)
 {
-  if (!BLI_findstring(&res->views, STEREO_LEFT_NAME, offsetof(RenderView, name))) {
+  if (!BLI_findstring(&rr->views, STEREO_LEFT_NAME, offsetof(RenderView, name))) {
     return false;
   }
 
-  if (!BLI_findstring(&res->views, STEREO_RIGHT_NAME, offsetof(RenderView, name))) {
+  if (!BLI_findstring(&rr->views, STEREO_RIGHT_NAME, offsetof(RenderView, name))) {
     return false;
   }
 
   return true;
 }
 
-RenderView *RE_RenderViewGetById(RenderResult *res, const int view_id)
+RenderView *RE_RenderViewGetById(RenderResult *rr, const int view_id)
 {
-  RenderView *rv = BLI_findlink(&res->views, view_id);
-  BLI_assert(res->views.first);
-  return rv ? rv : res->views.first;
+  RenderView *rv = BLI_findlink(&rr->views, view_id);
+  BLI_assert(rr->views.first);
+  return rv ? rv : rr->views.first;
 }
 
-RenderView *RE_RenderViewGetByName(RenderResult *res, const char *viewname)
+RenderView *RE_RenderViewGetByName(RenderResult *rr, const char *viewname)
 {
-  RenderView *rv = BLI_findstring(&res->views, viewname, offsetof(RenderView, name));
-  BLI_assert(res->views.first);
-  return rv ? rv : res->views.first;
+  RenderView *rv = BLI_findstring(&rr->views, viewname, offsetof(RenderView, name));
+  BLI_assert(rr->views.first);
+  return rv ? rv : rr->views.first;
 }
 
 static RenderPass *duplicate_render_pass(RenderPass *rpass)

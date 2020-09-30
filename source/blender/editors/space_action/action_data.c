@@ -42,7 +42,6 @@
 #include "RNA_enum_types.h"
 
 #include "BKE_action.h"
-#include "BKE_animsys.h"
 #include "BKE_context.h"
 #include "BKE_fcurve.h"
 #include "BKE_key.h"
@@ -100,7 +99,7 @@ AnimData *ED_actedit_animdata_from_context(bContext *C)
 /* Create new action */
 static bAction *action_create_new(bContext *C, bAction *oldact)
 {
-  ScrArea *sa = CTX_wm_area(C);
+  ScrArea *area = CTX_wm_area(C);
   bAction *action;
 
   /* create action - the way to do this depends on whether we've got an
@@ -124,8 +123,8 @@ static bAction *action_create_new(bContext *C, bAction *oldact)
   id_us_min(&action->id);
 
   /* set ID-Root type */
-  if (sa->spacetype == SPACE_ACTION) {
-    SpaceAction *saction = (SpaceAction *)sa->spacedata.first;
+  if (area->spacetype == SPACE_ACTION) {
+    SpaceAction *saction = (SpaceAction *)area->spacedata.first;
 
     if (saction->mode == SACTCONT_SHAPEKEY) {
       action->idroot = ID_KE;
@@ -165,13 +164,13 @@ static void actedit_change_action(bContext *C, bAction *act)
  *  1) There must be an dopesheet/action editor, and it must be in a mode which uses actions...
  *        OR
  *     The NLA Editor is active (i.e. Animation Data panel -> new action)
- *  2) The associated AnimData block must not be in tweakmode
+ *  2) The associated AnimData block must not be in tweak-mode.
  */
 static bool action_new_poll(bContext *C)
 {
   Scene *scene = CTX_data_scene(C);
 
-  /* Check tweakmode is off (as you don't want to be tampering with the action in that case) */
+  /* Check tweak-mode is off (as you don't want to be tampering with the action in that case) */
   /* NOTE: unlike for pushdown,
    * this operator needs to be run when creating an action from nothing... */
   if (ED_operator_action_active(C)) {
@@ -301,7 +300,7 @@ void ACTION_OT_new(wmOperatorType *ot)
 /* Criteria:
  *  1) There must be an dopesheet/action editor, and it must be in a mode which uses actions
  *  2) There must be an action active
- *  3) The associated AnimData block must not be in tweakmode
+ *  3) The associated AnimData block must not be in tweak-mode
  */
 static bool action_pushdown_poll(bContext *C)
 {
@@ -309,7 +308,7 @@ static bool action_pushdown_poll(bContext *C)
     SpaceAction *saction = (SpaceAction *)CTX_wm_space_data(C);
     AnimData *adt = ED_actedit_animdata_from_context(C);
 
-    /* Check for AnimData, Actions, and that tweakmode is off */
+    /* Check for AnimData, Actions, and that tweak-mode is off. */
     if (adt && saction->action) {
       /* NOTE: We check this for the AnimData block in question and not the global flag,
        *       as the global flag may be left dirty by some of the browsing ops here.
@@ -331,18 +330,16 @@ static int action_pushdown_exec(bContext *C, wmOperator *op)
 
   /* Do the deed... */
   if (adt) {
-    /* Perform the pushdown operation
-     * - This will deal with all the AnimData-side usercounts
-     */
+    /* Perform the push-down operation
+     * - This will deal with all the AnimData-side user-counts. */
     if (action_has_motion(adt->action) == 0) {
       /* action may not be suitable... */
       BKE_report(op->reports, RPT_WARNING, "Action must have at least one keyframe or F-Modifier");
       return OPERATOR_CANCELLED;
     }
-    else {
-      /* action can be safely added */
-      BKE_nla_action_pushdown(adt);
-    }
+
+    /* action can be safely added */
+    BKE_nla_action_pushdown(adt);
 
     /* Stop displaying this action in this editor
      * NOTE: The editor itself doesn't set a user...
@@ -385,24 +382,23 @@ static int action_stash_exec(bContext *C, wmOperator *op)
       BKE_report(op->reports, RPT_WARNING, "Action must have at least one keyframe or F-Modifier");
       return OPERATOR_CANCELLED;
     }
-    else {
-      /* stash the action */
-      if (BKE_nla_action_stash(adt)) {
-        /* The stash operation will remove the user already,
-         * so the flushing step later shouldn't double up
-         * the usercount fixes. Hence, we must unset this ref
-         * first before setting the new action.
-         */
-        saction->action = NULL;
-      }
-      else {
-        /* action has already been added - simply warn about this, and clear */
-        BKE_report(op->reports, RPT_ERROR, "Action has already been stashed");
-      }
 
-      /* clear action refs from editor, and then also the backing data (not necessary) */
-      actedit_change_action(C, NULL);
+    /* stash the action */
+    if (BKE_nla_action_stash(adt)) {
+      /* The stash operation will remove the user already,
+       * so the flushing step later shouldn't double up
+       * the user-count fixes. Hence, we must unset this ref
+       * first before setting the new action.
+       */
+      saction->action = NULL;
     }
+    else {
+      /* action has already been added - simply warn about this, and clear */
+      BKE_report(op->reports, RPT_ERROR, "Action has already been stashed");
+    }
+
+    /* clear action refs from editor, and then also the backing data (not necessary) */
+    actedit_change_action(C, NULL);
   }
 
   /* Send notifiers that stuff has changed */
@@ -436,14 +432,14 @@ void ACTION_OT_stash(wmOperatorType *ot)
 
 /* Criteria:
  *  1) There must be an dopesheet/action editor, and it must be in a mode which uses actions
- *  2) The associated AnimData block must not be in tweakmode
+ *  2) The associated AnimData block must not be in tweak-mode
  */
 static bool action_stash_create_poll(bContext *C)
 {
   if (ED_operator_action_active(C)) {
     AnimData *adt = ED_actedit_animdata_from_context(C);
 
-    /* Check tweakmode is off (as you don't want to be tampering with the action in that case) */
+    /* Check tweak-mode is off (as you don't want to be tampering with the action in that case) */
     /* NOTE: unlike for pushdown,
      * this operator needs to be run when creating an action from nothing... */
     if (adt) {
@@ -488,28 +484,27 @@ static int action_stash_create_exec(bContext *C, wmOperator *op)
       BKE_report(op->reports, RPT_WARNING, "Action must have at least one keyframe or F-Modifier");
       return OPERATOR_CANCELLED;
     }
+
+    /* stash the action */
+    if (BKE_nla_action_stash(adt)) {
+      bAction *new_action = NULL;
+
+      /* Create new action not based on the old one
+       * (since the "new" operator already does that). */
+      new_action = action_create_new(C, NULL);
+
+      /* The stash operation will remove the user already,
+       * so the flushing step later shouldn't double up
+       * the user-count fixes. Hence, we must unset this ref
+       * first before setting the new action.
+       */
+      saction->action = NULL;
+      actedit_change_action(C, new_action);
+    }
     else {
-      /* stash the action */
-      if (BKE_nla_action_stash(adt)) {
-        bAction *new_action = NULL;
-
-        /* Create new action not based on the old one
-         * (since the "new" operator already does that). */
-        new_action = action_create_new(C, NULL);
-
-        /* The stash operation will remove the user already,
-         * so the flushing step later shouldn't double up
-         * the usercount fixes. Hence, we must unset this ref
-         * first before setting the new action.
-         */
-        saction->action = NULL;
-        actedit_change_action(C, new_action);
-      }
-      else {
-        /* action has already been added - simply warn about this, and clear */
-        BKE_report(op->reports, RPT_ERROR, "Action has already been stashed");
-        actedit_change_action(C, NULL);
-      }
+      /* action has already been added - simply warn about this, and clear */
+      BKE_report(op->reports, RPT_ERROR, "Action has already been stashed");
+      actedit_change_action(C, NULL);
     }
   }
 
@@ -550,7 +545,7 @@ void ACTION_OT_stash_and_create(wmOperatorType *ot)
 void ED_animedit_unlink_action(
     bContext *C, ID *id, AnimData *adt, bAction *act, ReportList *reports, bool force_delete)
 {
-  ScrArea *sa = CTX_wm_area(C);
+  ScrArea *area = CTX_wm_area(C);
 
   /* If the old action only has a single user (that it's about to lose),
    * warn user about it
@@ -609,13 +604,13 @@ void ED_animedit_unlink_action(
     BKE_nla_tweakmode_exit(adt);
 
     /* Flush this to the Action Editor (if that's where this change was initiated) */
-    if (sa->spacetype == SPACE_ACTION) {
+    if (area->spacetype == SPACE_ACTION) {
       actedit_change_action(C, NULL);
     }
   }
   else {
     /* Unlink normally - Setting it to NULL should be enough to get the old one unlinked */
-    if (sa->spacetype == SPACE_ACTION) {
+    if (area->spacetype == SPACE_ACTION) {
       /* clear action editor -> action */
       actedit_change_action(C, NULL);
     }
@@ -711,11 +706,11 @@ static NlaStrip *action_layer_get_nlastrip(ListBase *strips, float ctime)
       /* in range - use this one */
       return strip;
     }
-    else if ((ctime < strip->start) && (strip->prev == NULL)) {
+    if ((ctime < strip->start) && (strip->prev == NULL)) {
       /* before first - use this one */
       return strip;
     }
-    else if ((ctime > strip->end) && (strip->next == NULL)) {
+    if ((ctime > strip->end) && (strip->next == NULL)) {
       /* after last - use this one */
       return strip;
     }
@@ -729,8 +724,8 @@ static NlaStrip *action_layer_get_nlastrip(ListBase *strips, float ctime)
 static void action_layer_switch_strip(
     AnimData *adt, NlaTrack *old_track, NlaStrip *old_strip, NlaTrack *nlt, NlaStrip *strip)
 {
-  /* Exit tweakmode on old strip
-   * NOTE: We need to manually clear this stuff ourselves, as tweakmode exit doesn't do it
+  /* Exit tweak-mode on old strip
+   * NOTE: We need to manually clear this stuff ourselves, as tweak-mode exit doesn't do it
    */
   BKE_nla_tweakmode_exit(adt);
 
@@ -762,11 +757,11 @@ static void action_layer_switch_strip(
       adt->flag |= ADT_NLA_SOLO_TRACK;
       nlt->flag |= NLATRACK_SOLO;
 
-      // TODO: Needs restpose flushing (when we get reference track)
+      // TODO: Needs rest-pose flushing (when we get reference track)
     }
   }
 
-  /* Enter tweakmode again - hopefully we're now "it" */
+  /* Enter tweak-mode again - hopefully we're now "it" */
   BKE_nla_tweakmode_enter(adt);
   BLI_assert(adt->actstrip == strip);
 }
@@ -779,7 +774,7 @@ static bool action_layer_next_poll(bContext *C)
   if (ED_operator_action_active(C)) {
     AnimData *adt = ED_actedit_animdata_from_context(C);
     if (adt) {
-      /* only allow if we're in tweakmode, and there's something above us... */
+      /* only allow if we're in tweak-mode, and there's something above us... */
       if (adt->flag & ADT_NLA_EDIT_ON) {
         /* We need to check if there are any tracks above the active one
          * since the track the action comes from is not stored in AnimData
@@ -841,7 +836,7 @@ static int action_layer_next_exec(bContext *C, wmOperator *op)
   }
   else {
     /* No more actions (strips) - Go back to editing the original active action
-     * NOTE: This will mean exiting tweakmode...
+     * NOTE: This will mean exiting tweak-mode...
      */
     BKE_nla_tweakmode_exit(adt);
 
@@ -856,13 +851,12 @@ static int action_layer_next_exec(bContext *C, wmOperator *op)
       /* turn on NLA muting (to keep same effect) */
       adt->flag |= ADT_NLA_EVAL_OFF;
 
-      // TODO: Needs restpose flushing (when we get reference track)
+      // TODO: Needs rest-pose flushing (when we get reference track)
     }
   }
 
   /* Update the action that this editor now uses
-   * NOTE: The calls above have already handled the usercount/animdata side of things
-   */
+   * NOTE: The calls above have already handled the user-count/anim-data side of things. */
   actedit_change_action(C, adt->action);
   return OPERATOR_FINISHED;
 }
@@ -961,8 +955,7 @@ static int action_layer_prev_exec(bContext *C, wmOperator *op)
   }
 
   /* Update the action that this editor now uses
-   * NOTE: The calls above have already handled the usercount/animdata side of things
-   */
+   * NOTE: The calls above have already handled the user-count/animdata side of things. */
   actedit_change_action(C, adt->action);
   return OPERATOR_FINISHED;
 }

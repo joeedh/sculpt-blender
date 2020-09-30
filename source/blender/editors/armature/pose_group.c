@@ -44,6 +44,7 @@
 #include "WM_types.h"
 
 #include "ED_armature.h"
+#include "ED_outliner.h"
 #include "ED_screen.h"
 
 #include "UI_interface.h"
@@ -176,11 +177,10 @@ static int pose_groups_menu_invoke(bContext *C, wmOperator *op, const wmEvent *U
 
     return OPERATOR_INTERFACE;
   }
-  else {
-    /* just use the active group index, and call the exec callback for the calling operator */
-    RNA_int_set(op->ptr, "type", pose->active_group);
-    return op->type->exec(C, op);
-  }
+
+  /* just use the active group index, and call the exec callback for the calling operator */
+  RNA_int_set(op->ptr, "type", pose->active_group);
+  return op->type->exec(C, op);
 }
 
 /* Assign selected pchans to the bone group that the user selects */
@@ -220,9 +220,7 @@ static int pose_group_assign_exec(bContext *C, wmOperator *op)
   if (done) {
     return OPERATOR_FINISHED;
   }
-  else {
-    return OPERATOR_CANCELLED;
-  }
+  return OPERATOR_CANCELLED;
 }
 
 void POSE_OT_group_assign(wmOperatorType *ot)
@@ -271,9 +269,7 @@ static int pose_group_unassign_exec(bContext *C, wmOperator *UNUSED(op))
   if (done) {
     return OPERATOR_FINISHED;
   }
-  else {
-    return OPERATOR_CANCELLED;
-  }
+  return OPERATOR_CANCELLED;
 }
 
 void POSE_OT_group_unassign(wmOperatorType *ot)
@@ -385,8 +381,6 @@ static int group_sort_exec(bContext *C, wmOperator *UNUSED(op))
   bPoseChannel *pchan;
   tSortActionGroup *agrp_array;
   bActionGroup *agrp;
-  int agrp_count;
-  int i;
 
   if (ELEM(NULL, ob, pose)) {
     return OPERATOR_CANCELLED;
@@ -396,8 +390,9 @@ static int group_sort_exec(bContext *C, wmOperator *UNUSED(op))
   }
 
   /* create temporary array with bone groups and indices */
-  agrp_count = BLI_listbase_count(&pose->agroups);
+  int agrp_count = BLI_listbase_count(&pose->agroups);
   agrp_array = MEM_mallocN(sizeof(tSortActionGroup) * agrp_count, "sort bone groups");
+  int i;
   for (agrp = pose->agroups.first, i = 0; agrp; agrp = agrp->next, i++) {
     BLI_assert(i < agrp_count);
     agrp_array[i].agrp = agrp;
@@ -484,6 +479,7 @@ static int pose_group_select_exec(bContext *C, wmOperator *UNUSED(op))
   bArmature *arm = ob->data;
   DEG_id_tag_update(&arm->id, ID_RECALC_SELECT);
   WM_event_add_notifier(C, NC_OBJECT | ND_POSE, ob);
+  ED_outliner_select_sync_from_pose_bone_tag(C);
 
   return OPERATOR_FINISHED;
 }
@@ -518,6 +514,7 @@ static int pose_group_deselect_exec(bContext *C, wmOperator *UNUSED(op))
   bArmature *arm = ob->data;
   DEG_id_tag_update(&arm->id, ID_RECALC_SELECT);
   WM_event_add_notifier(C, NC_OBJECT | ND_POSE, ob);
+  ED_outliner_select_sync_from_pose_bone_tag(C);
 
   return OPERATOR_FINISHED;
 }

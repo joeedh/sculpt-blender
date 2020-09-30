@@ -44,8 +44,10 @@
 #include "BKE_idprop.h"
 #include "BKE_idtype.h"
 #include "BKE_lib_id.h"
+#include "BKE_lib_query.h"
 #include "BKE_main.h"
 #include "BKE_report.h"
+#include "BKE_screen.h"
 #include "BKE_workspace.h"
 
 #include "WM_api.h"
@@ -55,12 +57,16 @@
 #include "wm_draw.h"
 #include "wm_event_system.h"
 #include "wm_window.h"
+#ifdef WITH_XR_OPENXR
+#  include "wm_xr.h"
+#endif
 
 #include "BKE_undo_system.h"
 #include "ED_screen.h"
 
 #ifdef WITH_PYTHON
 #  include "BPY_extern.h"
+#  include "BPY_extern_run.h"
 #endif
 
 /* ****************************************************** */
@@ -68,6 +74,28 @@
 static void window_manager_free_data(ID *id)
 {
   wm_close_and_free(NULL, (wmWindowManager *)id);
+}
+
+static void window_manager_foreach_id(ID *id, LibraryForeachIDData *data)
+{
+  wmWindowManager *wm = (wmWindowManager *)id;
+
+  LISTBASE_FOREACH (wmWindow *, win, &wm->windows) {
+    BKE_LIB_FOREACHID_PROCESS(data, win->scene, IDWALK_CB_USER_ONE);
+
+    /* This pointer can be NULL during old files reading, better be safe than sorry. */
+    if (win->workspace_hook != NULL) {
+      ID *workspace = (ID *)BKE_workspace_active_get(win->workspace_hook);
+      BKE_LIB_FOREACHID_PROCESS_ID(data, workspace, IDWALK_CB_NOP);
+      /* allow callback to set a different workspace */
+      BKE_workspace_active_set(win->workspace_hook, (WorkSpace *)workspace);
+    }
+    if (BKE_lib_query_foreachid_process_flags_get(data) & IDWALK_INCLUDE_UI) {
+      LISTBASE_FOREACH (ScrArea *, area, &win->global_areas.areabase) {
+        BKE_screen_foreach_id_screen_area(data, area);
+      }
+    }
+  }
 }
 
 IDTypeInfo IDType_ID_WM = {
@@ -84,6 +112,13 @@ IDTypeInfo IDType_ID_WM = {
     .copy_data = NULL,
     .free_data = window_manager_free_data,
     .make_local = NULL,
+    .foreach_id = window_manager_foreach_id,
+    .foreach_cache = NULL,
+
+    .blend_write = NULL,
+    .blend_read_data = NULL,
+    .blend_read_lib = NULL,
+    .blend_read_expand = NULL,
 };
 
 #define MAX_OP_REGISTERED 32
@@ -137,10 +172,10 @@ void WM_operator_free_all_after(wmWindowManager *wm, struct wmOperator *op)
 
 /**
  * Use with extreme care!,
- * properties, customdata etc - must be compatible.
+ * properties, custom-data etc - must be compatible.
  *
  * \param op: Operator to assign the type to.
- * \param ot: OperatorType to assign.
+ * \param ot: Operator type to assign.
  */
 void WM_operator_type_set(wmOperator *op, wmOperatorType *ot)
 {
@@ -242,7 +277,7 @@ void WM_keyconfig_reload(bContext *C)
 {
   if (CTX_py_init_get(C) && !G.background) {
 #ifdef WITH_PYTHON
-    BPY_execute_string(C, (const char *[]){"bpy", NULL}, "bpy.utils.keyconfig_init()");
+    BPY_run_string_eval(C, (const char *[]){"bpy", NULL}, "bpy.utils.keyconfig_init()");
 #endif
   }
 }
@@ -265,7 +300,7 @@ void WM_keyconfig_init(bContext *C)
 
   /* initialize only after python init is done, for keymaps that
    * use python operators */
-  if (CTX_py_init_get(C) && (wm->initialized & WM_KEYCONFIG_IS_INITIALIZED) == 0) {
+  if (CTX_py_init_get(C) && (wm->initialized & WM_KEYCONFIG_IS_INIT) == 0) {
     /* create default key config, only initialize once,
      * it's persistent across sessions */
     if (!(wm->defaultconf->flag & KEYCONF_INIT_DEFAULT)) {
@@ -280,7 +315,7 @@ void WM_keyconfig_init(bContext *C)
     WM_keyconfig_update_tag(NULL, NULL);
     WM_keyconfig_update(wm);
 
-    wm->initialized |= WM_KEYCONFIG_IS_INITIALIZED;
+    wm->initialized |= WM_KEYCONFIG_IS_INIT;
   }
 }
 
@@ -306,7 +341,7 @@ void WM_check(bContext *C)
 
   if (!G.background) {
     /* case: fileread */
-    if ((wm->initialized & WM_WINDOW_IS_INITIALIZED) == 0) {
+    if ((wm->initialized & WM_WINDOW_IS_INIT) == 0) {
       WM_keyconfig_init(C);
       WM_autosave_init(wm);
     }
@@ -317,9 +352,9 @@ void WM_check(bContext *C)
 
   /* case: fileread */
   /* note: this runs in bg mode to set the screen context cb */
-  if ((wm->initialized & WM_WINDOW_IS_INITIALIZED) == 0) {
-    ED_screens_initialize(bmain, wm);
-    wm->initialized |= WM_WINDOW_IS_INITIALIZED;
+  if ((wm->initialized & WM_WINDOW_IS_INIT) == 0) {
+    ED_screens_init(bmain, wm);
+    wm->initialized |= WM_WINDOW_IS_INIT;
   }
 }
 
@@ -356,11 +391,11 @@ void wm_add_default(Main *bmain, bContext *C)
   WorkSpaceLayout *layout = BKE_workspace_layout_find_global(bmain, screen, &workspace);
 
   CTX_wm_manager_set(C, wm);
-  win = wm_window_new(bmain, wm, NULL);
+  win = wm_window_new(bmain, wm, NULL, false);
   win->scene = CTX_data_scene(C);
   STRNCPY(win->view_layer_name, CTX_data_view_layer(C)->name);
   BKE_workspace_active_set(win->workspace_hook, workspace);
-  BKE_workspace_hook_layout_for_workspace_set(win->workspace_hook, workspace, layout);
+  BKE_workspace_active_layout_set(win->workspace_hook, workspace, layout);
   screen->winid = win->winid;
 
   wm->winactive = win;

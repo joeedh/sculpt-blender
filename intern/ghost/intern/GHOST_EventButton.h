@@ -22,8 +22,7 @@
  * Declaration of GHOST_EventButton class.
  */
 
-#ifndef __GHOST_EVENTBUTTON_H__
-#define __GHOST_EVENTBUTTON_H__
+#pragma once
 
 #include "GHOST_Event.h"
 #include "GHOST_Window.h"
@@ -37,17 +36,19 @@ class GHOST_EventButton : public GHOST_Event {
    * Constructor.
    * \param time      The time this event was generated.
    * \param type      The type of this event.
-   * \param window: The window of this event.
-   * \param button: The state of the buttons were at the time of the event.
+   * \param window    The window of this event.
+   * \param button    The state of the buttons were at the time of the event.
+   * \param tablet    The tablet data associated with this event.
    */
   GHOST_EventButton(GHOST_TUns64 time,
                     GHOST_TEventType type,
                     GHOST_IWindow *window,
-                    GHOST_TButtonMask button)
+                    GHOST_TButtonMask button,
+                    const GHOST_TabletData &tablet)
       : GHOST_Event(time, type, window)
   {
     m_buttonEventData.button = button;
-    m_buttonEventData.tablet = window->GetTabletData();
+    m_buttonEventData.tablet = tablet;
     m_data = &m_buttonEventData;
   }
 
@@ -55,5 +56,3 @@ class GHOST_EventButton : public GHOST_Event {
   /** The button event data. */
   GHOST_TEventButtonData m_buttonEventData;
 };
-
-#endif  // __GHOST_EVENTBUTTON_H__

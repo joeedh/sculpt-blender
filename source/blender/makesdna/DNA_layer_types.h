@@ -18,15 +18,14 @@
  * \ingroup DNA
  */
 
-#ifndef __DNA_LAYER_TYPES_H__
-#define __DNA_LAYER_TYPES_H__
+#pragma once
+
+#include "DNA_freestyle_types.h"
+#include "DNA_listBase.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include "DNA_freestyle_types.h"
-#include "DNA_listBase.h"
 
 /**
  * Render-passes for EEVEE.
@@ -173,6 +172,7 @@ enum {
   LAYER_COLLECTION_HOLDOUT = (1 << 5),
   LAYER_COLLECTION_INDIRECT_ONLY = (1 << 6),
   LAYER_COLLECTION_HIDE = (1 << 7),
+  LAYER_COLLECTION_PREVIOUSLY_EXCLUDED = (1 << 8),
 };
 
 /* Layer Collection->runtime_flag
@@ -215,5 +215,3 @@ typedef struct SceneCollection {
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __DNA_LAYER_TYPES_H__ */

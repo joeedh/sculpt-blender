@@ -53,7 +53,7 @@
 
 /* ******************** default callbacks for info space ***************** */
 
-static SpaceLink *info_new(const ScrArea *UNUSED(area), const Scene *UNUSED(scene))
+static SpaceLink *info_create(const ScrArea *UNUSED(area), const Scene *UNUSED(scene))
 {
   ARegion *region;
   SpaceInfo *sinfo;
@@ -77,7 +77,7 @@ static SpaceLink *info_new(const ScrArea *UNUSED(area), const Scene *UNUSED(scen
   region->regiontype = RGN_TYPE_WINDOW;
 
   /* keep in sync with console */
-  region->v2d.scroll |= (V2D_SCROLL_RIGHT);
+  region->v2d.scroll |= V2D_SCROLL_RIGHT;
   region->v2d.align |= V2D_ALIGN_NO_NEG_X | V2D_ALIGN_NO_NEG_Y; /* align bottom left */
   region->v2d.keepofs |= V2D_LOCKOFS_X;
   region->v2d.keepzoom = (V2D_LOCKZOOM_X | V2D_LOCKZOOM_Y | V2D_LIMITZOOM | V2D_KEEPASPECT);
@@ -97,7 +97,7 @@ static void info_free(SpaceLink *UNUSED(sl))
 }
 
 /* spacetype; init callback */
-static void info_init(struct wmWindowManager *UNUSED(wm), ScrArea *UNUSED(sa))
+static void info_init(struct wmWindowManager *UNUSED(wm), ScrArea *UNUSED(area))
 {
 }
 
@@ -139,11 +139,9 @@ static void info_main_region_draw(const bContext *C, ARegion *region)
   /* draw entirely, view changes should be handled here */
   SpaceInfo *sinfo = CTX_wm_space_info(C);
   View2D *v2d = &region->v2d;
-  View2DScrollers *scrollers;
 
   /* clear and setup matrix */
   UI_ThemeClearColor(TH_BACK);
-  GPU_clear(GPU_COLOR_BIT);
 
   /* quick way to avoid drawing if not bug enough */
   if (region->winy < 16) {
@@ -161,9 +159,7 @@ static void info_main_region_draw(const bContext *C, ARegion *region)
   UI_view2d_view_restore(C);
 
   /* scrollers */
-  scrollers = UI_view2d_scrollers_calc(v2d, NULL);
-  UI_view2d_scrollers_draw(v2d, scrollers);
-  UI_view2d_scrollers_free(scrollers);
+  UI_view2d_scrollers_draw(v2d, NULL);
 }
 
 static void info_operatortypes(void)
@@ -209,12 +205,12 @@ static void info_header_region_draw(const bContext *C, ARegion *region)
 }
 
 static void info_main_region_listener(wmWindow *UNUSED(win),
-                                      ScrArea *UNUSED(sa),
+                                      ScrArea *UNUSED(area),
                                       ARegion *region,
                                       wmNotifier *wmn,
                                       const Scene *UNUSED(scene))
 {
-  // SpaceInfo *sinfo = sa->spacedata.first;
+  // SpaceInfo *sinfo = area->spacedata.first;
 
   /* context changes */
   switch (wmn->category) {
@@ -228,7 +224,7 @@ static void info_main_region_listener(wmWindow *UNUSED(win),
 }
 
 static void info_header_listener(wmWindow *UNUSED(win),
-                                 ScrArea *UNUSED(sa),
+                                 ScrArea *UNUSED(area),
                                  ARegion *region,
                                  wmNotifier *wmn,
                                  const Scene *UNUSED(scene))
@@ -267,7 +263,7 @@ static void info_header_region_message_subscribe(const bContext *UNUSED(C),
                                                  WorkSpace *UNUSED(workspace),
                                                  Scene *UNUSED(scene),
                                                  bScreen *UNUSED(screen),
-                                                 ScrArea *UNUSED(sa),
+                                                 ScrArea *UNUSED(area),
                                                  ARegion *region,
                                                  struct wmMsgBus *mbus)
 {
@@ -290,7 +286,7 @@ void ED_spacetype_info(void)
   st->spaceid = SPACE_INFO;
   strncpy(st->name, "Info", BKE_ST_MAXNAME);
 
-  st->new = info_new;
+  st->create = info_create;
   st->free = info_free;
   st->init = info_init;
   st->duplicate = info_duplicate;

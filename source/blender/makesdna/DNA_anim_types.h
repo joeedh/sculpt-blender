@@ -21,17 +21,16 @@
  * \ingroup DNA
  */
 
-#ifndef __DNA_ANIM_TYPES_H__
-#define __DNA_ANIM_TYPES_H__
-
-#ifdef __cplusplus
-extern "C" {
-#endif
+#pragma once
 
 #include "DNA_ID.h"
 #include "DNA_action_types.h"
 #include "DNA_curve_types.h"
 #include "DNA_listBase.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* ************************************************ */
 /* F-Curve DataTypes */
@@ -1048,8 +1047,12 @@ typedef struct AnimOverride {
  * See blenkernel/intern/anim_sys.c for details.
  */
 typedef struct AnimData {
-  /** active action - acts as the 'tweaking track' for the NLA */
+  /**
+   * Active action - acts as the 'tweaking track' for the NLA.
+   * Either use BKE_animdata_set_action() to set this, or call BKE_animdata_action_ensure_idroot()
+   * after setting. */
   bAction *action;
+
   /** temp-storage for the 'real' active action (i.e. the one used before the tweaking-action
    * took over to be edited in the Animation Editors)
    */
@@ -1141,5 +1144,3 @@ typedef struct IdAdtTemplate {
 #ifdef __cplusplus
 };
 #endif
-
-#endif /* __DNA_ANIM_TYPES_H__ */

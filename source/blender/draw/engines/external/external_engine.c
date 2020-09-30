@@ -25,10 +25,12 @@
 
 #include "DRW_render.h"
 
+#include "DNA_modifier_types.h"
 #include "DNA_screen_types.h"
 #include "DNA_view3d_types.h"
 
 #include "BKE_object.h"
+#include "BKE_particle.h"
 
 #include "ED_screen.h"
 
@@ -42,10 +44,15 @@
 
 #define EXTERNAL_ENGINE "BLENDER_EXTERNAL"
 
+extern char datatoc_depth_frag_glsl[];
+extern char datatoc_depth_vert_glsl[];
+
+extern char datatoc_common_view_lib_glsl[];
+
 /* *********** LISTS *********** */
 
 /* GPUViewport.storage
- * Is freed everytime the viewport engine changes */
+ * Is freed every time the viewport engine changes. */
 typedef struct EXTERNAL_Storage {
   int dummy;
 } EXTERNAL_Storage;
@@ -90,8 +97,6 @@ typedef struct EXTERNAL_PrivateData {
   /* Do we need to update the depth or can we reuse the last calculated texture. */
   bool need_depth;
   bool update_depth;
-
-  float last_persmat[4][4];
 } EXTERNAL_PrivateData; /* Transient data */
 
 /* Functions */
@@ -104,7 +109,16 @@ static void external_engine_init(void *vedata)
 
   /* Depth prepass */
   if (!e_data.depth_sh) {
-    e_data.depth_sh = DRW_shader_create_3d_depth_only(GPU_SHADER_CFG_DEFAULT);
+    const GPUShaderConfigData *sh_cfg = &GPU_shader_cfg_data[GPU_SHADER_CFG_DEFAULT];
+
+    e_data.depth_sh = GPU_shader_create_from_arrays({
+        .vert = (const char *[]){sh_cfg->lib,
+                                 datatoc_common_view_lib_glsl,
+                                 datatoc_depth_vert_glsl,
+                                 NULL},
+        .frag = (const char *[]){datatoc_depth_frag_glsl, NULL},
+        .defs = (const char *[]){sh_cfg->def, NULL},
+    });
   }
 
   if (!stl->g_data) {
@@ -166,6 +180,24 @@ static void external_cache_populate(void *vedata, Object *ob)
     return;
   }
 
+  if (ob->type == OB_MESH && ob->modifiers.first != NULL) {
+    LISTBASE_FOREACH (ModifierData *, md, &ob->modifiers) {
+      if (md->type != eModifierType_ParticleSystem) {
+        continue;
+      }
+      ParticleSystem *psys = ((ParticleSystemModifierData *)md)->psys;
+      if (!DRW_object_is_visible_psys_in_active_context(ob, psys)) {
+        continue;
+      }
+      ParticleSettings *part = psys->part;
+      const int draw_as = (part->draw_as == PART_DRAW_REND) ? part->ren_as : part->draw_as;
+
+      if (draw_as == PART_DRAW_PATH) {
+        struct GPUBatch *hairs = DRW_cache_particles_get_hair(ob, psys, NULL);
+        DRW_shgroup_call(stl->g_data->depth_shgrp, hairs, NULL);
+      }
+    }
+  }
   struct GPUBatch *geom = DRW_cache_object_surface_get(ob);
   if (geom) {
     /* Depth Prepass */
@@ -195,7 +227,7 @@ static void external_draw_scene_do(void *vedata)
       return;
     }
 
-    RenderEngine *engine = RE_engine_create_ex(engine_type, true);
+    RenderEngine *engine = RE_engine_create(engine_type);
     engine->tile_x = scene->r.tilex;
     engine->tile_y = scene->r.tiley;
     engine_type->view_update(engine, draw_ctx->evil_C, draw_ctx->depsgraph);
@@ -236,9 +268,9 @@ static void external_draw_scene(void *vedata)
    * OpenGL render is used for quick preview (thumbnails or sequencer preview)
    * where using the rendering engine to preview doesn't make so much sense. */
   if (draw_ctx->evil_C) {
-    float clear_col[4] = {0, 0, 0, 0};
+    const float clear_col[4] = {0, 0, 0, 0};
     /* This is to keep compatibility with external engine. */
-    /* TODO(fclem) remove it eventually. */
+    /* TODO(fclem): remove it eventually. */
     GPU_framebuffer_bind(dfbl->default_fb);
     GPU_framebuffer_clear_color(dfbl->default_fb, clear_col);
 
@@ -257,7 +289,7 @@ static void external_draw_scene(void *vedata)
 
 static void external_engine_free(void)
 {
-  /* All shaders are builtin. */
+  DRW_SHADER_FREE_SAFE(e_data.depth_sh);
 }
 
 static const DrawEngineDataSize external_data_size = DRW_VIEWPORT_DATA_SIZE(EXTERNAL_Data);

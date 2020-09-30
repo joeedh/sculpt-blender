@@ -61,13 +61,13 @@ Scene *ED_scene_add(Main *bmain, bContext *C, wmWindow *win, eSceneCopyMethod me
   else { /* different kinds of copying */
     Scene *scene_old = WM_window_get_active_scene(win);
 
-    scene_new = BKE_scene_copy(bmain, scene_old, method);
-
-    /* these can't be handled in blenkernel currently, so do them here */
+    /* We are going to deep-copy collections, objects and various object data, we need to have
+     * up-to-date obdata for that. */
     if (method == SCE_COPY_FULL) {
       ED_editors_flush_edits(bmain);
-      ED_object_single_users(bmain, scene_new, true, true);
     }
+
+    scene_new = BKE_scene_duplicate(bmain, scene_old, method);
   }
 
   WM_window_set_active_scene(bmain, C, win, scene_new);
@@ -99,7 +99,7 @@ bool ED_scene_delete(bContext *C, Main *bmain, Scene *scene)
     return false;
   }
 
-  for (wmWindow *win = wm->windows.first; win; win = win->next) {
+  LISTBASE_FOREACH (wmWindow *, win, &wm->windows) {
     if (win->parent != NULL) { /* We only care about main windows here... */
       continue;
     }
@@ -116,13 +116,13 @@ bool ED_scene_delete(bContext *C, Main *bmain, Scene *scene)
 /* Depsgraph updates after scene becomes active in a window. */
 void ED_scene_change_update(Main *bmain, Scene *scene, ViewLayer *layer)
 {
-  Depsgraph *depsgraph = BKE_scene_get_depsgraph(bmain, scene, layer, true);
+  Depsgraph *depsgraph = BKE_scene_ensure_depsgraph(bmain, scene, layer);
 
   BKE_scene_set_background(bmain, scene);
-  DEG_graph_relations_update(depsgraph, bmain, scene, layer);
+  DEG_graph_relations_update(depsgraph);
   DEG_on_visible_update(bmain, false);
 
-  ED_render_engine_changed(bmain);
+  ED_render_engine_changed(bmain, false);
   ED_update_for_newframe(bmain, depsgraph);
 }
 
@@ -133,8 +133,8 @@ static bool view_layer_remove_poll(const Scene *scene, const ViewLayer *layer)
   if (act == -1) {
     return false;
   }
-  else if ((scene->view_layers.first == scene->view_layers.last) &&
-           (scene->view_layers.first == layer)) {
+  if ((scene->view_layers.first == scene->view_layers.last) &&
+      (scene->view_layers.first == layer)) {
     /* ensure 1 layer is kept */
     return false;
   }
@@ -175,7 +175,7 @@ bool ED_scene_view_layer_delete(Main *bmain, Scene *scene, ViewLayer *layer, Rep
 
   /* Remove from windows. */
   wmWindowManager *wm = bmain->wm.first;
-  for (wmWindow *win = wm->windows.first; win; win = win->next) {
+  LISTBASE_FOREACH (wmWindow *, win, &wm->windows) {
     if (win->scene == scene && STREQ(win->view_layer_name, layer->name)) {
       ViewLayer *first_layer = BKE_view_layer_default_view(scene);
       STRNCPY(win->view_layer_name, first_layer->name);

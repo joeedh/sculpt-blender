@@ -44,6 +44,7 @@
 
 #include "BKE_displist.h"
 #include "BKE_mball_tessellate.h" /* own include */
+#include "BKE_object.h"
 #include "BKE_scene.h"
 
 #include "DEG_depsgraph.h"
@@ -314,7 +315,7 @@ static float densfunc(const MetaElem *ball, float x, float y, float z)
   float dist2;
   float dvec[3] = {x, y, z};
 
-  mul_m4_v3((float(*)[4])ball->imat, dvec);
+  mul_m4_v3((const float(*)[4])ball->imat, dvec);
 
   switch (ball->type) {
     case MB_BALL:
@@ -404,12 +405,11 @@ static float densfunc(const MetaElem *ball, float x, float y, float z)
 }
 
 /**
- * Computes density at given position form all metaballs which contain this point in their box.
+ * Computes density at given position form all meta-balls which contain this point in their box.
  * Traverses BVH using a queue.
  */
 static float metaball(PROCESS *process, float x, float y, float z)
 {
-  int i;
   float dens = 0.0f;
   unsigned int front = 0, back = 0;
   MetaballBVHNode *node;
@@ -419,7 +419,7 @@ static float metaball(PROCESS *process, float x, float y, float z)
   while (front != back) {
     node = process->bvh_queue[back++];
 
-    for (i = 0; i < 2; i++) {
+    for (int i = 0; i < 2; i++) {
       if ((node->bb[i].min[0] <= x) && (node->bb[i].max[0] >= x) && (node->bb[i].min[1] <= y) &&
           (node->bb[i].max[1] >= y) && (node->bb[i].min[2] <= z) && (node->bb[i].max[2] >= z)) {
         if (node->child[i]) {
@@ -832,18 +832,14 @@ static void makecubetable(void)
 
 void BKE_mball_cubeTable_free(void)
 {
-  int i;
-  INTLISTS *lists, *nlists;
-  INTLIST *ints, *nints;
-
-  for (i = 0; i < 256; i++) {
-    lists = cubetable[i];
+  for (int i = 0; i < 256; i++) {
+    INTLISTS *lists = cubetable[i];
     while (lists) {
-      nlists = lists->next;
+      INTLISTS *nlists = lists->next;
 
-      ints = lists->list;
+      INTLIST *ints = lists->list;
       while (ints) {
-        nints = ints->next;
+        INTLIST *nints = ints->next;
         MEM_freeN(ints);
         ints = nints;
       }
@@ -1013,8 +1009,6 @@ static int vertid(PROCESS *process, const CORNER *c1, const CORNER *c2)
  */
 static void converge(PROCESS *process, const CORNER *c1, const CORNER *c2, float r_p[3])
 {
-  float tmp, dens;
-  unsigned int i;
   float c1_value, c1_co[3];
   float c2_value, c2_co[3];
 
@@ -1031,9 +1025,9 @@ static void converge(PROCESS *process, const CORNER *c1, const CORNER *c2, float
     copy_v3_v3(c2_co, c2->co);
   }
 
-  for (i = 0; i < process->converge_res; i++) {
+  for (uint i = 0; i < process->converge_res; i++) {
     interp_v3_v3v3(r_p, c1_co, c2_co, 0.5f);
-    dens = metaball(process, r_p[0], r_p[1], r_p[2]);
+    float dens = metaball(process, r_p[0], r_p[1], r_p[2]);
 
     if (dens > 0.0f) {
       c1_value = dens;
@@ -1045,7 +1039,7 @@ static void converge(PROCESS *process, const CORNER *c1, const CORNER *c2, float
     }
   }
 
-  tmp = -c1_value / (c2_value - c1_value);
+  float tmp = -c1_value / (c2_value - c1_value);
   interp_v3_v3v3(r_p, c1_co, c2_co, tmp);
 }
 
@@ -1153,7 +1147,6 @@ static void find_first_points(PROCESS *process, const unsigned int em)
 static void polygonize(PROCESS *process)
 {
   CUBE c;
-  unsigned int i;
 
   process->centers = MEM_callocN(HASHSIZE * sizeof(CENTERLIST *), "mbproc->centers");
   process->corners = MEM_callocN(HASHSIZE * sizeof(CORNER *), "mbproc->corners");
@@ -1163,7 +1156,7 @@ static void polygonize(PROCESS *process)
 
   makecubetable();
 
-  for (i = 0; i < process->totelem; i++) {
+  for (uint i = 0; i < process->totelem; i++) {
     find_first_points(process, i);
   }
 
@@ -1191,6 +1184,8 @@ static void init_meta(Depsgraph *depsgraph, PROCESS *process, Scene *scene, Obje
   int obnr, zero_size = 0;
   char obname[MAX_ID_NAME];
   SceneBaseIter iter;
+  const eEvaluationMode deg_eval_mode = DEG_get_mode(depsgraph);
+  const short parenting_dupli_transflag = (OB_DUPLIFACES | OB_DUPLIVERTS);
 
   copy_m4_m4(obmat, ob->obmat); /* to cope with duplicators from BKE_scene_base_iter_next */
   invert_m4_m4(obinv, ob->obmat);
@@ -1203,6 +1198,14 @@ static void init_meta(Depsgraph *depsgraph, PROCESS *process, Scene *scene, Obje
     if (bob->type == OB_MBALL) {
       zero_size = 0;
       ml = NULL;
+
+      /* If this metaball is the original that's used for duplication, only have it it visible when
+       * the instancer is visible too. */
+      if ((base->flag_legacy & OB_FROMDUPLI) == 0 && ob->parent != NULL &&
+          (ob->parent->transflag & parenting_dupli_transflag) != 0 &&
+          (BKE_object_visibility(ob->parent, deg_eval_mode) & OB_VISIBLE_SELF) == 0) {
+        continue;
+      }
 
       if (bob == ob && (base->flag_legacy & OB_FROMDUPLI) == 0) {
         mb = ob->data;
@@ -1265,8 +1268,8 @@ static void init_meta(Depsgraph *depsgraph, PROCESS *process, Scene *scene, Obje
             new_ml = BLI_memarena_alloc(process->pgn_elements, sizeof(MetaElem));
             *(new_ml) = *ml;
             new_ml->bb = BLI_memarena_alloc(process->pgn_elements, sizeof(BoundBox));
-            new_ml->mat = BLI_memarena_alloc(process->pgn_elements, 4 * 4 * sizeof(float));
-            new_ml->imat = BLI_memarena_alloc(process->pgn_elements, 4 * 4 * sizeof(float));
+            new_ml->mat = BLI_memarena_alloc(process->pgn_elements, sizeof(float[4][4]));
+            new_ml->imat = BLI_memarena_alloc(process->pgn_elements, sizeof(float[4][4]));
 
             /* too big stiffness seems only ugly due to linear interpolation
              * no need to have possibility for too big stiffness */
@@ -1432,9 +1435,9 @@ void BKE_mball_polygonize(Depsgraph *depsgraph, Scene *scene, Object *ob, ListBa
   if (process.totelem > 0) {
     build_bvh_spatial(&process, &process.metaball_bvh, 0, process.totelem, &process.allbb);
 
-    /* Don't polygonize metaballs with too high resolution (base mball to small)
-     * note: Eps was 0.0001f but this was giving problems for blood animation for durian,
-     * using 0.00001f. */
+    /* Don't polygonize meta-balls with too high resolution (base mball to small)
+     * note: Eps was 0.0001f but this was giving problems for blood animation for
+     * the open movie "Sintel", using 0.00001f. */
     if (ob->scale[0] > 0.00001f * (process.allbb.max[0] - process.allbb.min[0]) ||
         ob->scale[1] > 0.00001f * (process.allbb.max[1] - process.allbb.min[1]) ||
         ob->scale[2] > 0.00001f * (process.allbb.max[2] - process.allbb.min[2])) {

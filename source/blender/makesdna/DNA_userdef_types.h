@@ -21,8 +21,7 @@
  * \ingroup DNA
  */
 
-#ifndef __DNA_USERDEF_TYPES_H__
-#define __DNA_USERDEF_TYPES_H__
+#pragma once
 
 #include "DNA_listBase.h"
 #include "DNA_texture_types.h" /* ColorBand */
@@ -328,7 +327,7 @@ typedef struct ThemeSpace {
   unsigned char syntaxd[4], syntaxr[4];  // in nodespace used for distort
 
   unsigned char line_numbers[4];
-  char _pad6[7];
+  char _pad6[3];
 
   unsigned char nodeclass_output[4], nodeclass_filter[4];
   unsigned char nodeclass_vector[4], nodeclass_texture[4];
@@ -373,8 +372,6 @@ typedef struct ThemeSpace {
 
   /** Two uses, for uvs with modifier applied on mesh and uvs during painting. */
   unsigned char uv_shadow[4];
-  /** Uvs of other objects. */
-  unsigned char uv_others[4];
 
   /** Outliner - filter match. */
   unsigned char match[4];
@@ -456,6 +453,10 @@ typedef enum eWireColor_Flags {
   /* TH_WIRECOLOR_TEXTCOLS = (1 << 1), */ /* UNUSED */
 } eWireColor_Flags;
 
+typedef struct ThemeCollectionColor {
+  unsigned char color[4];
+} ThemeCollectionColor;
+
 /**
  * A theme.
  *
@@ -493,6 +494,9 @@ typedef struct bTheme {
   /* 20 sets of bone colors for this theme */
   ThemeWireColor tarm[20];
   /*ThemeWireColor tobj[20];*/
+
+  /* See COLLECTION_COLOR_TOT for the number of collection colors. */
+  ThemeCollectionColor collection_color[8];
 
   int active_theme_area;
   char _pad0[4];
@@ -618,10 +622,14 @@ typedef struct UserDef_FileSpaceData {
 } UserDef_FileSpaceData;
 
 typedef struct UserDef_Experimental {
-  char use_undo_speedup;
-  char use_menu_search;
-  /** `makesdna` does not allow empty structs. */
-  char _pad0[6];
+  char use_undo_legacy;
+  char use_new_particle_system;
+  char use_new_hair_type;
+  char use_cycles_debug;
+  char use_sculpt_vertex_colors;
+  char use_image_editor_legacy_drawing;
+  char use_tools_missing_icons;
+  char use_switch_object_operator;
 } UserDef_Experimental;
 
 #define USER_EXPERIMENTAL_TEST(userdef, member) \
@@ -634,12 +642,12 @@ typedef struct UserDef {
   /** #eUserPref_Flag. */
   int flag;
   /** #eDupli_ID_Flags. */
-  short dupflag;
+  unsigned int dupflag;
   /** #eUserPref_PrefFlag preferences for the preferences. */
   char pref_flag;
   char savetime;
   char mouse_emulate_3_button_modifier;
-  char _pad4[3];
+  char _pad4[1];
   /** FILE_MAXDIR length. */
   char tempdir[768];
   char fontdir[768];
@@ -658,9 +666,9 @@ typedef struct UserDef {
   char anim_player[1024];
   int anim_player_preset;
 
-  /** Minimum spacing between gridlines in View2D grids. */
+  /** Minimum spacing between grid-lines in View2D grids. */
   short v2d_min_gridsize;
-  /** #eTimecodeStyles, style of timecode display. */
+  /** #eTimecodeStyles, style of time-code display. */
   short timecode_style;
 
   short versions;
@@ -687,21 +695,22 @@ typedef struct UserDef {
   int audioformat;
   int audiochannels;
 
-  /** Setting for UI scale. */
+  /** Setting for UI scale (fractional), before screen DPI has been applied. */
   float ui_scale;
   /** Setting for UI line width. */
   int ui_line_width;
-  /** Runtime, full DPI divided by pixelsize. */
+  /** Runtime, full DPI divided by `pixelsize`. */
   int dpi;
-  /** Runtime, multiplier to scale UI elements based on DPI. */
+  /** Runtime, multiplier to scale UI elements based on DPI (fractional). */
   float dpi_fac;
+  /** Runtime, `1.0 / dpi_fac` */
   float inv_dpi_fac;
-  /** Runtime, line width and point size based on DPI. */
+  /** Runtime, calculated from line-width and point-size based on DPI (rounded to int). */
   float pixelsize;
   /** Deprecated, for forward compatibility. */
   int virtual_pixel;
 
-  /** Console scrollback limit. */
+  /** Console scroll-back limit. */
   int scrollback;
   /** Node insert offset (aka auto-offset) margin, but might be useful for later stuff as well. */
   char node_margin;
@@ -730,7 +739,7 @@ typedef struct UserDef {
   char _pad1[2];
   int undomemory;
   float gpu_viewport_quality DNA_DEPRECATED;
-  short gp_manhattendist, gp_euclideandist, gp_eraser;
+  short gp_manhattandist, gp_euclideandist, gp_eraser;
   /** #eGP_UserdefSettings. */
   short gp_settings;
   char _pad13[4];
@@ -874,8 +883,12 @@ typedef struct UserDef {
   int sequencer_disk_cache_compression; /* eUserpref_DiskCacheCompression */
   int sequencer_disk_cache_size_limit;
   short sequencer_disk_cache_flag;
-
   char _pad5[2];
+
+  float collection_instance_empty_size;
+  char _pad10[3];
+
+  char statusbar_flag; /* eUserpref_StatusBar_Flag */
 
   struct WalkNavigation walk_navigation;
 
@@ -971,8 +984,9 @@ typedef enum ePathCompare_Flag {
 /* Helper macro for checking frame clamping */
 #define FRAMENUMBER_MIN_CLAMP(cfra) \
   { \
-    if ((U.flag & USER_NONEGFRAMES) && (cfra < 0)) \
+    if ((U.flag & USER_NONEGFRAMES) && (cfra < 0)) { \
       cfra = 0; \
+    } \
   } \
   (void)0
 
@@ -1074,6 +1088,14 @@ typedef enum eUserpref_APP_Flag {
   USER_APP_LOCK_UI_LAYOUT = (1 << 0),
 } eUserpref_APP_Flag;
 
+/** #UserDef.statusbar_flag */
+typedef enum eUserpref_StatusBar_Flag {
+  STATUSBAR_SHOW_MEMORY = (1 << 0),
+  STATUSBAR_SHOW_VRAM = (1 << 1),
+  STATUSBAR_SHOW_STATS = (1 << 2),
+  STATUSBAR_SHOW_VERSION = (1 << 3),
+} eUserpref_StatusBar_Flag;
+
 /**
  * Auto-Keying mode.
  * #UserDef.autokey_mode
@@ -1121,12 +1143,12 @@ typedef enum eAutokey_Flag {
 typedef enum eUserpref_Translation_Flags {
   USER_TR_TOOLTIPS = (1 << 0),
   USER_TR_IFACE = (1 << 1),
-  USER_TR_UNUSED_2 = (1 << 2), /* cleared */
-  USER_TR_UNUSED_3 = (1 << 3), /* cleared */
-  USER_TR_UNUSED_4 = (1 << 4), /* cleared */
-  USER_DOTRANSLATE = (1 << 5),
-  USER_TR_UNUSED_6 = (1 << 6), /* cleared */
-  USER_TR_UNUSED_7 = (1 << 7), /* cleared */
+  USER_TR_UNUSED_2 = (1 << 2),            /* cleared */
+  USER_TR_UNUSED_3 = (1 << 3),            /* cleared */
+  USER_TR_UNUSED_4 = (1 << 4),            /* cleared */
+  USER_DOTRANSLATE_DEPRECATED = (1 << 5), /* Deprecated in 2.83. */
+  USER_TR_UNUSED_6 = (1 << 6),            /* cleared */
+  USER_TR_UNUSED_7 = (1 << 7),            /* cleared */
   USER_TR_NEWDATANAME = (1 << 8),
 } eUserpref_Translation_Flags;
 
@@ -1149,6 +1171,15 @@ typedef enum eDupli_ID_Flags {
   USER_DUP_HAIR = (1 << 14),
   USER_DUP_POINTCLOUD = (1 << 15),
   USER_DUP_VOLUME = (1 << 16),
+
+  USER_DUP_OBDATA = (~0) & ((1 << 24) - 1),
+
+  /* Those are not exposed as user preferences, only used internaly. */
+  USER_DUP_OBJECT = (1 << 24),
+  /* USER_DUP_COLLECTION = (1 << 25), */ /* UNUSED, keep because we may implement. */
+
+  /* Duplicate (and hence make local) linked data. */
+  USER_DUP_LINKED_ID = (1 << 30),
 } eDupli_ID_Flags;
 
 /**
@@ -1188,7 +1219,7 @@ typedef enum eColorPicker_Types {
 } eColorPicker_Types;
 
 /**
- * Timecode display styles
+ * Time-code display styles.
  * #UserDef.timecode_style
  */
 typedef enum eTimecodeStyles {
@@ -1290,8 +1321,8 @@ typedef enum eUserpref_RenderDisplayType {
 } eUserpref_RenderDisplayType;
 
 typedef enum eUserpref_TempSpaceDisplayType {
-  USER_TEMP_SPACE_DISPLAY_FULLSCREEN,
-  USER_TEMP_SPACE_DISPLAY_WINDOW,
+  USER_TEMP_SPACE_DISPLAY_FULLSCREEN = 0,
+  USER_TEMP_SPACE_DISPLAY_WINDOW = 1,
 } eUserpref_TempSpaceDisplayType;
 
 typedef enum eUserpref_EmulateMMBMod {
@@ -1305,8 +1336,13 @@ typedef enum eUserpref_DiskCacheCompression {
   USER_SEQ_DISK_CACHE_COMPRESSION_HIGH = 2,
 } eUserpref_DiskCacheCompression;
 
+/* Locale Ids. Auto will try to get local from OS. Our default is English though. */
+/** #UserDef.language */
+enum {
+  ULANGUAGE_AUTO = 0,
+  ULANGUAGE_ENGLISH = 1,
+};
+
 #ifdef __cplusplus
 }
-#endif
-
 #endif

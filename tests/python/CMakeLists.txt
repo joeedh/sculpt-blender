@@ -48,18 +48,14 @@ endfunction()
 
 # Run Python script outside Blender.
 function(add_python_test testname testscript)
-  if(MSVC)
-    add_test(
-      NAME ${testname}
-      COMMAND ${TEST_PYTHON_EXE} ${testscript} ${ARGN}
-    )
-  else()
-    add_test(
-      NAME ${testname}
-      COMMAND ${testscript} ${ARGN}
-    )
+  if(NOT TEST_PYTHON_EXE)
+    message(FATAL_ERROR "No Python configured for running tests, set TEST_PYTHON_EXE.")
   endif()
 
+  add_test(
+    NAME ${testname}
+    COMMAND ${TEST_PYTHON_EXE} ${testscript} ${ARGN}
+  )
   set_tests_properties(${testname} PROPERTIES ENVIRONMENT LSAN_OPTIONS=exitcode=0)
 endfunction()
 
@@ -189,6 +185,22 @@ add_blender_test(
 )
 
 add_blender_test(
+  physics_cloth
+  ${TEST_SRC_DIR}/physics/cloth_test.blend
+  --python ${TEST_PYTHON_DIR}/physics_cloth.py
+  --
+  --run-all-tests
+)
+
+add_blender_test(
+  physics_softbody
+  ${TEST_SRC_DIR}/physics/softbody_test.blend
+  --python ${TEST_PYTHON_DIR}/physics_softbody.py
+  --
+  --run-all-tests
+)
+
+add_blender_test(
   constraints
   --python ${CMAKE_CURRENT_LIST_DIR}/bl_constraints.py
   --
@@ -203,6 +215,15 @@ add_blender_test(
   --python ${TEST_PYTHON_DIR}/operators.py
   --
   --run-all-tests
+)
+
+# ------------------------------------------------------------------------------
+# ANIMATION TESTS
+add_blender_test(
+  bl_animation_fcurves
+  --python ${CMAKE_CURRENT_LIST_DIR}/bl_animation_fcurves.py
+  --
+  --testdir "${TEST_SRC_DIR}/animation"
 )
 
 # ------------------------------------------------------------------------------
@@ -325,7 +346,7 @@ add_blender_test(
   --python ${CMAKE_CURRENT_LIST_DIR}/bl_test.py --
   --run={'FINISHED'}&bpy.ops.export_mesh.ply\(filepath='${TEST_OUT_DIR}/io_tests/export_ply_vertices.ply'\)
   --md5_source=${TEST_OUT_DIR}/io_tests/export_ply_vertices.ply
-  --md5=37faba0aa2014451b27f951afa92f870 --md5_method=FILE
+  --md5=ee6ce2e69c1d9a7418ff0548f6338f70 --md5_method=FILE
 )
 
 
@@ -650,8 +671,8 @@ if(WITH_ALEMBIC)
   get_filename_component(ALEMBIC_ROOT_DIR ${real_include_dir} DIRECTORY)
 
   add_python_test(
-    alembic_tests
-    ${CMAKE_CURRENT_LIST_DIR}/alembic_tests.py
+    alembic_export_tests
+    ${CMAKE_CURRENT_LIST_DIR}/alembic_export_tests.py
     --blender "${TEST_BLENDER_EXE}"
     --testdir "${TEST_SRC_DIR}/alembic"
     --alembic-root "${ALEMBIC_ROOT_DIR}"

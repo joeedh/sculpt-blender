@@ -17,8 +17,7 @@
  * All rights reserved.
  */
 
-#ifndef __BKE_SEQUENCER_OFFSCREEN_H__
-#define __BKE_SEQUENCER_OFFSCREEN_H__
+#pragma once
 
 /** \file
  * \ingroup bke
@@ -47,10 +46,8 @@ typedef struct ImBuf *(*SequencerDrawView)(struct Depsgraph *depsgraph,
                                            const char *viewname,
                                            struct GPUOffScreen *ofs,
                                            char err_out[256]);
-extern SequencerDrawView sequencer_view3d_cb;
+extern SequencerDrawView sequencer_view3d_fn;
 
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __BKE_SEQUENCER_H__ */

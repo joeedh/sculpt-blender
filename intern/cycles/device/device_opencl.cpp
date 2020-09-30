@@ -119,6 +119,8 @@ void device_opencl_info(vector<DeviceInfo> &devices)
     info.display_device = true;
     info.use_split_kernel = true;
     info.has_volume_decoupled = false;
+    info.has_adaptive_stop_per_sample = false;
+    info.denoisers = DENOISER_NLM;
     info.id = id;
 
     /* Check OpenCL extensions */

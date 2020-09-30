@@ -55,7 +55,7 @@ static void applyCrease(TransInfo *t, const int UNUSED(mval[2]))
 
   CLAMP_MAX(crease, 1.0f);
 
-  snapGridIncrement(t, &crease);
+  transform_snap_increment(t, &crease);
 
   applyNumInput(&t->num, &crease);
 
@@ -87,10 +87,6 @@ static void applyCrease(TransInfo *t, const int UNUSED(mval[2]))
   FOREACH_TRANS_DATA_CONTAINER (t, tc) {
     TransData *td = tc->data;
     for (i = 0; i < tc->data_len; i++, td++) {
-      if (td->flag & TD_NOACTION) {
-        break;
-      }
-
       if (td->flag & TD_SKIP) {
         continue;
       }
@@ -109,7 +105,7 @@ static void applyCrease(TransInfo *t, const int UNUSED(mval[2]))
 
   recalcData(t);
 
-  ED_area_status_text(t->sa, str);
+  ED_area_status_text(t->area, str);
 }
 
 void initCrease(TransInfo *t)

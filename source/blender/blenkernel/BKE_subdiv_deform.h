@@ -21,8 +21,7 @@
  * \ingroup bke
  */
 
-#ifndef __BKE_SUBDIV_DEFORM_H__
-#define __BKE_SUBDIV_DEFORM_H__
+#pragma once
 
 #include "BLI_sys_types.h"
 
@@ -34,10 +33,10 @@ struct Mesh;
 struct Subdiv;
 
 /* Special version of subdivision surface which calculates final positions for coarse vertices.
- * Effectively is pushsing the coarse positions to the limit surface.
+ * Effectively is pushing the coarse positions to the limit surface.
  *
  * One of the usage examples is calculation of crazy space of subdivision modifier, allowing to
- * paint on a deformed mesh with subsurf on it.
+ * paint on a deformed mesh with sub-surf on it.
  *
  * vertex_cos are supposed to hold coordinates of the coarse mesh. */
 void BKE_subdiv_deform_coarse_vertices(struct Subdiv *subdiv,
@@ -48,5 +47,3 @@ void BKE_subdiv_deform_coarse_vertices(struct Subdiv *subdiv,
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __BKE_SUBDIV_DEFORM_H__ */

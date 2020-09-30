@@ -55,7 +55,7 @@ static void applySkinResize(TransInfo *t, const int UNUSED(mval[2]))
   else {
     copy_v3_fl(t->values_final, t->values[0]);
 
-    snapGridIncrement(t, t->values_final);
+    transform_snap_increment(t, t->values_final);
 
     if (applyNumInput(&t->num, t->values_final)) {
       constraintNumInput(t, t->values_final);
@@ -73,11 +73,6 @@ static void applySkinResize(TransInfo *t, const int UNUSED(mval[2]))
     for (i = 0; i < tc->data_len; i++, td++) {
       float tmat[3][3], smat[3][3];
       float fsize[3];
-
-      if (td->flag & TD_NOACTION) {
-        break;
-      }
-
       if (td->flag & TD_SKIP) {
         continue;
       }
@@ -102,7 +97,7 @@ static void applySkinResize(TransInfo *t, const int UNUSED(mval[2]))
 
   recalcData(t);
 
-  ED_area_status_text(t->sa, str);
+  ED_area_status_text(t->area, str);
 }
 
 void initSkinResize(TransInfo *t)

@@ -26,14 +26,12 @@
 
 #include "BLI_math.h"
 
-#include "DNA_meshdata_types.h"
 #include "DNA_object_types.h"
 #include "DNA_screen_types.h"
 #include "DNA_space_types.h"
 #include "DNA_view3d_types.h"
 
 #include "BKE_context.h"
-#include "BKE_editmesh.h"
 #include "BKE_layer.h"
 
 #include "RNA_access.h"
@@ -44,7 +42,6 @@
 #include "WM_api.h"
 #include "WM_message.h"
 #include "WM_types.h"
-#include "wm.h" /* XXX */
 
 #include "ED_gizmo_library.h"
 #include "ED_gizmo_utils.h"
@@ -68,10 +65,10 @@ static bool gizmo2d_generic_poll(const bContext *C, wmGizmoGroupType *gzgt)
     return false;
   }
 
-  ScrArea *sa = CTX_wm_area(C);
-  switch (sa->spacetype) {
+  ScrArea *area = CTX_wm_area(C);
+  switch (area->spacetype) {
     case SPACE_IMAGE: {
-      SpaceImage *sima = sa->spacedata.first;
+      SpaceImage *sima = area->spacedata.first;
       Object *obedit = CTX_data_edit_object(C);
       if (!ED_space_image_show_uvedit(sima, obedit)) {
         return false;
@@ -86,7 +83,7 @@ static void gizmo2d_pivot_point_message_subscribe(struct wmGizmoGroup *gzgroup,
                                                   struct wmMsgBus *mbus,
                                                   /* Additional args. */
                                                   bScreen *screen,
-                                                  ScrArea *sa,
+                                                  ScrArea *area,
                                                   ARegion *region)
 {
   wmMsgSubscribeValue msg_sub_value_gz_tag_refresh = {
@@ -95,9 +92,9 @@ static void gizmo2d_pivot_point_message_subscribe(struct wmGizmoGroup *gzgroup,
       .notify = WM_gizmo_do_msg_notify_tag_refresh,
   };
 
-  switch (sa->spacetype) {
+  switch (area->spacetype) {
     case SPACE_IMAGE: {
-      SpaceImage *sima = sa->spacedata.first;
+      SpaceImage *sima = area->spacedata.first;
       PointerRNA ptr;
       RNA_pointer_create(&screen->id, &RNA_SpaceImageEditor, sima, &ptr);
       {
@@ -214,17 +211,15 @@ static bool gizmo2d_calc_bounds(const bContext *C, float *r_center, float *r_min
     r_max = max_buf;
   }
 
-  ScrArea *sa = CTX_wm_area(C);
+  ScrArea *area = CTX_wm_area(C);
   bool changed = false;
-  if (sa->spacetype == SPACE_IMAGE) {
-    SpaceImage *sima = sa->spacedata.first;
+  if (area->spacetype == SPACE_IMAGE) {
     Scene *scene = CTX_data_scene(C);
     ViewLayer *view_layer = CTX_data_view_layer(C);
-    Image *ima = ED_space_image(sima);
     uint objects_len = 0;
     Object **objects = BKE_view_layer_array_from_objects_in_edit_mode_unique_data_with_uvs(
         view_layer, NULL, &objects_len);
-    if (ED_uvedit_minmax_multi(scene, ima, objects, objects_len, r_min, r_max)) {
+    if (ED_uvedit_minmax_multi(scene, objects, objects_len, r_min, r_max)) {
       changed = true;
     }
     MEM_freeN(objects);
@@ -241,11 +236,11 @@ static bool gizmo2d_calc_bounds(const bContext *C, float *r_center, float *r_min
 
 static bool gizmo2d_calc_center(const bContext *C, float r_center[2])
 {
-  ScrArea *sa = CTX_wm_area(C);
+  ScrArea *area = CTX_wm_area(C);
   bool has_select = false;
   zero_v2(r_center);
-  if (sa->spacetype == SPACE_IMAGE) {
-    SpaceImage *sima = sa->spacedata.first;
+  if (area->spacetype == SPACE_IMAGE) {
+    SpaceImage *sima = area->spacedata.first;
     Scene *scene = CTX_data_scene(C);
     ViewLayer *view_layer = CTX_data_view_layer(C);
     ED_uvedit_center_from_pivot_ex(sima, scene, view_layer, r_center, sima->around, &has_select);
@@ -355,8 +350,8 @@ static void gizmo2d_xform_setup(const bContext *UNUSED(C), wmGizmoGroup *gzgroup
     ptr = WM_gizmo_operator_set(ggd->cage, 0, ot_translate, NULL);
     RNA_boolean_set(ptr, "release_confirm", 1);
 
-    bool constraint_x[3] = {1, 0, 0};
-    bool constraint_y[3] = {0, 1, 0};
+    const bool constraint_x[3] = {1, 0, 0};
+    const bool constraint_y[3] = {0, 1, 0};
 
     ptr = WM_gizmo_operator_set(ggd->cage, ED_GIZMO_CAGE2D_PART_SCALE_MIN_X, ot_resize, NULL);
     PropertyRNA *prop_release_confirm = RNA_struct_find_property(ptr, "release_confirm");
@@ -489,7 +484,7 @@ static void gizmo2d_xform_draw_prepare(const bContext *C, wmGizmoGroup *gzgroup)
   ARegion *region = CTX_wm_region(C);
   GizmoGroup2D *ggd = gzgroup->customdata;
   float origin[3] = {UNPACK2(ggd->origin), 0.0f};
-  float origin_aa[3] = {UNPACK2(ggd->origin), 0.0f};
+  const float origin_aa[3] = {UNPACK2(ggd->origin), 0.0f};
 
   gizmo2d_origin_to_region(region, origin);
 
@@ -509,9 +504,9 @@ static void gizmo2d_xform_no_cage_message_subscribe(const struct bContext *C,
                                                     struct wmMsgBus *mbus)
 {
   bScreen *screen = CTX_wm_screen(C);
-  ScrArea *sa = CTX_wm_area(C);
+  ScrArea *area = CTX_wm_area(C);
   ARegion *region = CTX_wm_region(C);
-  gizmo2d_pivot_point_message_subscribe(gzgroup, mbus, screen, sa, region);
+  gizmo2d_pivot_point_message_subscribe(gzgroup, mbus, screen, area, region);
 }
 
 void ED_widgetgroup_gizmo2d_xform_callbacks_set(wmGizmoGroupType *gzgt)
@@ -671,9 +666,9 @@ static void gizmo2d_resize_message_subscribe(const struct bContext *C,
                                              struct wmMsgBus *mbus)
 {
   bScreen *screen = CTX_wm_screen(C);
-  ScrArea *sa = CTX_wm_area(C);
+  ScrArea *area = CTX_wm_area(C);
   ARegion *region = CTX_wm_region(C);
-  gizmo2d_pivot_point_message_subscribe(gzgroup, mbus, screen, sa, region);
+  gizmo2d_pivot_point_message_subscribe(gzgroup, mbus, screen, area, region);
 }
 
 void ED_widgetgroup_gizmo2d_resize_callbacks_set(wmGizmoGroupType *gzgt)
@@ -791,9 +786,9 @@ static void gizmo2d_rotate_message_subscribe(const struct bContext *C,
                                              struct wmMsgBus *mbus)
 {
   bScreen *screen = CTX_wm_screen(C);
-  ScrArea *sa = CTX_wm_area(C);
+  ScrArea *area = CTX_wm_area(C);
   ARegion *region = CTX_wm_region(C);
-  gizmo2d_pivot_point_message_subscribe(gzgroup, mbus, screen, sa, region);
+  gizmo2d_pivot_point_message_subscribe(gzgroup, mbus, screen, area, region);
 }
 
 void ED_widgetgroup_gizmo2d_rotate_callbacks_set(wmGizmoGroupType *gzgt)

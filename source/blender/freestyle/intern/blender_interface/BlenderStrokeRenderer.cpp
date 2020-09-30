@@ -18,7 +18,6 @@
  * \ingroup freestyle
  */
 
-/* clang-format off */
 #include "BlenderStrokeRenderer.h"
 
 #include "../application/AppConfig.h"
@@ -26,7 +25,6 @@
 
 #include "MEM_guardedalloc.h"
 
-extern "C" {
 #include "RNA_access.h"
 #include "RNA_types.h"
 
@@ -65,10 +63,8 @@ extern "C" {
 #include "RE_pipeline.h"
 
 #include "render_types.h"
-}
 
 #include <limits.h>
-/* clang-format on */
 
 namespace Freestyle {
 
@@ -145,8 +141,7 @@ BlenderStrokeRenderer::BlenderStrokeRenderer(Render *re, int render_count) : Str
   view_layer->layflag = SCE_LAY_SOLID | SCE_LAY_ZTRA;
 
   // Camera
-  Object *object_camera = BKE_object_add(
-      freestyle_bmain, freestyle_scene, view_layer, OB_CAMERA, NULL);
+  Object *object_camera = BKE_object_add(freestyle_bmain, view_layer, OB_CAMERA, NULL);
 
   Camera *camera = (Camera *)object_camera->data;
   camera->type = CAM_ORTHO;
@@ -465,7 +460,7 @@ void BlenderStrokeRenderer::RenderStrokeRepBasic(StrokeRep *iStrokeRep) const
   vector<StrokeGroup *> *groups = hasTex ? &self->texturedStrokeGroups : &self->strokeGroups;
   StrokeGroup *group;
   if (groups->empty() || !(groups->back()->totvert + totvert < MESH_MAX_VERTS &&
-                           groups->back()->totcol + 1 < MAXMAT)) {
+                           groups->back()->materials.size() + 1 < MAXMAT)) {
     group = new StrokeGroup;
     groups->push_back(group);
   }
@@ -477,7 +472,10 @@ void BlenderStrokeRenderer::RenderStrokeRepBasic(StrokeRep *iStrokeRep) const
   group->totedge += totedge;
   group->totpoly += totpoly;
   group->totloop += totloop;
-  group->totcol++;
+
+  if (!group->materials.contains(ma)) {
+    group->materials.add_new(ma, group->materials.size());
+  }
 }
 
 // Check if the triangle is visible (i.e., within the render image boundary)
@@ -578,7 +576,7 @@ void BlenderStrokeRenderer::GenerateStrokeMesh(StrokeGroup *group, bool hasTex)
 {
 #if 0
   Object *object_mesh = BKE_object_add(
-      freestyle_bmain, freestyle_scene, (ViewLayer *)freestyle_scene->view_layers.first, OB_MESH);
+      freestyle_bmain, (ViewLayer *)freestyle_scene->view_layers.first, OB_MESH);
   DEG_relations_tag_update(freestyle_bmain);
 #else
   Object *object_mesh = NewMesh();
@@ -589,7 +587,7 @@ void BlenderStrokeRenderer::GenerateStrokeMesh(StrokeGroup *group, bool hasTex)
   mesh->totedge = group->totedge;
   mesh->totpoly = group->totpoly;
   mesh->totloop = group->totloop;
-  mesh->totcol = group->totcol;
+  mesh->totcol = group->materials.size();
 
   mesh->mvert = (MVert *)CustomData_add_layer(
       &mesh->vdata, CD_MVERT, CD_CALLOC, NULL, mesh->totvert);
@@ -630,12 +628,20 @@ void BlenderStrokeRenderer::GenerateStrokeMesh(StrokeGroup *group, bool hasTex)
   mesh->mloopcol = colors;
 
   mesh->mat = (Material **)MEM_mallocN(sizeof(Material *) * mesh->totcol, "MaterialList");
+  for (const auto &item : group->materials.items()) {
+    Material *material = item.key;
+    const int matnr = item.value;
+    mesh->mat[matnr] = material;
+    if (material) {
+      id_us_plus(&material->id);
+    }
+  }
 
   ////////////////////
   //  Data copy
   ////////////////////
 
-  int vertex_index = 0, edge_index = 0, loop_index = 0, material_index = 0;
+  int vertex_index = 0, edge_index = 0, loop_index = 0;
   int visible_faces, visible_segments;
   bool visible;
   Strip::vertex_container::iterator v[3];
@@ -646,8 +652,7 @@ void BlenderStrokeRenderer::GenerateStrokeMesh(StrokeGroup *group, bool hasTex)
                                            itend = group->strokes.end();
        it != itend;
        ++it) {
-    mesh->mat[material_index] = (*it)->getMaterial();
-    id_us_plus(&mesh->mat[material_index]->id);
+    const int matnr = group->materials.lookup_default((*it)->getMaterial(), 0);
 
     vector<Strip *> &strips = (*it)->getStrips();
     for (vector<Strip *>::const_iterator s = strips.begin(), send = strips.end(); s != send; ++s) {
@@ -729,7 +734,7 @@ void BlenderStrokeRenderer::GenerateStrokeMesh(StrokeGroup *group, bool hasTex)
           // poly
           polys->loopstart = loop_index;
           polys->totloop = 3;
-          polys->mat_nr = material_index;
+          polys->mat_nr = matnr;
           ++polys;
 
           // Even and odd loops connect triangles vertices differently
@@ -814,8 +819,7 @@ void BlenderStrokeRenderer::GenerateStrokeMesh(StrokeGroup *group, bool hasTex)
         }
       }  // loop over strip vertices
     }    // loop over strips
-    material_index++;
-  }  // loop over strokes
+  }      // loop over strokes
 
   BKE_object_materials_test(freestyle_bmain, object_mesh, (ID *)mesh);
 
@@ -823,7 +827,6 @@ void BlenderStrokeRenderer::GenerateStrokeMesh(StrokeGroup *group, bool hasTex)
   BLI_assert(mesh->totvert == vertex_index);
   BLI_assert(mesh->totedge == edge_index);
   BLI_assert(mesh->totloop == loop_index);
-  BLI_assert(mesh->totcol == material_index);
   BKE_mesh_validate(mesh, true, true);
 #endif
 }
@@ -865,8 +868,7 @@ Render *BlenderStrokeRenderer::RenderScene(Render * /*re*/, bool render)
 #endif
 
   Render *freestyle_render = RE_NewSceneRender(freestyle_scene);
-  ViewLayer *view_layer = (ViewLayer *)freestyle_scene->view_layers.first;
-  DEG_graph_relations_update(freestyle_depsgraph, freestyle_bmain, freestyle_scene, view_layer);
+  DEG_graph_relations_update(freestyle_depsgraph);
 
   RE_RenderFreestyleStrokes(
       freestyle_render, freestyle_bmain, freestyle_scene, render && get_stroke_count() > 0);

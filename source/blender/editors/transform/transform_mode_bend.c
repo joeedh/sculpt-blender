@@ -104,7 +104,7 @@ static void Bend(TransInfo *t, const int UNUSED(mval[2]))
     const float radius_snap = 0.1f;
     const float snap_hack = (t->snap[1] * data->warp_init_dist) / radius_snap;
     values.scale *= snap_hack;
-    snapGridIncrement(t, values.vector);
+    transform_snap_increment(t, values.vector);
     values.scale /= snap_hack;
   }
 #endif
@@ -186,10 +186,6 @@ static void Bend(TransInfo *t, const int UNUSED(mval[2]))
       float delta[3];
       float fac, fac_scaled;
 
-      if (td->flag & TD_NOACTION) {
-        break;
-      }
-
       if (td->flag & TD_SKIP) {
         continue;
       }
@@ -246,7 +242,7 @@ static void Bend(TransInfo *t, const int UNUSED(mval[2]))
 
   recalcData(t);
 
-  ED_area_status_text(t->sa, str);
+  ED_area_status_text(t->area, str);
 }
 
 void initBend(TransInfo *t)
@@ -289,7 +285,8 @@ void initBend(TransInfo *t)
 
   curs = t->scene->cursor.location;
   copy_v3_v3(data->warp_sta, curs);
-  ED_view3d_win_to_3d((View3D *)t->sa->spacedata.first, t->region, curs, mval_fl, data->warp_end);
+  ED_view3d_win_to_3d(
+      (View3D *)t->area->spacedata.first, t->region, curs, mval_fl, data->warp_end);
 
   copy_v3_v3(data->warp_nor, t->viewinv[2]);
   normalize_v3(data->warp_nor);

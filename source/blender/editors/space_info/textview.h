@@ -18,8 +18,7 @@
  * \ingroup spinfo
  */
 
-#ifndef __TEXTVIEW_H__
-#define __TEXTVIEW_H__
+#pragma once
 
 enum eTextViewContext_LineFlag {
   TVC_LINE_FG = (1 << 0),
@@ -60,7 +59,7 @@ typedef struct TextViewContext {
                                               int *r_icon,
                                               uchar r_icon_fg[4],
                                               uchar r_icon_bg[4]);
-  void (*draw_cursor)(struct TextViewContext *tvc, int cwidth, int columns, int descender);
+  void (*draw_cursor)(struct TextViewContext *tvc, int cwidth, int columns);
   /* constant theme colors */
   void (*const_colors)(struct TextViewContext *tvc, unsigned char bg_sel[4]);
   const void *iter;
@@ -79,5 +78,3 @@ int textview_draw(struct TextViewContext *tvc,
                   const int mval_init[2],
                   void **r_mval_pick_item,
                   int *r_mval_pick_offset);
-
-#endif /* __TEXTVIEW_H__ */

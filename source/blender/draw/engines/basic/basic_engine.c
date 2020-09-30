@@ -37,8 +37,8 @@
 
 #define BASIC_ENGINE "BLENDER_BASIC"
 
-extern char datatoc_conservative_depth_frag_glsl[];
-extern char datatoc_conservative_depth_vert_glsl[];
+extern char datatoc_depth_frag_glsl[];
+extern char datatoc_depth_vert_glsl[];
 extern char datatoc_conservative_depth_geom_glsl[];
 
 extern char datatoc_common_view_lib_glsl[];
@@ -46,7 +46,7 @@ extern char datatoc_common_view_lib_glsl[];
 /* *********** LISTS *********** */
 
 /* GPUViewport.storage
- * Is freed everytime the viewport engine changes */
+ * Is freed every time the viewport engine changes. */
 typedef struct BASIC_StorageList {
   struct BASIC_PrivateData *g_data;
 } BASIC_StorageList;
@@ -79,6 +79,7 @@ static struct {
 typedef struct BASIC_PrivateData {
   DRWShadingGroup *depth_shgrp[2];
   DRWShadingGroup *depth_shgrp_cull[2];
+  DRWShadingGroup *depth_hair_shgrp[2];
 } BASIC_PrivateData; /* Transient data */
 
 /* Functions */
@@ -90,22 +91,28 @@ static void basic_engine_init(void *UNUSED(vedata))
 
   /* Depth prepass */
   if (!sh_data->depth) {
-    sh_data->depth = DRW_shader_create_3d_depth_only(draw_ctx->sh_cfg);
-
     const GPUShaderConfigData *sh_cfg = &GPU_shader_cfg_data[draw_ctx->sh_cfg];
+
+    sh_data->depth = GPU_shader_create_from_arrays({
+        .vert = (const char *[]){sh_cfg->lib,
+                                 datatoc_common_view_lib_glsl,
+                                 datatoc_depth_vert_glsl,
+                                 NULL},
+        .frag = (const char *[]){datatoc_depth_frag_glsl, NULL},
+        .defs = (const char *[]){sh_cfg->def, NULL},
+    });
+
     sh_data->depth_conservative = GPU_shader_create_from_arrays({
         .vert = (const char *[]){sh_cfg->lib,
                                  datatoc_common_view_lib_glsl,
-                                 datatoc_conservative_depth_vert_glsl,
+                                 datatoc_depth_vert_glsl,
                                  NULL},
         .geom = (const char *[]){sh_cfg->lib,
                                  datatoc_common_view_lib_glsl,
                                  datatoc_conservative_depth_geom_glsl,
                                  NULL},
-        .frag = (const char *[]){datatoc_common_view_lib_glsl,
-                                 datatoc_conservative_depth_frag_glsl,
-                                 NULL},
-        .defs = (const char *[]){sh_cfg->def, NULL},
+        .frag = (const char *[]){datatoc_depth_frag_glsl, NULL},
+        .defs = (const char *[]){sh_cfg->def, "#define CONSERVATIVE_RASTER\n", NULL},
     });
   }
 }
@@ -124,7 +131,7 @@ static void basic_cache_init(void *vedata)
     stl->g_data = MEM_callocN(sizeof(*stl->g_data), __func__);
   }
 
-  /* Twice for normal and infront objects. */
+  /* Twice for normal and in front objects. */
   for (int i = 0; i < 2; i++) {
     DRWState clip_state = (draw_ctx->sh_cfg == GPU_SHADER_CFG_CLIPPED) ? DRW_STATE_CLIP_PLANES : 0;
     DRWState infront_state = (DRW_state_is_select() && (i == 1)) ? DRW_STATE_IN_FRONT_SELECT : 0;
@@ -136,6 +143,9 @@ static void basic_cache_init(void *vedata)
     stl->g_data->depth_shgrp[i] = grp = DRW_shgroup_create(sh, psl->depth_pass[i]);
     DRW_shgroup_uniform_vec2(grp, "sizeViewport", DRW_viewport_size_get(), 1);
     DRW_shgroup_uniform_vec2(grp, "sizeViewportInv", DRW_viewport_invert_size_get(), 1);
+
+    stl->g_data->depth_hair_shgrp[i] = grp = DRW_shgroup_create(sh_data->depth,
+                                                                psl->depth_pass[i]);
 
     state |= DRW_STATE_CULL_BACK;
     DRW_PASS_CREATE(psl->depth_pass_cull[i], state | clip_state | infront_state);
@@ -149,13 +159,13 @@ static void basic_cache_populate(void *vedata, Object *ob)
 {
   BASIC_StorageList *stl = ((BASIC_Data *)vedata)->stl;
 
-  /* TODO(fclem) fix selection of smoke domains. */
+  /* TODO(fclem): fix selection of smoke domains. */
 
   if (!DRW_object_is_renderable(ob) || (ob->dt < OB_SOLID)) {
     return;
   }
 
-  bool do_in_front = (ob->dtx & OB_DRAWXRAY) != 0;
+  bool do_in_front = (ob->dtx & OB_DRAW_IN_FRONT) != 0;
 
   const DRWContextState *draw_ctx = DRW_context_state_get();
   if (ob != draw_ctx->object_edit) {
@@ -167,7 +177,7 @@ static void basic_cache_populate(void *vedata, Object *ob)
       const int draw_as = (part->draw_as == PART_DRAW_REND) ? part->ren_as : part->draw_as;
       if (draw_as == PART_DRAW_PATH) {
         struct GPUBatch *hairs = DRW_cache_particles_get_hair(ob, psys, NULL);
-        DRW_shgroup_call(stl->g_data->depth_shgrp[do_in_front], hairs, NULL);
+        DRW_shgroup_call(stl->g_data->depth_hair_shgrp[do_in_front], hairs, NULL);
       }
     }
   }
@@ -198,7 +208,7 @@ static void basic_cache_populate(void *vedata, Object *ob)
                                        stl->g_data->depth_shgrp[do_in_front];
 
   if (use_sculpt_pbvh) {
-    DRW_shgroup_call_sculpt(shgrp, ob, false, false, false);
+    DRW_shgroup_call_sculpt(shgrp, ob, false, false);
   }
   else {
     struct GPUBatch *geom = DRW_cache_object_surface_get(ob);
@@ -229,6 +239,7 @@ static void basic_engine_free(void)
 {
   for (int i = 0; i < GPU_SHADER_CFG_LEN; i++) {
     BASIC_Shaders *sh_data = &e_data.sh_data[i];
+    DRW_SHADER_FREE_SAFE(sh_data->depth);
     DRW_SHADER_FREE_SAFE(sh_data->depth_conservative);
   }
 }

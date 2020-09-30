@@ -20,7 +20,11 @@
 
 # Libraries configuration for Apple.
 
-set(MACOSX_DEPLOYMENT_TARGET "10.11")
+if("${CMAKE_OSX_ARCHITECTURES}" STREQUAL "arm64")
+  set(MACOSX_DEPLOYMENT_TARGET 11.00)
+else()
+  set(MACOSX_DEPLOYMENT_TARGET 10.13)
+endif()
 
 macro(find_package_wrapper)
 # do nothing, just satisfy the macro
@@ -186,7 +190,7 @@ if(SYSTEMSTUBS_LIBRARY)
   list(APPEND PLATFORM_LINKLIBS SystemStubs)
 endif()
 
-set(PLATFORM_CFLAGS "-pipe -funsigned-char")
+set(PLATFORM_CFLAGS "${PLATFORM_CFLAGS} -pipe -funsigned-char")
 set(PLATFORM_LINKFLAGS
   "-fexceptions -framework CoreServices -framework Foundation -framework IOKit -framework AppKit -framework Cocoa -framework Carbon -framework AudioUnit -framework AudioToolbox -framework CoreAudio -framework Metal -framework QuartzCore"
 )
@@ -222,12 +226,10 @@ if(WITH_OPENCOLLADA)
     -lMathMLSolver
     -lGeneratedSaxParser
     -lbuffer -lftoa -lUTF
-    ${OPENCOLLADA_LIBPATH}/libxml2.a
   )
-  # PCRE is bundled with openCollada
-  # set(PCRE ${LIBDIR}/pcre)
-  # set(PCRE_LIBPATH ${PCRE}/lib)
+  # PCRE and XML2 are bundled with OpenCollada.
   set(PCRE_LIBRARIES pcre)
+  set(XML2_LIBRARIES xml2)
 endif()
 
 if(WITH_SDL)
@@ -371,8 +373,9 @@ if(WITH_CYCLES_OSL)
   list(APPEND OSL_LIBRARIES ${OSL_LIB_COMP} -force_load ${OSL_LIB_EXEC} ${OSL_LIB_QUERY})
   find_path(OSL_INCLUDE_DIR OSL/oslclosure.h PATHS ${CYCLES_OSL}/include)
   find_program(OSL_COMPILER NAMES oslc PATHS ${CYCLES_OSL}/bin)
+  find_path(OSL_SHADER_DIR NAMES stdosl.h PATHS ${CYCLES_OSL}/shaders)
 
-  if(OSL_INCLUDE_DIR AND OSL_LIBRARIES AND OSL_COMPILER)
+  if(OSL_INCLUDE_DIR AND OSL_LIBRARIES AND OSL_COMPILER AND OSL_SHADER_DIR)
     set(OSL_FOUND TRUE)
   else()
     message(STATUS "OSL not found")
@@ -380,9 +383,25 @@ if(WITH_CYCLES_OSL)
   endif()
 endif()
 
+if("${CMAKE_OSX_ARCHITECTURES}" STREQUAL "arm64")
+  set(WITH_CYCLES_EMBREE OFF)
+  set(WITH_OPENIMAGEDENOISE OFF)
+  set(WITH_CPU_SSE OFF)
+endif()
+
 if(WITH_CYCLES_EMBREE)
   find_package(Embree 3.8.0 REQUIRED)
   set(PLATFORM_LINKFLAGS "${PLATFORM_LINKFLAGS} -Xlinker -stack_size -Xlinker 0x100000")
+
+  # Embree static library linking can mix up SSE and AVX symbols, causing
+  # crashes on macOS systems with older CPUs that don't have AVX. Using
+  # force load avoids that. The Embree shared library does not suffer from
+  # this problem, precisely because linking a shared library uses force load.
+  set(_embree_libraries_force_load)
+  foreach(_embree_library ${EMBREE_LIBRARIES})
+    list(APPEND _embree_libraries_force_load "-Wl,-force_load,${_embree_library}")
+  endforeach()
+  set(EMBREE_LIBRARIES ${_embree_libraries_force_load})
 endif()
 
 if(WITH_OPENIMAGEDENOISE)
@@ -396,6 +415,14 @@ endif()
 
 if(WITH_TBB)
   find_package(TBB)
+endif()
+
+if(WITH_POTRACE)
+  find_package(Potrace)
+  if(NOT POTRACE_FOUND)
+    message(WARNING "potrace not found, disabling WITH_POTRACE")
+    set(WITH_POTRACE OFF)
+  endif()
 endif()
 
 # CMake FindOpenMP doesn't know about AppleClang before 3.12, so provide custom flags.
@@ -422,10 +449,18 @@ if(WITH_OPENMP)
 endif()
 
 if(WITH_XR_OPENXR)
-  find_package(OpenXR-SDK)
-  if(NOT OPENXR_SDK_FOUND)
+  find_package(XR_OpenXR_SDK)
+  if(NOT XR_OPENXR_SDK_FOUND)
     message(WARNING "OpenXR-SDK was not found, disabling WITH_XR_OPENXR")
     set(WITH_XR_OPENXR OFF)
+  endif()
+endif()
+
+if(WITH_GMP)
+  find_package(GMP)
+  if(NOT GMP_FOUND)
+    message(WARNING "GMP not found, disabling WITH_GMP")
+    set(WITH_GMP OFF)
   endif()
 endif()
 
@@ -441,8 +476,8 @@ if(CMAKE_OSX_ARCHITECTURES MATCHES "x86_64" OR CMAKE_OSX_ARCHITECTURES MATCHES "
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -ftree-vectorize  -fvariable-expansion-in-unroller")
   endif()
 else()
-  set(CMAKE_C_FLAGS_RELEASE "-mdynamic-no-pic -fno-strict-aliasing")
-  set(CMAKE_CXX_FLAGS_RELEASE "-mdynamic-no-pic -fno-strict-aliasing")
+  set(CMAKE_C_FLAGS_RELEASE "-O2 -mdynamic-no-pic -fno-strict-aliasing")
+  set(CMAKE_CXX_FLAGS_RELEASE "-O2 -mdynamic-no-pic -fno-strict-aliasing")
 endif()
 
 if(${XCODE_VERSION} VERSION_EQUAL 5 OR ${XCODE_VERSION} VERSION_GREATER 5)
@@ -455,7 +490,6 @@ endif()
 set(PLATFORM_LINKFLAGS
   "${PLATFORM_LINKFLAGS} -Xlinker -unexported_symbols_list -Xlinker '${CMAKE_SOURCE_DIR}/source/creator/osx_locals.map'"
 )
-set(PLATFORM_CFLAGS "${PLATFORM_CFLAGS} -fvisibility=hidden")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
 set(PLATFORM_LINKFLAGS "${PLATFORM_LINKFLAGS} -stdlib=libc++")

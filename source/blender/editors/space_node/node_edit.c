@@ -69,6 +69,7 @@
 
 #include "NOD_composite.h"
 #include "NOD_shader.h"
+#include "NOD_simulation.h"
 #include "NOD_texture.h"
 #include "node_intern.h" /* own include */
 
@@ -127,12 +128,12 @@ static int compo_get_recalc_flags(const bContext *C)
   int recalc_flags = 0;
 
   for (win = wm->windows.first; win; win = win->next) {
-    const bScreen *sc = WM_window_get_active_screen(win);
-    ScrArea *sa;
+    const bScreen *screen = WM_window_get_active_screen(win);
+    ScrArea *area;
 
-    for (sa = sc->areabase.first; sa; sa = sa->next) {
-      if (sa->spacetype == SPACE_IMAGE) {
-        SpaceImage *sima = sa->spacedata.first;
+    for (area = screen->areabase.first; area; area = area->next) {
+      if (area->spacetype == SPACE_IMAGE) {
+        SpaceImage *sima = area->spacedata.first;
         if (sima->image) {
           if (sima->image->type == IMA_TYPE_R_RESULT) {
             recalc_flags |= COM_RECALC_COMPOSITE;
@@ -142,8 +143,8 @@ static int compo_get_recalc_flags(const bContext *C)
           }
         }
       }
-      else if (sa->spacetype == SPACE_NODE) {
-        SpaceNode *snode = sa->spacedata.first;
+      else if (area->spacetype == SPACE_NODE) {
+        SpaceNode *snode = area->spacedata.first;
         if (snode->flag & SNODE_BACKDRAW) {
           recalc_flags |= COM_RECALC_VIEWER;
         }
@@ -206,12 +207,11 @@ static void compo_initjob(void *cjv)
   ViewLayer *view_layer = cj->view_layer;
 
   cj->compositor_depsgraph = DEG_graph_new(bmain, scene, view_layer, DAG_EVAL_RENDER);
-  DEG_graph_build_for_compositor_preview(
-      cj->compositor_depsgraph, bmain, scene, view_layer, cj->ntree);
+  DEG_graph_build_for_compositor_preview(cj->compositor_depsgraph, cj->ntree);
 
   /* NOTE: Don't update animation to preserve unkeyed changes, this means can not use
    * evaluate_on_framechange. */
-  DEG_evaluate_on_refresh(bmain, cj->compositor_depsgraph);
+  DEG_evaluate_on_refresh(cj->compositor_depsgraph);
 
   bNodeTree *ntree_eval = (bNodeTree *)DEG_get_evaluated_id(cj->compositor_depsgraph,
                                                             &cj->ntree->id);
@@ -237,7 +237,12 @@ static void compo_progressjob(void *cjv, float progress)
 }
 
 /* only this runs inside thread */
-static void compo_startjob(void *cjv, short *stop, short *do_update, float *progress)
+static void compo_startjob(void *cjv,
+                           /* Cannot be const, this function implements wm_jobs_start_callback.
+                            * NOLINTNEXTLINE: readability-non-const-parameter. */
+                           short *stop,
+                           short *do_update,
+                           float *progress)
 {
   CompoJob *cj = cjv;
   bNodeTree *ntree = cj->localtree;
@@ -310,7 +315,7 @@ void ED_node_composite_job(const bContext *C, struct bNodeTree *nodetree, Scene 
   Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
 
-  /* to fix bug: [#32272] */
+  /* to fix bug: T32272. */
   if (G.is_rendering) {
     return;
   }
@@ -353,10 +358,10 @@ bool composite_node_active(bContext *C)
   if (ED_operator_node_active(C)) {
     SpaceNode *snode = CTX_wm_space_node(C);
     if (ED_node_is_compositor(snode)) {
-      return 1;
+      return true;
     }
   }
-  return 0;
+  return false;
 }
 
 /* operator poll callback */
@@ -365,10 +370,10 @@ bool composite_node_editable(bContext *C)
   if (ED_operator_node_editable(C)) {
     SpaceNode *snode = CTX_wm_space_node(C);
     if (ED_node_is_compositor(snode)) {
-      return 1;
+      return true;
     }
   }
-  return 0;
+  return false;
 }
 
 void snode_dag_update(bContext *C, SpaceNode *snode)
@@ -436,6 +441,11 @@ bool ED_node_is_shader(struct SpaceNode *snode)
 bool ED_node_is_texture(struct SpaceNode *snode)
 {
   return STREQ(snode->tree_idname, ntreeType_Texture->idname);
+}
+
+bool ED_node_is_simulation(struct SpaceNode *snode)
+{
+  return STREQ(snode->tree_idname, ntreeType_Simulation->idname);
 }
 
 /* assumes nothing being done in ntree yet, sets the default in/out node */
@@ -546,35 +556,35 @@ void ED_node_composit_default(const bContext *C, struct Scene *sce)
 
 /* assumes nothing being done in ntree yet, sets the default in/out node */
 /* called from shading buttons or header */
-void ED_node_texture_default(const bContext *C, Tex *tx)
+void ED_node_texture_default(const bContext *C, Tex *tex)
 {
   bNode *in, *out;
   bNodeSocket *fromsock, *tosock;
 
   /* but lets check it anyway */
-  if (tx->nodetree) {
+  if (tex->nodetree) {
     if (G.debug & G_DEBUG) {
       printf("error in texture initialize\n");
     }
     return;
   }
 
-  tx->nodetree = ntreeAddTree(NULL, "Texture Nodetree", ntreeType_Texture->idname);
+  tex->nodetree = ntreeAddTree(NULL, "Texture Nodetree", ntreeType_Texture->idname);
 
-  out = nodeAddStaticNode(C, tx->nodetree, TEX_NODE_OUTPUT);
+  out = nodeAddStaticNode(C, tex->nodetree, TEX_NODE_OUTPUT);
   out->locx = 300.0f;
   out->locy = 300.0f;
 
-  in = nodeAddStaticNode(C, tx->nodetree, TEX_NODE_CHECKER);
+  in = nodeAddStaticNode(C, tex->nodetree, TEX_NODE_CHECKER);
   in->locx = 10.0f;
   in->locy = 300.0f;
-  nodeSetActive(tx->nodetree, in);
+  nodeSetActive(tex->nodetree, in);
 
   fromsock = in->outputs.first;
   tosock = out->inputs.first;
-  nodeAddLink(tx->nodetree, in, fromsock, out, tosock);
+  nodeAddLink(tex->nodetree, in, fromsock, out, tosock);
 
-  ntreeUpdateTree(CTX_data_main(C), tx->nodetree);
+  ntreeUpdateTree(CTX_data_main(C), tex->nodetree);
 }
 
 /* Here we set the active tree(s), even called for each redraw now, so keep it fast :) */
@@ -642,9 +652,12 @@ void snode_update(SpaceNode *snode, bNode *node)
   }
 }
 
-void ED_node_set_active(Main *bmain, bNodeTree *ntree, bNode *node)
+void ED_node_set_active(Main *bmain, bNodeTree *ntree, bNode *node, bool *r_active_texture_changed)
 {
   const bool was_active_texture = (node->flag & NODE_ACTIVE_TEXTURE) != 0;
+  if (r_active_texture_changed) {
+    *r_active_texture_changed = false;
+  }
 
   nodeSetActive(ntree, node);
 
@@ -713,6 +726,9 @@ void ED_node_set_active(Main *bmain, bNodeTree *ntree, bNode *node)
           }
         }
 
+        if (r_active_texture_changed) {
+          *r_active_texture_changed = true;
+        }
         ED_node_tag_update_nodetree(bmain, ntree, node);
         WM_main_add_notifier(NC_IMAGE, NULL);
       }
@@ -1073,21 +1089,21 @@ void NODE_OT_resize(wmOperatorType *ot)
 
 /* ********************** hidden sockets ******************** */
 
-int node_has_hidden_sockets(bNode *node)
+bool node_has_hidden_sockets(bNode *node)
 {
   bNodeSocket *sock;
 
   for (sock = node->inputs.first; sock; sock = sock->next) {
     if (sock->flag & SOCK_HIDDEN) {
-      return 1;
+      return true;
     }
   }
   for (sock = node->outputs.first; sock; sock = sock->next) {
     if (sock->flag & SOCK_HIDDEN) {
-      return 1;
+      return true;
     }
   }
-  return 0;
+  return false;
 }
 
 void node_set_hidden_sockets(SpaceNode *snode, bNode *node, int set)
@@ -1284,7 +1300,7 @@ static int node_duplicate_exec(bContext *C, wmOperator *op)
       newnode = node->new_node;
 
       nodeSetSelected(node, false);
-      node->flag &= ~NODE_ACTIVE;
+      node->flag &= ~(NODE_ACTIVE | NODE_ACTIVE_TEXTURE);
       nodeSetSelected(newnode, true);
 
       do_tag_update |= (do_tag_update || node_connected_to_output(bmain, ntree, newnode));
@@ -1326,7 +1342,7 @@ void NODE_OT_duplicate(wmOperatorType *ot)
 
 bool ED_node_select_check(ListBase *lb)
 {
-  for (bNode *node = lb->first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, lb) {
     if (node->flag & NODE_SELECT) {
       return true;
     }
@@ -1346,7 +1362,7 @@ void ED_node_select_all(ListBase *lb, int action)
     }
   }
 
-  for (bNode *node = lb->first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, lb) {
     switch (action) {
       case SEL_SELECT:
         nodeSetSelected(node, true);
@@ -1416,11 +1432,15 @@ int node_render_changed_exec(bContext *C, wmOperator *UNUSED(op))
   Scene *sce = CTX_data_scene(C);
   bNode *node;
 
+  /* This is actually a test whether scene is used by the compositor or not.
+   * All the nodes are using same render result, so there is no need to do
+   * anything smart about check how exactly scene is used. */
   for (node = sce->nodetree->nodes.first; node; node = node->next) {
-    if (node->id == (ID *)sce && node->need_exec) {
+    if (node->id == (ID *)sce) {
       break;
     }
   }
+
   if (node) {
     ViewLayer *view_layer = BLI_findlink(&sce->view_layers, node->custom1);
 
@@ -1676,6 +1696,8 @@ static int node_mute_exec(bContext *C, wmOperator *UNUSED(op))
     }
   }
 
+  do_tag_update |= ED_node_is_simulation(snode);
+
   snode_notify(C, snode);
   if (do_tag_update) {
     snode_dag_update(C, snode);
@@ -1717,6 +1739,8 @@ static int node_delete_exec(bContext *C, wmOperator *UNUSED(op))
       nodeRemoveNode(bmain, snode->edittree, node, true);
     }
   }
+
+  do_tag_update |= ED_node_is_simulation(snode);
 
   ntreeUpdateTree(CTX_data_main(C), snode->edittree);
 
@@ -2718,7 +2742,7 @@ static int clear_viewer_border_exec(bContext *C, wmOperator *UNUSED(op))
 void NODE_OT_clear_viewer_border(wmOperatorType *ot)
 {
   /* identifiers */
-  ot->name = "Clear Viewer Border";
+  ot->name = "Clear Viewer Region";
   ot->description = "Clear the boundaries for viewer operations";
   ot->idname = "NODE_OT_clear_viewer_border";
 

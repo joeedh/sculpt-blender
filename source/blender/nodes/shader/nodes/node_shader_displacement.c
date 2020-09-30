@@ -39,7 +39,7 @@ static void node_shader_init_displacement(bNodeTree *UNUSED(ntree), bNode *node)
   node->custom1 = SHD_SPACE_OBJECT; /* space */
 
   /* Set default value here for backwards compatibility. */
-  for (bNodeSocket *sock = node->inputs.first; sock; sock = sock->next) {
+  LISTBASE_FOREACH (bNodeSocket *, sock, &node->inputs) {
     if (STREQ(sock->name, "Midlevel")) {
       ((bNodeSocketValueFloat *)sock->default_value)->value = 0.5f;
     }
@@ -64,10 +64,9 @@ static int gpu_shader_displacement(GPUMaterial *mat,
     return GPU_stack_link(
         mat, node, "node_displacement_object", in, out, GPU_builtin(GPU_OBJECT_MATRIX));
   }
-  else {
-    return GPU_stack_link(
-        mat, node, "node_displacement_world", in, out, GPU_builtin(GPU_OBJECT_MATRIX));
-  }
+
+  return GPU_stack_link(
+      mat, node, "node_displacement_world", in, out, GPU_builtin(GPU_OBJECT_MATRIX));
 }
 
 /* node type definition */

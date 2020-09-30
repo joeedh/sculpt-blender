@@ -251,9 +251,7 @@ finally:
   pRes[3] = fSign;
 }
 
-static void emDM_calc_loop_tangents_thread(TaskPool *__restrict UNUSED(pool),
-                                           void *taskdata,
-                                           int UNUSED(threadid))
+static void emDM_calc_loop_tangents_thread(TaskPool *__restrict UNUSED(pool), void *taskdata)
 {
   struct SGLSLEditMeshToTangent *mesh2tangent = taskdata;
   /* new computation method */
@@ -276,8 +274,8 @@ static void emDM_calc_loop_tangents_thread(TaskPool *__restrict UNUSED(pool),
 /**
  * \see #BKE_mesh_calc_loop_tangent, same logic but used arrays instead of #BMesh data.
  *
- * \note This function is not so normal, its using `bm->ldata` as input,
- * but output's to `dm->loopData`.
+ * \note This function is not so normal, its using #BMesh.ldata as input,
+ * but output's to #Mesh.ldata.
  * This is done because #CD_TANGENT is cache data used only for drawing.
  */
 void BKE_editmesh_loop_tangent_calc(BMEditMesh *em,
@@ -362,9 +360,8 @@ void BKE_editmesh_loop_tangent_calc(BMEditMesh *em,
 #endif
     /* Calculation */
     if (em->tottri != 0) {
-      TaskScheduler *scheduler = BLI_task_scheduler_get();
       TaskPool *task_pool;
-      task_pool = BLI_task_pool_create(scheduler, NULL);
+      task_pool = BLI_task_pool_create(NULL, TASK_PRIORITY_LOW);
 
       tangent_mask_curr = 0;
       /* Calculate tangent layers */
@@ -417,8 +414,7 @@ void BKE_editmesh_loop_tangent_calc(BMEditMesh *em,
         mesh2tangent->looptris = (const BMLoop *(*)[3])em->looptris;
         mesh2tangent->tangent = loopdata_out->layers[index].data;
 
-        BLI_task_pool_push(
-            task_pool, emDM_calc_loop_tangents_thread, mesh2tangent, false, TASK_PRIORITY_LOW);
+        BLI_task_pool_push(task_pool, emDM_calc_loop_tangents_thread, mesh2tangent, false, NULL);
       }
 
       BLI_assert(tangent_mask_curr == tangent_mask);

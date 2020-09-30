@@ -17,8 +17,7 @@
  * All rights reserved.
  */
 
-#ifndef __IMB_COLORMANAGEMENT_H__
-#define __IMB_COLORMANAGEMENT_H__
+#pragma once
 
 /** \file
  * \ingroup imbuf
@@ -56,6 +55,7 @@ void IMB_colormanagement_validate_settings(
 
 const char *IMB_colormanagement_role_colorspace_name_get(int role);
 void IMB_colormanagement_check_is_data(struct ImBuf *ibuf, const char *name);
+void IMB_colormanagegent_copy_settings(struct ImBuf *ibuf_src, struct ImBuf *ibuf_dst);
 void IMB_colormanagement_assign_float_colorspace(struct ImBuf *ibuf, const char *name);
 void IMB_colormanagement_assign_rect_colorspace(struct ImBuf *ibuf, const char *name);
 
@@ -71,6 +71,7 @@ BLI_INLINE float IMB_colormanagement_get_luminance(const float rgb[3]);
 BLI_INLINE unsigned char IMB_colormanagement_get_luminance_byte(const unsigned char[3]);
 BLI_INLINE void IMB_colormangement_xyz_to_rgb(float rgb[3], const float xyz[3]);
 BLI_INLINE void IMB_colormangement_rgb_to_xyz(float xyz[3], const float rgb[3]);
+const float *IMB_colormangement_get_xyz_to_rgb(void);
 
 /* ** Color space transformation functions ** */
 void IMB_colormanagement_transform(float *buffer,
@@ -264,7 +265,7 @@ void IMB_colormanagement_colorspace_items_add(struct EnumPropertyItem **items, i
 /* ** Tile-based buffer management ** */
 void IMB_partial_display_buffer_update(struct ImBuf *ibuf,
                                        const float *linear_buffer,
-                                       const unsigned char *buffer_byte,
+                                       const unsigned char *byte_buffer,
                                        int stride,
                                        int offset_x,
                                        int offset_y,
@@ -278,7 +279,7 @@ void IMB_partial_display_buffer_update(struct ImBuf *ibuf,
 void IMB_partial_display_buffer_update_threaded(
     struct ImBuf *ibuf,
     const float *linear_buffer,
-    const unsigned char *buffer_byte,
+    const unsigned char *byte_buffer,
     int stride,
     int offset_x,
     int offset_y,
@@ -372,5 +373,3 @@ enum {
 #endif
 
 #include "intern/colormanagement_inline.c"
-
-#endif /* __IMB_COLORMANAGEMENT_H__ */

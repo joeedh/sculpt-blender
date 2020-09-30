@@ -14,18 +14,16 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __FREESTYLE_STROKE_RENDERER_H__
-#define __FREESTYLE_STROKE_RENDERER_H__
+#pragma once
 
 /** \file
  * \ingroup freestyle
  * \brief Classes to render a stroke with OpenGL
  */
 
-/* clang-format off */
+#include <algorithm>
 #include <map>
 #include <string.h>
-#include <algorithm>
 #include <utility>
 #include <vector>
 
@@ -37,7 +35,6 @@
 #ifdef WITH_CXX_GUARDEDALLOC
 #  include "MEM_guardedalloc.h"
 #endif
-/* clang-format on */
 
 namespace Freestyle {
 
@@ -144,5 +141,3 @@ class StrokeRenderer {
 };
 
 } /* namespace Freestyle */
-
-#endif  // __FREESTYLE_STROKE_RENDERER_H__

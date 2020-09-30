@@ -163,7 +163,7 @@ void BM_face_calc_tessellation(const BMFace *f,
     float(*projverts)[2] = BLI_array_alloca(projverts, f->len);
     int j;
 
-    axis_dominant_v3_to_m3(axis_mat, f->no);
+    axis_dominant_v3_to_m3_negate(axis_mat, f->no);
 
     j = 0;
     l_iter = l_first;
@@ -174,7 +174,7 @@ void BM_face_calc_tessellation(const BMFace *f,
     } while ((l_iter = l_iter->next) != l_first);
 
     /* complete the loop */
-    BLI_polyfill_calc(projverts, f->len, -1, r_index);
+    BLI_polyfill_calc(projverts, f->len, 1, r_index);
   }
 }
 
@@ -596,6 +596,31 @@ void BM_face_calc_center_bounds(const BMFace *f, float r_cent[3])
 }
 
 /**
+ * computes center of face in 3d.  uses center of bounding box.
+ */
+void BM_face_calc_center_bounds_vcos(const BMesh *bm,
+                                     const BMFace *f,
+                                     float r_cent[3],
+                                     float const (*vertexCos)[3])
+{
+  /* must have valid index data */
+  BLI_assert((bm->elem_index_dirty & BM_VERT) == 0);
+  (void)bm;
+
+  const BMLoop *l_iter, *l_first;
+  float min[3], max[3];
+
+  INIT_MINMAX(min, max);
+
+  l_iter = l_first = BM_FACE_FIRST_LOOP(f);
+  do {
+    minmax_v3v3_v3(min, max, vertexCos[BM_elem_index_get(l_iter->v)]);
+  } while ((l_iter = l_iter->next) != l_first);
+
+  mid_v3_v3v3(r_cent, min, max);
+}
+
+/**
  * computes the center of a face, using the mean average
  */
 void BM_face_calc_center_median(const BMFace *f, float r_cent[3])
@@ -718,9 +743,7 @@ bool BM_vert_calc_normal_ex(const BMVert *v, const char hflag, float r_no[3])
     normalize_v3(r_no);
     return true;
   }
-  else {
-    return false;
-  }
+  return false;
 }
 
 bool BM_vert_calc_normal(const BMVert *v, float r_no[3])
@@ -748,9 +771,7 @@ bool BM_vert_calc_normal(const BMVert *v, float r_no[3])
     normalize_v3(r_no);
     return true;
   }
-  else {
-    return false;
-  }
+  return false;
 }
 
 void BM_vert_normal_update_all(BMVert *v)

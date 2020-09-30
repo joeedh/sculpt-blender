@@ -20,7 +20,6 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "DNA_mesh_types.h"
 #include "DNA_object_types.h"
 #include "DNA_scene_types.h"
 
@@ -32,7 +31,6 @@
 #include "BKE_context.h"
 #include "BKE_editmesh.h"
 #include "BKE_global.h"
-#include "BKE_layer.h"
 #include "BKE_report.h"
 #include "BKE_scene.h"
 
@@ -223,6 +221,9 @@ static int delete_orientation_exec(bContext *C, wmOperator *UNUSED(op))
 
   WM_event_add_notifier(C, NC_SCENE | NA_EDITED, scene);
 
+  struct wmMsgBus *mbus = CTX_wm_message_bus(C);
+  WM_msg_publish_rna_prop(mbus, &scene->id, scene, Scene, transform_orientation_slots);
+
   return OPERATOR_FINISHED;
 }
 
@@ -233,12 +234,11 @@ static int delete_orientation_invoke(bContext *C, wmOperator *op, const wmEvent 
 
 static bool delete_orientation_poll(bContext *C)
 {
-  Scene *scene = CTX_data_scene(C);
-
   if (ED_operator_areaactive(C) == 0) {
     return 0;
   }
 
+  Scene *scene = CTX_data_scene(C);
   return ((scene->orientation_slots[SCE_ORIENT_DEFAULT].type >= V3D_ORIENT_CUSTOM) &&
           (scene->orientation_slots[SCE_ORIENT_DEFAULT].index_custom != -1));
 }
@@ -264,6 +264,7 @@ static int create_orientation_exec(bContext *C, wmOperator *op)
   const bool overwrite = RNA_boolean_get(op->ptr, "overwrite");
   const bool use_view = RNA_boolean_get(op->ptr, "use_view");
   View3D *v3d = CTX_wm_view3d(C);
+  Scene *scene = CTX_data_scene(C);
 
   RNA_string_get(op->ptr, "name", name);
 
@@ -274,10 +275,18 @@ static int create_orientation_exec(bContext *C, wmOperator *op)
     return OPERATOR_CANCELLED;
   }
 
-  BIF_createTransformOrientation(C, op->reports, name, use_view, use, overwrite);
+  if (!BIF_createTransformOrientation(C, op->reports, name, use_view, use, overwrite)) {
+    BKE_report(op->reports, RPT_ERROR, "Unable to create orientation");
+    return OPERATOR_CANCELLED;
+  }
+
+  if (use) {
+    struct wmMsgBus *mbus = CTX_wm_message_bus(C);
+    WM_msg_publish_rna_prop(mbus, &scene->id, scene, Scene, transform_orientation_slots);
+    WM_event_add_notifier(C, NC_SCENE | NA_EDITED, scene);
+  }
 
   WM_event_add_notifier(C, NC_SPACE | ND_SPACE_VIEW3D, v3d);
-  WM_event_add_notifier(C, NC_SCENE | NA_EDITED, CTX_data_scene(C));
 
   return OPERATOR_FINISHED;
 }
@@ -507,22 +516,19 @@ static int transform_invoke(bContext *C, wmOperator *op, const wmEvent *event)
   if ((event == NULL) && RNA_struct_property_is_set(op->ptr, "value")) {
     return transform_exec(C, op);
   }
-  else {
-    /* add temp handler */
-    WM_event_add_modal_handler(C, op);
 
-    op->flag |= OP_IS_MODAL_GRAB_CURSOR;  // XXX maybe we want this with the gizmo only?
+  /* add temp handler */
+  WM_event_add_modal_handler(C, op);
 
-    /* Use when modal input has some transformation to begin with. */
-    {
-      TransInfo *t = op->customdata;
-      if (UNLIKELY(!is_zero_v4(t->values_modal_offset))) {
-        transformApply(C, t);
-      }
-    }
+  op->flag |= OP_IS_MODAL_GRAB_CURSOR;  // XXX maybe we want this with the gizmo only?
 
-    return OPERATOR_RUNNING_MODAL;
+  /* Use when modal input has some transformation to begin with. */
+  TransInfo *t = op->customdata;
+  if (UNLIKELY(!is_zero_v4(t->values_modal_offset))) {
+    transformApply(C, t);
   }
+
+  return OPERATOR_RUNNING_MODAL;
 }
 
 static bool transform_poll_property(const bContext *UNUSED(C),
@@ -705,6 +711,15 @@ void Transform_Properties(struct wmOperatorType *ot, int flags)
     prop = RNA_def_boolean(ot->srna, "use_accurate", 0, "Accurate", "Use accurate transformation");
     RNA_def_property_flag(prop, PROP_HIDDEN);
   }
+
+  if (flags & P_POST_TRANSFORM) {
+    prop = RNA_def_boolean(ot->srna,
+                           "use_automerge_and_split",
+                           0,
+                           "Auto Merge & Split",
+                           "Forces the use of Auto Merge & Split");
+    RNA_def_property_flag(prop, PROP_HIDDEN);
+  }
 }
 
 static void TRANSFORM_OT_translate(struct wmOperatorType *ot)
@@ -730,7 +745,7 @@ static void TRANSFORM_OT_translate(struct wmOperatorType *ot)
 
   Transform_Properties(ot,
                        P_ORIENT_MATRIX | P_CONSTRAINT | P_PROPORTIONAL | P_MIRROR | P_ALIGN_SNAP |
-                           P_OPTIONS | P_GPENCIL_EDIT | P_CURSOR_EDIT);
+                           P_OPTIONS | P_GPENCIL_EDIT | P_CURSOR_EDIT | P_POST_TRANSFORM);
 }
 
 static void TRANSFORM_OT_resize(struct wmOperatorType *ot)
@@ -893,8 +908,8 @@ static bool transform_shear_poll(bContext *C)
     return false;
   }
 
-  ScrArea *sa = CTX_wm_area(C);
-  return sa && !ELEM(sa->spacetype, SPACE_ACTION);
+  ScrArea *area = CTX_wm_area(C);
+  return area && !ELEM(area->spacetype, SPACE_ACTION);
 }
 
 static void TRANSFORM_OT_shear(struct wmOperatorType *ot)
@@ -978,8 +993,7 @@ static void TRANSFORM_OT_tosphere(struct wmOperatorType *ot)
 {
   /* identifiers */
   ot->name = "To Sphere";
-  // added "around mesh center" to differentiate between "MESH_OT_vertices_to_sphere()"
-  ot->description = "Move selected vertices outward in a spherical shape around mesh center";
+  ot->description = "Move selected items outward in a spherical shape around geometric center";
   ot->idname = OP_TOSPHERE;
   ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO | OPTYPE_BLOCKING;
 
@@ -1031,11 +1045,11 @@ static void TRANSFORM_OT_bbone_resize(struct wmOperatorType *ot)
   ot->exec = transform_exec;
   ot->modal = transform_modal;
   ot->cancel = transform_cancel;
-  ot->poll = ED_operator_editarmature;
+  ot->poll = ED_operator_object_active;
   ot->poll_property = transform_poll_property;
 
   RNA_def_float_translation(
-      ot->srna, "value", 2, VecOne, -FLT_MAX, FLT_MAX, "Display Size", "", -FLT_MAX, FLT_MAX);
+      ot->srna, "value", 3, VecOne, -FLT_MAX, FLT_MAX, "Display Size", "", -FLT_MAX, FLT_MAX);
 
   WM_operatortype_props_advanced_begin(ot);
 

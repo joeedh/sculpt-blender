@@ -30,6 +30,19 @@
 
 #include "WM_types.h"
 
+const EnumPropertyItem rna_enum_collection_color_items[] = {
+    {COLLECTION_COLOR_NONE, "NONE", ICON_X, "None", "Assign no color tag to the collection"},
+    {COLLECTION_COLOR_01, "COLOR_01", ICON_COLLECTION_COLOR_01, "Color 01", ""},
+    {COLLECTION_COLOR_02, "COLOR_02", ICON_COLLECTION_COLOR_02, "Color 02", ""},
+    {COLLECTION_COLOR_03, "COLOR_03", ICON_COLLECTION_COLOR_03, "Color 03", ""},
+    {COLLECTION_COLOR_04, "COLOR_04", ICON_COLLECTION_COLOR_04, "Color 04", ""},
+    {COLLECTION_COLOR_05, "COLOR_05", ICON_COLLECTION_COLOR_05, "Color 05", ""},
+    {COLLECTION_COLOR_06, "COLOR_06", ICON_COLLECTION_COLOR_06, "Color 06", ""},
+    {COLLECTION_COLOR_07, "COLOR_07", ICON_COLLECTION_COLOR_07, "Color 07", ""},
+    {COLLECTION_COLOR_08, "COLOR_08", ICON_COLLECTION_COLOR_08, "Color 08", ""},
+    {0, NULL, 0, NULL, NULL},
+};
+
 #ifdef RNA_RUNTIME
 
 #  include "DNA_object_types.h"
@@ -82,6 +95,23 @@ static void rna_Collection_objects_link(Collection *collection,
                                         ReportList *reports,
                                         Object *object)
 {
+  /* Currently this should not be allowed (might be supported in the future though...). */
+  if (ID_IS_OVERRIDE_LIBRARY(&collection->id)) {
+    BKE_reportf(reports,
+                RPT_ERROR,
+                "Could not link the object '%s' because the collection '%s' is overridden",
+                object->id.name + 2,
+                collection->id.name + 2);
+    return;
+  }
+  if (ID_IS_LINKED(&collection->id)) {
+    BKE_reportf(reports,
+                RPT_ERROR,
+                "Could not link the object '%s' because the collection '%s' is linked",
+                object->id.name + 2,
+                collection->id.name + 2);
+    return;
+  }
   if (!BKE_collection_object_add(bmain, collection, object)) {
     BKE_reportf(reports,
                 RPT_ERROR,
@@ -137,12 +167,16 @@ static bool rna_Collection_objects_override_apply(Main *bmain,
   Collection *coll_dst = (Collection *)ptr_dst->owner_id;
 
   if (ptr_item_dst->type == NULL || ptr_item_src->type == NULL) {
-    BLI_assert(0 && "invalid source or destination object.");
+    //    BLI_assert(0 && "invalid source or destination object.");
     return false;
   }
 
   Object *ob_dst = ptr_item_dst->data;
   Object *ob_src = ptr_item_src->data;
+
+  if (ob_src == ob_dst) {
+    return true;
+  }
 
   CollectionObject *cob_dst = BLI_findptr(
       &coll_dst->gobject, ob_dst, offsetof(CollectionObject, ob));
@@ -377,6 +411,8 @@ void RNA_def_collections(BlenderRNA *brna)
    * removed if no objects are in the collection and not in a scene. */
   RNA_def_struct_clear_flag(srna, STRUCT_ID_REFCOUNT);
 
+  RNA_define_lib_overridable(true);
+
   prop = RNA_def_property(srna, "instance_offset", PROP_FLOAT, PROP_TRANSLATION);
   RNA_def_property_ui_text(
       prop, "Instance Offset", "Offset from the origin to use when instancing");
@@ -385,7 +421,6 @@ void RNA_def_collections(BlenderRNA *brna)
 
   prop = RNA_def_property(srna, "objects", PROP_COLLECTION, PROP_NONE);
   RNA_def_property_struct_type(prop, "Object");
-  RNA_def_property_override_flag(prop, PROPOVERRIDE_OVERRIDABLE_LIBRARY);
   RNA_def_property_override_funcs(prop, NULL, NULL, "rna_Collection_objects_override_apply");
   RNA_def_property_ui_text(prop, "Objects", "Objects that are directly in this collection");
   RNA_def_property_collection_funcs(prop,
@@ -404,6 +439,7 @@ void RNA_def_collections(BlenderRNA *brna)
   RNA_def_property_ui_text(
       prop, "All Objects", "Objects that are in this collection and its child collections");
   RNA_def_property_override_flag(prop, PROPOVERRIDE_NO_COMPARISON);
+  RNA_def_property_override_clear_flag(prop, PROPOVERRIDE_OVERRIDABLE_LIBRARY);
   RNA_def_property_collection_funcs(prop,
                                     "rna_Collection_all_objects_begin",
                                     "rna_iterator_listbase_next",
@@ -416,7 +452,6 @@ void RNA_def_collections(BlenderRNA *brna)
 
   prop = RNA_def_property(srna, "children", PROP_COLLECTION, PROP_NONE);
   RNA_def_property_struct_type(prop, "Collection");
-  RNA_def_property_override_flag(prop, PROPOVERRIDE_OVERRIDABLE_LIBRARY);
   RNA_def_property_override_funcs(prop, NULL, NULL, "rna_Collection_children_override_apply");
   RNA_def_property_ui_text(
       prop, "Children", "Collections that are immediate children of this collection");
@@ -435,7 +470,6 @@ void RNA_def_collections(BlenderRNA *brna)
   prop = RNA_def_property(srna, "hide_select", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flag", COLLECTION_RESTRICT_SELECT);
   RNA_def_property_boolean_funcs(prop, NULL, "rna_Collection_hide_select_set");
-  RNA_def_property_override_flag(prop, PROPOVERRIDE_OVERRIDABLE_LIBRARY);
   RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_ui_icon(prop, ICON_RESTRICT_SELECT_OFF, -1);
   RNA_def_property_ui_text(prop, "Disable Selection", "Disable selection in viewport");
@@ -444,7 +478,6 @@ void RNA_def_collections(BlenderRNA *brna)
   prop = RNA_def_property(srna, "hide_viewport", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flag", COLLECTION_RESTRICT_VIEWPORT);
   RNA_def_property_boolean_funcs(prop, NULL, "rna_Collection_hide_viewport_set");
-  RNA_def_property_override_flag(prop, PROPOVERRIDE_OVERRIDABLE_LIBRARY);
   RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_ui_icon(prop, ICON_RESTRICT_VIEW_OFF, -1);
   RNA_def_property_ui_text(prop, "Disable in Viewports", "Globally disable in viewports");
@@ -453,11 +486,18 @@ void RNA_def_collections(BlenderRNA *brna)
   prop = RNA_def_property(srna, "hide_render", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flag", COLLECTION_RESTRICT_RENDER);
   RNA_def_property_boolean_funcs(prop, NULL, "rna_Collection_hide_render_set");
-  RNA_def_property_override_flag(prop, PROPOVERRIDE_OVERRIDABLE_LIBRARY);
   RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_ui_icon(prop, ICON_RESTRICT_RENDER_OFF, -1);
   RNA_def_property_ui_text(prop, "Disable in Renders", "Globally disable in renders");
   RNA_def_property_update(prop, NC_SCENE | ND_LAYER_CONTENT, "rna_Collection_flag_update");
+
+  prop = RNA_def_property(srna, "color_tag", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "color_tag");
+  RNA_def_property_enum_items(prop, rna_enum_collection_color_items);
+  RNA_def_property_ui_text(prop, "Collection Color", "Color tag for a collection");
+  RNA_def_property_update(prop, NC_SCENE | ND_LAYER_CONTENT, NULL);
+
+  RNA_define_lib_overridable(false);
 }
 
 #endif

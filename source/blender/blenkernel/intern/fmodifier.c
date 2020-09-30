@@ -178,12 +178,11 @@ static void fcm_generator_evaluate(
       /* we overwrite cvalue with the sum of the polynomial */
       float *powers = MEM_callocN(sizeof(float) * data->arraysize, "Poly Powers");
       float value = 0.0f;
-      unsigned int i;
 
       /* for each x^n, precalculate value based on previous one first... this should be
        * faster that calling pow() for each entry
        */
-      for (i = 0; i < data->arraysize; i++) {
+      for (uint i = 0; i < data->arraysize; i++) {
         /* first entry is x^0 = 1, otherwise, calculate based on previous */
         if (i) {
           powers[i] = powers[i - 1] * evaltime;
@@ -194,7 +193,7 @@ static void fcm_generator_evaluate(
       }
 
       /* for each coefficient, add to value, which we'll write to *cvalue in one go */
-      for (i = 0; i < data->arraysize; i++) {
+      for (uint i = 0; i < data->arraysize; i++) {
         value += data->coefficients[i] * powers[i];
       }
 
@@ -285,9 +284,8 @@ static double sinc(double x)
   if (fabs(x) < 0.0001) {
     return 1.0;
   }
-  else {
-    return sin(M_PI * x) / (M_PI * x);
-  }
+
+  return sin(M_PI * x) / (M_PI * x);
 }
 
 static void fcm_fn_generator_evaluate(
@@ -525,29 +523,28 @@ int BKE_fcm_envelope_find_index(FCM_EnvelopeData array[],
     CLOG_WARN(&LOG, "encountered invalid array");
     return 0;
   }
-  else {
-    /* check whether to add before/after/on */
-    float framenum;
 
-    /* 'First' Point (when only one point, this case is used) */
-    framenum = array[0].time;
-    if (IS_EQT(frame, framenum, BINARYSEARCH_FRAMEEQ_THRESH)) {
-      *r_exists = true;
-      return 0;
-    }
-    else if (frame < framenum) {
-      return 0;
-    }
+  /* check whether to add before/after/on */
+  float framenum;
 
-    /* 'Last' Point */
-    framenum = array[(arraylen - 1)].time;
-    if (IS_EQT(frame, framenum, BINARYSEARCH_FRAMEEQ_THRESH)) {
-      *r_exists = true;
-      return (arraylen - 1);
-    }
-    else if (frame > framenum) {
-      return arraylen;
-    }
+  /* 'First' Point (when only one point, this case is used) */
+  framenum = array[0].time;
+  if (IS_EQT(frame, framenum, BINARYSEARCH_FRAMEEQ_THRESH)) {
+    *r_exists = true;
+    return 0;
+  }
+  if (frame < framenum) {
+    return 0;
+  }
+
+  /* 'Last' Point */
+  framenum = array[(arraylen - 1)].time;
+  if (IS_EQT(frame, framenum, BINARYSEARCH_FRAMEEQ_THRESH)) {
+    *r_exists = true;
+    return (arraylen - 1);
+  }
+  if (frame > framenum) {
+    return arraylen;
   }
 
   /* most of the time, this loop is just to find where to put it
@@ -1076,9 +1073,8 @@ const FModifierTypeInfo *get_fmodifier_typeinfo(const int type)
     /* there shouldn't be any segfaults here... */
     return fmodifiersTypeInfo[type];
   }
-  else {
-    CLOG_ERROR(&LOG, "No valid F-Curve Modifier type-info data available. Type = %i", type);
-  }
+
+  CLOG_ERROR(&LOG, "No valid F-Curve Modifier type-info data available. Type = %i", type);
 
   return NULL;
 }
@@ -1092,9 +1088,8 @@ const FModifierTypeInfo *fmodifier_get_typeinfo(const FModifier *fcm)
   if (fcm) {
     return get_fmodifier_typeinfo(fcm->type);
   }
-  else {
-    return NULL;
-  }
+
+  return NULL;
 }
 
 /* API --------------------------- */
@@ -1239,12 +1234,11 @@ bool remove_fmodifier(ListBase *modifiers, FModifier *fcm)
 
     return true;
   }
-  else {
-    /* XXX this case can probably be removed some day, as it shouldn't happen... */
-    CLOG_STR_ERROR(&LOG, "no modifier stack given");
-    MEM_freeN(fcm);
-    return false;
-  }
+
+  /* XXX this case can probably be removed some day, as it shouldn't happen... */
+  CLOG_STR_ERROR(&LOG, "no modifier stack given");
+  MEM_freeN(fcm);
+  return false;
 }
 
 /* Remove all of a given F-Curve's modifiers */
@@ -1358,7 +1352,7 @@ uint evaluate_fmodifiers_storage_size_per_modifier(ListBase *modifiers)
 
   uint max_size = 0;
 
-  for (FModifier *fcm = modifiers->first; fcm; fcm = fcm->next) {
+  LISTBASE_FOREACH (FModifier *, fcm, modifiers) {
     const FModifierTypeInfo *fmi = fmodifier_get_typeinfo(fcm);
 
     if (fmi == NULL) {
@@ -1397,13 +1391,13 @@ static float eval_fmodifier_influence(FModifier *fcm, float evaltime)
       /* out of range */
       return 0.0f;
     }
-    else if ((evaltime > fcm->sfra) && (evaltime < fcm->sfra + fcm->blendin)) {
+    if ((evaltime > fcm->sfra) && (evaltime < fcm->sfra + fcm->blendin)) {
       /* blend in range */
       float a = fcm->sfra;
       float b = fcm->sfra + fcm->blendin;
       return influence * (evaltime - a) / (b - a);
     }
-    else if ((evaltime < fcm->efra) && (evaltime > fcm->efra - fcm->blendout)) {
+    if ((evaltime < fcm->efra) && (evaltime > fcm->efra - fcm->blendout)) {
       /* blend out range */
       float a = fcm->efra;
       float b = fcm->efra - fcm->blendout;

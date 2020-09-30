@@ -33,7 +33,7 @@
 #include "DNA_scene_types.h"
 
 #include "BKE_action.h"
-#include "BKE_anim.h"
+#include "BKE_anim_visualization.h"
 #include "BKE_armature.h"
 #include "BKE_context.h"
 #include "BKE_deform.h"
@@ -75,12 +75,12 @@
 /* matches logic with ED_operator_posemode_context() */
 Object *ED_pose_object_from_context(bContext *C)
 {
-  ScrArea *sa = CTX_wm_area(C);
+  ScrArea *area = CTX_wm_area(C);
   Object *ob;
 
   /* Since this call may also be used from the buttons window,
    * we need to check for where to get the object. */
-  if (sa && sa->spacetype == SPACE_PROPERTIES) {
+  if (area && area->spacetype == SPACE_PROPERTIES) {
     ob = ED_object_context(C);
   }
   else {
@@ -665,6 +665,11 @@ static int pose_bone_rotmode_exec(bContext *C, wmOperator *op)
 
   /* set rotation mode of selected bones  */
   CTX_DATA_BEGIN_WITH_ID (C, bPoseChannel *, pchan, selected_pose_bones, Object *, ob) {
+    /* use API Method for conversions... */
+    BKE_rotMode_change_values(
+        pchan->quat, pchan->eul, pchan->rotAxis, &pchan->rotAngle, pchan->rotmode, (short)mode);
+
+    /* finally, set the new rotation type */
     pchan->rotmode = mode;
 
     if (prev_ob != ob) {
@@ -737,7 +742,6 @@ static int pose_armature_layers_showall_exec(bContext *C, wmOperator *op)
   int maxLayers = (RNA_boolean_get(op->ptr, "all")) ? 32 : 16;
   /* hardcoded for now - we can only have 32 armature layers, so this should be fine... */
   bool layers[32] = {false};
-  int i;
 
   /* sanity checking */
   if (arm == NULL) {
@@ -750,7 +754,7 @@ static int pose_armature_layers_showall_exec(bContext *C, wmOperator *op)
    */
   RNA_id_pointer_create(&arm->id, &ptr);
 
-  for (i = 0; i < maxLayers; i++) {
+  for (int i = 0; i < maxLayers; i++) {
     layers[i] = 1;
   }
 
@@ -901,8 +905,6 @@ static int pose_bone_layers_exec(bContext *C, wmOperator *op)
     RNA_boolean_set_array(&ptr, "layers", layers);
 
     if (prev_ob != ob) {
-      BKE_armature_refresh_layer_used(ob->data);
-
       /* Note, notifier might evolve. */
       WM_event_add_notifier(C, NC_OBJECT | ND_POSE, ob);
       DEG_id_tag_update((ID *)ob->data, ID_RECALC_COPY_ON_WRITE);

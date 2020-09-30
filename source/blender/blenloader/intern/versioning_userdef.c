@@ -22,8 +22,13 @@
 #define DNA_DEPRECATED_ALLOW
 #include <string.h>
 
+#include "BLI_listbase.h"
 #include "BLI_math.h"
 #include "BLI_utildefines.h"
+
+#ifdef WITH_INTERNATIONAL
+#  include "BLT_translation.h"
+#endif
 
 #include "DNA_anim_types.h"
 #include "DNA_curve_types.h"
@@ -33,6 +38,7 @@
 #include "DNA_windowmanager_types.h"
 
 #include "BKE_addon.h"
+#include "BKE_blender_version.h"
 #include "BKE_colorband.h"
 #include "BKE_idprop.h"
 #include "BKE_keyconfig.h"
@@ -42,8 +48,8 @@
 
 #include "wm_event_types.h"
 
-/* Disallow access to global userdef. */
-#define U (_error_)
+/* For versioning we only ever want to manipulate preferences passed in. */
+#define U BLI_STATIC_ASSERT(false, "Global 'U' not allowed, only use arguments passed in!")
 
 static void do_versions_theme(const UserDef *userdef, bTheme *btheme)
 {
@@ -210,6 +216,29 @@ static void do_versions_theme(const UserDef *userdef, bTheme *btheme)
     FROM_DEFAULT_V4_UCHAR(tui.transparent_checker_secondary);
     btheme->tui.transparent_checker_size = U_theme_default.tui.transparent_checker_size;
   }
+  if (!USER_VERSION_ATLEAST(291, 2)) {
+    /* The new defaults for the file browser theme are the same as
+     * the outliner's, and it's less disruptive to just copy them. */
+    copy_v4_v4_uchar(btheme->space_file.back, btheme->space_outliner.back);
+    copy_v4_v4_uchar(btheme->space_file.row_alternate, btheme->space_outliner.row_alternate);
+
+    FROM_DEFAULT_V4_UCHAR(space_image.grid);
+  }
+
+  if (!USER_VERSION_ATLEAST(291, 3)) {
+    for (int i = 0; i < COLLECTION_COLOR_TOT; ++i) {
+      FROM_DEFAULT_V4_UCHAR(collection_color[i].color);
+    }
+
+    FROM_DEFAULT_V4_UCHAR(space_properties.match);
+
+    /* New grid theme color defaults are the same as the existing background colors,
+     * so they are copied to limit disruption. */
+    copy_v3_v3_uchar(btheme->space_clip.grid, btheme->space_clip.back);
+    btheme->space_clip.grid[3] = 255.0f;
+
+    copy_v3_v3_uchar(btheme->space_node.grid, btheme->space_node.back);
+  }
 
   /**
    * Versioning code until next subversion bump goes here.
@@ -361,7 +390,7 @@ void BLO_version_defaults_userpref_blend(Main *bmain, UserDef *userdef)
   }
   if (!USER_VERSION_ATLEAST(250, 0)) {
     /* adjust grease-pencil distances */
-    userdef->gp_manhattendist = 1;
+    userdef->gp_manhattandist = 1;
     userdef->gp_euclideandist = 2;
 
     /* adjust default interpolation for new IPO-curves */
@@ -533,7 +562,7 @@ void BLO_version_defaults_userpref_blend(Main *bmain, UserDef *userdef)
     userdef->gpu_viewport_quality = 0.6f;
 
     /* Reset theme, old themes will not be compatible with minor version updates from now on. */
-    for (bTheme *btheme = userdef->themes.first; btheme; btheme = btheme->next) {
+    LISTBASE_FOREACH (bTheme *, btheme, &userdef->themes) {
       memcpy(btheme, &U_theme_default, sizeof(*btheme));
     }
 
@@ -551,8 +580,8 @@ void BLO_version_defaults_userpref_blend(Main *bmain, UserDef *userdef)
 
   if (!USER_VERSION_ATLEAST(280, 31)) {
     /* Remove select/action mouse from user defined keymaps. */
-    for (wmKeyMap *keymap = userdef->user_keymaps.first; keymap; keymap = keymap->next) {
-      for (wmKeyMapDiffItem *kmdi = keymap->diff_items.first; kmdi; kmdi = kmdi->next) {
+    LISTBASE_FOREACH (wmKeyMap *, keymap, &userdef->user_keymaps) {
+      LISTBASE_FOREACH (wmKeyMapDiffItem *, kmdi, &keymap->diff_items) {
         if (kmdi->remove_item) {
           do_version_select_mouse(userdef, kmdi->remove_item);
         }
@@ -561,7 +590,7 @@ void BLO_version_defaults_userpref_blend(Main *bmain, UserDef *userdef)
         }
       }
 
-      for (wmKeyMapItem *kmi = keymap->items.first; kmi; kmi = kmi->next) {
+      LISTBASE_FOREACH (wmKeyMapItem *, kmi, &keymap->items) {
         do_version_select_mouse(userdef, kmi);
       }
     }
@@ -739,6 +768,25 @@ void BLO_version_defaults_userpref_blend(Main *bmain, UserDef *userdef)
     userdef->gpu_flag |= USER_GPU_FLAG_OVERLAY_SMOOTH_WIRE;
   }
 
+  if (!USER_VERSION_ATLEAST(283, 13)) {
+    /* If Translations is off then language should default to English. */
+    if ((userdef->transopts & USER_DOTRANSLATE_DEPRECATED) == 0) {
+      userdef->language = ULANGUAGE_ENGLISH;
+    }
+    /* Clear this deprecated flag. */
+    userdef->transopts &= ~USER_DOTRANSLATE_DEPRECATED;
+  }
+
+  if (!USER_VERSION_ATLEAST(290, 7)) {
+    userdef->statusbar_flag = STATUSBAR_SHOW_VERSION;
+  }
+
+  if (!USER_VERSION_ATLEAST(291, 1)) {
+    if (userdef->collection_instance_empty_size == 0) {
+      userdef->collection_instance_empty_size = 1.0f;
+    }
+  }
+
   /**
    * Versioning code until next subversion bump goes here.
    *
@@ -756,10 +804,29 @@ void BLO_version_defaults_userpref_blend(Main *bmain, UserDef *userdef)
     userdef->pixelsize = 1.0f;
   }
 
-  for (bTheme *btheme = userdef->themes.first; btheme; btheme = btheme->next) {
+  LISTBASE_FOREACH (bTheme *, btheme, &userdef->themes) {
     do_versions_theme(userdef, btheme);
   }
 #undef USER_VERSION_ATLEAST
+}
+
+void BLO_sanitize_experimental_features_userpref_blend(UserDef *userdef)
+{
+  /* User preference experimental settings are only supported in alpha builds.
+   * This prevents users corrupting data and relying on API that may change.
+   *
+   * If user preferences are saved this will be stored in disk as expected.
+   * This only starts to take effect when there is a release branch (on beta).
+   *
+   * At that time master already has its version bumped so its user preferences
+   * are not touched by these settings. */
+
+  if (BKE_blender_version_is_alpha()) {
+    return;
+  }
+  userdef->experimental.use_new_particle_system = false;
+  userdef->experimental.use_new_hair_type = false;
+  userdef->experimental.use_sculpt_vertex_colors = false;
 }
 
 #undef USER_LMOUSESELECT

@@ -111,7 +111,7 @@ void ED_transverts_update_obedit(TransVertStore *tvs, Object *obedit)
       }
 
       BKE_nurb_test_2d(nu);
-      BKE_nurb_handles_test(nu, true); /* test for bezier too */
+      BKE_nurb_handles_test(nu, true, false); /* test for bezier too */
       nu = nu->next;
     }
   }
@@ -180,7 +180,7 @@ static void set_mapped_co(void *vuserdata,
     tv = &tv[BM_elem_index_get(eve)];
 
     /* be clever, get the closest vertex to the original,
-     * behaves most logically when the mirror modifier is used for eg [#33051]*/
+     * behaves most logically when the mirror modifier is used for eg T33051*/
     if ((tv->flag & TX_VERT_USE_MAPLOC) == 0) {
       /* first time */
       copy_v3_v3(tv->maploc, co);

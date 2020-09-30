@@ -33,9 +33,6 @@ set(INC
   ../../../../intern/guardedalloc
 )
 
-set(INC_SYS
-  ${GLEW_INCLUDE_PATH}
-)
 
 set(SRC
   transform.c
@@ -51,6 +48,8 @@ set(SRC
   transform_convert_mask.c
   transform_convert_mball.c
   transform_convert_mesh.c
+  transform_convert_mesh_edge.c
+  transform_convert_mesh_uv.c
   transform_convert_nla.c
   transform_convert_node.c
   transform_convert_object.c
@@ -104,6 +103,7 @@ set(SRC
   transform.h
   transform_constraints.h
   transform_convert.h
+  transform_data.h
   transform_draw_cursors.h
   transform_mode.h
   transform_snap.h
@@ -122,6 +122,5 @@ if(WITH_INTERNATIONAL)
   add_definitions(-DWITH_INTERNATIONAL)
 endif()
 
-add_definitions(${GL_DEFINITIONS})
 
 blender_add_lib(bf_editor_transform "${SRC}" "${INC}" "${INC_SYS}" "${LIB}")

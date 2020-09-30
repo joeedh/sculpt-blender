@@ -31,15 +31,10 @@
 #include "DNA_layer_types.h"
 #include "DNA_object_types.h"
 
-#include "BLI_ghash.h"
 #include "BLI_stack.h"
 #include "BLI_utildefines.h"
 
 #include "BKE_action.h"
-
-extern "C" {
-#include "BKE_animsys.h"
-}
 
 #include "intern/builder/deg_builder_cache.h"
 #include "intern/builder/deg_builder_remove_noop.h"
@@ -55,7 +50,8 @@ extern "C" {
 
 #include "DEG_depsgraph.h"
 
-namespace DEG {
+namespace blender {
+namespace deg {
 
 bool deg_check_id_in_depsgraph(const Depsgraph *graph, ID *id_orig)
 {
@@ -161,10 +157,9 @@ void deg_graph_build_flush_visibility(Depsgraph *graph)
 
   BLI_Stack *stack = BLI_stack_new(sizeof(OperationNode *), "DEG flush layers stack");
   for (IDNode *id_node : graph->id_nodes) {
-    GHASH_FOREACH_BEGIN (ComponentNode *, comp_node, id_node->components) {
+    for (ComponentNode *comp_node : id_node->components.values()) {
       comp_node->affects_directly_visible |= id_node->is_directly_visible;
     }
-    GHASH_FOREACH_END();
   }
   for (OperationNode *op_node : graph->operations) {
     op_node->custom_flags = 0;
@@ -246,4 +241,5 @@ void deg_graph_build_finalize(Main *bmain, Depsgraph *graph)
   }
 }
 
-}  // namespace DEG
+}  // namespace deg
+}  // namespace blender

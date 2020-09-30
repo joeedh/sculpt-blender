@@ -17,8 +17,7 @@
  * This is a new part of Blender
  */
 
-#ifndef __BKE_GPENCIL_H__
-#define __BKE_GPENCIL_H__
+#pragma once
 
 /** \file
  * \ingroup bke
@@ -28,6 +27,7 @@
 extern "C" {
 #endif
 
+struct BlendDataReader;
 struct Brush;
 struct CurveMapping;
 struct Depsgraph;
@@ -41,6 +41,7 @@ struct Object;
 struct Scene;
 struct SpaceImage;
 struct ToolSettings;
+struct ViewLayer;
 struct bDeformGroup;
 struct bGPDframe;
 struct bGPDlayer;
@@ -68,21 +69,21 @@ struct bGPdata;
 
 /* Vertex Color macros. */
 #define GPENCIL_USE_VERTEX_COLOR(toolsettings) \
-  ((toolsettings->gp_paint->mode == GPPAINT_FLAG_USE_VERTEXCOLOR))
+  (((toolsettings)->gp_paint->mode == GPPAINT_FLAG_USE_VERTEXCOLOR))
 #define GPENCIL_USE_VERTEX_COLOR_STROKE(toolsettings, brush) \
   ((GPENCIL_USE_VERTEX_COLOR(toolsettings) && \
-    ((brush->gpencil_settings->vertex_mode == GPPAINT_MODE_STROKE) || \
-     (brush->gpencil_settings->vertex_mode == GPPAINT_MODE_BOTH))))
+    (((brush)->gpencil_settings->vertex_mode == GPPAINT_MODE_STROKE) || \
+     ((brush)->gpencil_settings->vertex_mode == GPPAINT_MODE_BOTH))))
 #define GPENCIL_USE_VERTEX_COLOR_FILL(toolsettings, brush) \
   ((GPENCIL_USE_VERTEX_COLOR(toolsettings) && \
-    ((brush->gpencil_settings->vertex_mode == GPPAINT_MODE_FILL) || \
-     (brush->gpencil_settings->vertex_mode == GPPAINT_MODE_BOTH))))
+    (((brush)->gpencil_settings->vertex_mode == GPPAINT_MODE_FILL) || \
+     ((brush)->gpencil_settings->vertex_mode == GPPAINT_MODE_BOTH))))
 #define GPENCIL_TINT_VERTEX_COLOR_STROKE(brush) \
-  ((brush->gpencil_settings->vertex_mode == GPPAINT_MODE_STROKE) || \
-   (brush->gpencil_settings->vertex_mode == GPPAINT_MODE_BOTH))
+  (((brush)->gpencil_settings->vertex_mode == GPPAINT_MODE_STROKE) || \
+   ((brush)->gpencil_settings->vertex_mode == GPPAINT_MODE_BOTH))
 #define GPENCIL_TINT_VERTEX_COLOR_FILL(brush) \
-  ((brush->gpencil_settings->vertex_mode == GPPAINT_MODE_FILL) || \
-   (brush->gpencil_settings->vertex_mode == GPPAINT_MODE_BOTH))
+  (((brush)->gpencil_settings->vertex_mode == GPPAINT_MODE_FILL) || \
+   ((brush)->gpencil_settings->vertex_mode == GPPAINT_MODE_BOTH))
 
 /* ------------ Grease-Pencil API ------------------ */
 
@@ -95,6 +96,7 @@ void BKE_gpencil_free_layers(struct ListBase *list);
 void BKE_gpencil_free(struct bGPdata *gpd, bool free_all);
 void BKE_gpencil_eval_delete(struct bGPdata *gpd_eval);
 void BKE_gpencil_free_layer_masks(struct bGPDlayer *gpl);
+void BKE_gpencil_tag(struct bGPdata *gpd);
 
 void BKE_gpencil_batch_cache_dirty_tag(struct bGPdata *gpd);
 void BKE_gpencil_batch_cache_free(struct bGPdata *gpd);
@@ -130,6 +132,11 @@ bool BKE_gpencil_merge_materials_table_get(struct Object *ob,
                                            const float sat_threshold,
                                            const float val_threshold,
                                            struct GHash *r_mat_table);
+bool BKE_gpencil_merge_materials(struct Object *ob,
+                                 const float hue_threshold,
+                                 const float sat_threshold,
+                                 const float val_threshold,
+                                 int *r_removed);
 
 /* statistics functions */
 void BKE_gpencil_stats_update(struct bGPdata *gpd);
@@ -253,7 +260,8 @@ typedef void (*gpIterCb)(struct bGPDlayer *layer,
                          struct bGPDstroke *stroke,
                          void *thunk);
 
-void BKE_gpencil_visible_stroke_iter(struct Object *ob,
+void BKE_gpencil_visible_stroke_iter(struct ViewLayer *view_layer,
+                                     struct Object *ob,
                                      gpIterCb layer_cb,
                                      gpIterCb stroke_cb,
                                      void *thunk,
@@ -274,8 +282,10 @@ void BKE_gpencil_parent_matrix_get(const struct Depsgraph *depsgraph,
 
 void BKE_gpencil_update_layer_parent(const struct Depsgraph *depsgraph, struct Object *ob);
 
+int BKE_gpencil_material_find_index_by_name_prefix(struct Object *ob, const char *name_prefix);
+
+void BKE_gpencil_blend_read_data(struct BlendDataReader *reader, struct bGPdata *gpd);
+
 #ifdef __cplusplus
 }
 #endif
-
-#endif /*  __BKE_GPENCIL_H__ */

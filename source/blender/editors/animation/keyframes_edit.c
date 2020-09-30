@@ -79,7 +79,7 @@ short ANIM_fcurve_keyframes_loop(KeyframeEditData *ked,
 {
   BezTriple *bezt;
   short ok = 0;
-  unsigned int i;
+  uint i;
 
   /* sanity check */
   if (ELEM(NULL, fcu, fcu->bezt)) {
@@ -515,19 +515,21 @@ void ANIM_editkeyframes_refresh(bAnimContext *ac)
 #define KEYFRAME_OK_CHECKS(check) \
   { \
     CHECK_TYPE(ok, short); \
-    if (check(1)) \
+    if (check(1)) { \
       ok |= KEYFRAME_OK_KEY; \
-\
+    } \
     if (ked && (ked->iterflags & KEYFRAME_ITER_INCL_HANDLES)) { \
       /* Only act on visible items, so check handle visibility state. */ \
       const bool handles_visible = ((ked->iterflags & KEYFRAME_ITER_HANDLES_DEFAULT_INVISIBLE) ? \
                                         (BEZT_ISSEL_ANY(bezt)) : \
                                         true); \
       if (handles_visible) { \
-        if (check(0)) \
+        if (check(0)) { \
           ok |= KEYFRAME_OK_H1; \
-        if (check(2)) \
+        } \
+        if (check(2)) { \
           ok |= KEYFRAME_OK_H2; \
+        } \
       } \
     } \
   } \
@@ -569,9 +571,7 @@ static short ok_bezier_selected(KeyframeEditData *UNUSED(ked), BezTriple *bezt)
   if (BEZT_ISSEL_ANY(bezt)) {
     return KEYFRAME_OK_ALL;
   }
-  else {
-    return 0;
-  }
+  return 0;
 }
 
 static short ok_bezier_value(KeyframeEditData *ked, BezTriple *bezt)
@@ -617,9 +617,7 @@ static short ok_bezier_region(KeyframeEditData *ked, BezTriple *bezt)
     /* return ok flags */
     return ok;
   }
-  else {
-    return 0;
-  }
+  return 0;
 }
 
 /**
@@ -633,7 +631,7 @@ bool keyframe_region_lasso_test(const KeyframeEdit_LassoData *data_lasso, const 
     BLI_rctf_transform_pt_v(data_lasso->rectf_view, data_lasso->rectf_scaled, xy_view, xy);
 
     if (BLI_lasso_is_point_inside(
-            data_lasso->mcords, data_lasso->mcords_tot, xy_view[0], xy_view[1], INT_MAX)) {
+            data_lasso->mcoords, data_lasso->mcoords_len, xy_view[0], xy_view[1], INT_MAX)) {
       return true;
     }
   }
@@ -654,9 +652,7 @@ static short ok_bezier_region_lasso(KeyframeEditData *ked, BezTriple *bezt)
     /* return ok flags */
     return ok;
   }
-  else {
-    return 0;
-  }
+  return 0;
 }
 
 static short ok_bezier_channel_lasso(KeyframeEditData *ked, BezTriple *bezt)
@@ -718,9 +714,7 @@ static short ok_bezier_region_circle(KeyframeEditData *ked, BezTriple *bezt)
     /* return ok flags */
     return ok;
   }
-  else {
-    return 0;
-  }
+  return 0;
 }
 
 static short ok_bezier_channel_circle(KeyframeEditData *ked, BezTriple *bezt)
@@ -924,10 +918,10 @@ static short snap_bezier_value(KeyframeEditData *ked, BezTriple *bezt)
   return 0;
 }
 
-KeyframeEditFunc ANIM_editkeyframes_snap(short type)
+KeyframeEditFunc ANIM_editkeyframes_snap(short mode)
 {
   /* eEditKeyframes_Snap */
-  switch (type) {
+  switch (mode) {
     case SNAP_KEYS_NEARFRAME: /* snap to nearest frame */
       return snap_bezier_nearest;
     case SNAP_KEYS_CURFRAME: /* snap to current frame */
@@ -951,26 +945,20 @@ KeyframeEditFunc ANIM_editkeyframes_snap(short type)
 
 static void mirror_bezier_xaxis_ex(BezTriple *bezt, const float center)
 {
-  float diff;
-  int i;
-
-  for (i = 0; i < 3; i++) {
-    diff = (center - bezt->vec[i][0]);
+  for (int i = 0; i < 3; i++) {
+    float diff = (center - bezt->vec[i][0]);
     bezt->vec[i][0] = (center + diff);
   }
   swap_v3_v3(bezt->vec[0], bezt->vec[2]);
 
-  SWAP(char, bezt->h1, bezt->h2);
-  SWAP(char, bezt->f1, bezt->f3);
+  SWAP(uint8_t, bezt->h1, bezt->h2);
+  SWAP(uint8_t, bezt->f1, bezt->f3);
 }
 
 static void mirror_bezier_yaxis_ex(BezTriple *bezt, const float center)
 {
-  float diff;
-  int i;
-
-  for (i = 0; i < 3; i++) {
-    diff = (center - bezt->vec[i][1]);
+  for (int i = 0; i < 3; i++) {
+    float diff = (center - bezt->vec[i][1]);
     bezt->vec[i][1] = (center + diff);
   }
 }
@@ -1038,9 +1026,9 @@ static short mirror_bezier_value(KeyframeEditData *ked, BezTriple *bezt)
 
 /* Note: for markers and 'value', the values to use must be supplied as the first float value */
 // calchandles_fcurve
-KeyframeEditFunc ANIM_editkeyframes_mirror(short type)
+KeyframeEditFunc ANIM_editkeyframes_mirror(short mode)
 {
-  switch (type) {
+  switch (mode) {
     case MIRROR_KEYS_CURFRAME: /* mirror over current frame */
       return mirror_bezier_cframe;
     case MIRROR_KEYS_YAXIS: /* mirror over frame 0 */
@@ -1068,10 +1056,12 @@ KeyframeEditFunc ANIM_editkeyframes_mirror(short type)
  */
 #define ENSURE_HANDLES_MATCH(bezt) \
   if (bezt->h1 != bezt->h2) { \
-    if (ELEM(bezt->h1, HD_ALIGN, HD_AUTO, HD_AUTO_ANIM)) \
+    if (ELEM(bezt->h1, HD_ALIGN, HD_AUTO, HD_AUTO_ANIM)) { \
       bezt->h1 = HD_FREE; \
-    if (ELEM(bezt->h2, HD_ALIGN, HD_AUTO, HD_AUTO_ANIM)) \
+    } \
+    if (ELEM(bezt->h2, HD_ALIGN, HD_AUTO, HD_AUTO_ANIM)) { \
       bezt->h2 = HD_FREE; \
+    } \
   } \
   (void)0
 
@@ -1192,9 +1182,9 @@ static short set_bezier_free(KeyframeEditData *UNUSED(ked), BezTriple *bezt)
 
 /* Set all selected Bezier Handles to a single type */
 // calchandles_fcurve
-KeyframeEditFunc ANIM_editkeyframes_handles(short code)
+KeyframeEditFunc ANIM_editkeyframes_handles(short mode)
 {
-  switch (code) {
+  switch (mode) {
     case HD_AUTO: /* auto */
       return set_bezier_auto;
     case HD_AUTO_ANIM: /* auto clamped */
@@ -1320,9 +1310,9 @@ static short set_bezt_sine(KeyframeEditData *UNUSED(ked), BezTriple *bezt)
 
 /* Set the interpolation type of the selected BezTriples in each F-Curve to the specified one */
 // ANIM_editkeyframes_ipocurve_ipotype() !
-KeyframeEditFunc ANIM_editkeyframes_ipo(short code)
+KeyframeEditFunc ANIM_editkeyframes_ipo(short mode)
 {
-  switch (code) {
+  switch (mode) {
     /* interpolation */
     case BEZT_IPO_CONST: /* constant */
       return set_bezt_constant;
@@ -1399,9 +1389,9 @@ static short set_keytype_moving_hold(KeyframeEditData *UNUSED(ked), BezTriple *b
 }
 
 /* Set the interpolation type of the selected BezTriples in each F-Curve to the specified one */
-KeyframeEditFunc ANIM_editkeyframes_keytype(short code)
+KeyframeEditFunc ANIM_editkeyframes_keytype(short mode)
 {
-  switch (code) {
+  switch (mode) {
     case BEZT_KEYTYPE_BREAKDOWN: /* breakdown */
       return set_keytype_breakdown;
 

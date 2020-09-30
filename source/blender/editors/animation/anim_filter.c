@@ -67,6 +67,7 @@
 #include "DNA_scene_types.h"
 #include "DNA_screen_types.h"
 #include "DNA_sequence_types.h"
+#include "DNA_simulation_types.h"
 #include "DNA_space_types.h"
 #include "DNA_speaker_types.h"
 #include "DNA_userdef_types.h"
@@ -82,10 +83,11 @@
 #include "BLI_utildefines.h"
 
 #include "BKE_action.h"
-#include "BKE_animsys.h"
+#include "BKE_anim_data.h"
 #include "BKE_collection.h"
 #include "BKE_context.h"
 #include "BKE_fcurve.h"
+#include "BKE_fcurve_driver.h"
 #include "BKE_global.h"
 #include "BKE_key.h"
 #include "BKE_layer.h"
@@ -399,7 +401,7 @@ bool ANIM_animdata_context_getdata(bAnimContext *ac)
 bool ANIM_animdata_get_context(const bContext *C, bAnimContext *ac)
 {
   Main *bmain = CTX_data_main(C);
-  ScrArea *sa = CTX_wm_area(C);
+  ScrArea *area = CTX_wm_area(C);
   ARegion *region = CTX_wm_region(C);
   SpaceLink *sl = CTX_wm_space_data(C);
   Scene *scene = CTX_data_scene(C);
@@ -417,14 +419,15 @@ bool ANIM_animdata_get_context(const bContext *C, bAnimContext *ac)
     ac->markers = ED_context_get_markers(C);
   }
   ac->view_layer = CTX_data_view_layer(C);
+  ac->depsgraph = CTX_data_depsgraph_pointer(C);
   ac->obact = (ac->view_layer->basact) ? ac->view_layer->basact->object : NULL;
-  ac->sa = sa;
+  ac->area = area;
   ac->region = region;
   ac->sl = sl;
-  ac->spacetype = (sa) ? sa->spacetype : 0;
+  ac->spacetype = (area) ? area->spacetype : 0;
   ac->regiontype = (region) ? region->regiontype : 0;
 
-  /* initialise default y-scale factor */
+  /* Initialize default y-scale factor. */
   animedit_get_yscale_factor(ac);
 
   /* get data context info */
@@ -567,9 +570,10 @@ bool ANIM_animdata_get_context(const bContext *C, bAnimContext *ac)
 // XXX: ale_statement stuff is really a hack for one special case. It shouldn't really be needed...
 #define ANIMCHANNEL_NEW_CHANNEL_FULL( \
     channel_data, channel_type, owner_id, fcurve_owner_id, ale_statement) \
-  if (filter_mode & ANIMFILTER_TMP_PEEK) \
+  if (filter_mode & ANIMFILTER_TMP_PEEK) { \
     return 1; \
-  else { \
+  } \
+  { \
     bAnimListElem *ale = make_new_animlistelem( \
         channel_data, channel_type, (ID *)owner_id, fcurve_owner_id); \
     if (ale) { \
@@ -826,6 +830,18 @@ static bAnimListElem *make_new_animlistelem(void *data,
         ale->adt = BKE_animdata_from_id(data);
         break;
       }
+      case ANIMTYPE_DSSIMULATION: {
+        Simulation *simulation = (Simulation *)data;
+        AnimData *adt = simulation->adt;
+
+        ale->flag = FILTER_SIMULATION_OBJD(simulation);
+
+        ale->key_data = (adt) ? adt->action : NULL;
+        ale->datatype = ALE_ACT;
+
+        ale->adt = BKE_animdata_from_id(data);
+        break;
+      }
       case ANIMTYPE_DSSKEY: {
         Key *key = (Key *)data;
         AnimData *adt = key->adt;
@@ -974,7 +990,7 @@ static bAnimListElem *make_new_animlistelem(void *data,
              * then free the MEM_alloc'd string
              */
             if (rna_path) {
-              ale->key_data = (void *)list_find_fcurve(&act->curves, rna_path, 0);
+              ale->key_data = (void *)BKE_fcurve_find(&act->curves, rna_path, 0);
               MEM_freeN(rna_path);
             }
           }
@@ -1137,7 +1153,7 @@ static bool name_matches_dopesheet_filter(bDopeSheet *ads, char *name)
   if (ads->flag & ADS_FLAG_FUZZY_NAMES) {
     /* full fuzzy, multi-word, case insensitive matches */
     const size_t str_len = strlen(ads->searchstr);
-    const int words_max = (str_len / 2) + 1;
+    const int words_max = BLI_string_max_possible_word_count(str_len);
 
     int(*words)[2] = BLI_array_alloca(words, words_max);
     const int words_len = BLI_string_find_split_words(
@@ -1155,10 +1171,8 @@ static bool name_matches_dopesheet_filter(bDopeSheet *ads, char *name)
     /* if we have a match somewhere, this returns true */
     return found;
   }
-  else {
-    /* fallback/default - just case insensitive, but starts from start of word */
-    return BLI_strcasestr(name, ads->searchstr) != NULL;
-  }
+  /* fallback/default - just case insensitive, but starts from start of word */
+  return BLI_strcasestr(name, ads->searchstr) != NULL;
 }
 
 /* (Display-)Name-based F-Curve filtering
@@ -1370,7 +1384,7 @@ static size_t animfilter_act_group(bAnimContext *ac,
    * but the group isn't expanded (1)...
    * (1) this only matters if we actually care about the hierarchy though.
    *     - Hierarchy matters: this hack should be applied
-   *     - Hierarchy ignored: cases like [#21276] won't work properly, unless we skip this hack
+   *     - Hierarchy ignored: cases like T21276 won't work properly, unless we skip this hack
    */
   if (
       /* Care about hierarchy but group isn't expanded. */
@@ -1542,17 +1556,6 @@ static size_t animfilter_nla(bAnimContext *UNUSED(ac),
       next = nlt->next;
     }
 
-    /* if we're in NLA-tweakmode, don't show this track if it was disabled
-     * (due to tweaking) for now:
-     * - active track should still get shown though (even though it has disabled flag set)
-     */
-    // FIXME: the channels after should still get drawn, just 'differently',
-    // and after an active-action channel.
-    if ((adt->flag & ADT_NLA_EDIT_ON) && (nlt->flag & NLATRACK_DISABLED) &&
-        (adt->act_track != nlt)) {
-      continue;
-    }
-
     /* only work with this channel and its subchannels if it is editable */
     if (!(filter_mode & ANIMFILTER_FOREDIT) || EDITABLE_NLT(nlt)) {
       /* only include this track if selected in a way consistent with the filtering requirements */
@@ -1702,11 +1705,18 @@ static size_t animdata_filter_shapekey(bAnimContext *ac,
   /* check if channels or only F-Curves */
   if (filter_mode & ANIMFILTER_LIST_CHANNELS) {
     KeyBlock *kb;
+    bDopeSheet *ads = ac->ads;
 
     /* loop through the channels adding ShapeKeys as appropriate */
     for (kb = key->block.first; kb; kb = kb->next) {
       /* skip the first one, since that's the non-animatable basis */
       if (kb == key->block.first) {
+        continue;
+      }
+
+      /* Skip shapekey if the name doesn't match the filter string. */
+      if (ads != NULL && ads->searchstr[0] != '\0' &&
+          name_matches_dopesheet_filter(ads, kb->name) == false) {
         continue;
       }
 
@@ -1840,15 +1850,18 @@ static size_t animdata_filter_gpencil(bAnimContext *ac,
   bDopeSheet *ads = ac->ads;
   size_t items = 0;
 
-  Scene *scene = (Scene *)ads->source;
   ViewLayer *view_layer = (ViewLayer *)ac->view_layer;
   Base *base;
 
-  /* Active scene's GPencil block first - No parent item needed... */
-  if (scene->gpd) {
-    items += animdata_filter_gpencil_data(anim_data, ads, scene->gpd, filter_mode);
+  /* Include all annotation datablocks. */
+  if (((ads->filterflag & ADS_FILTER_ONLYSEL) == 0) ||
+      (ads->filterflag & ADS_FILTER_INCL_HIDDEN)) {
+    LISTBASE_FOREACH (bGPdata *, gpd, &ac->bmain->gpencils) {
+      if (gpd->flag & GP_DATA_ANNOTATIONS) {
+        items += animdata_filter_gpencil_data(anim_data, ads, gpd, filter_mode);
+      }
+    }
   }
-
   /* Objects in the scene */
   for (base = view_layer->object_bases.first; base; base = base->next) {
     /* Only consider this object if it has got some GP data (saving on all the other tests) */
@@ -1877,13 +1890,12 @@ static size_t animdata_filter_gpencil(bAnimContext *ac,
         }
       }
 
-      /* check selection and object type filters only for Object mode */
-      if (ob->mode == OB_MODE_OBJECT) {
-        if ((ads->filterflag & ADS_FILTER_ONLYSEL) && !((base->flag & BASE_SELECTED))) {
-          /* only selected should be shown */
-          continue;
-        }
+      /* check selection and object type filters */
+      if ((ads->filterflag & ADS_FILTER_ONLYSEL) && !((base->flag & BASE_SELECTED))) {
+        /* only selected should be shown */
+        continue;
       }
+
       /* check if object belongs to the filtering group if option to filter
        * objects by the grouped status is on
        * - used to ease the process of doing multiple-character choreographies
@@ -2412,7 +2424,7 @@ static size_t animdata_filter_ds_modifiers(
   afm.filter_mode = filter_mode;
 
   /* 2) walk over dependencies */
-  modifiers_foreachIDLink(ob, animfilter_modifier_idpoin_cb, &afm);
+  BKE_modifiers_foreach_ID_link(ob, animfilter_modifier_idpoin_cb, &afm);
 
   /* 3) extract data from the context, merging it back into the standard list */
   if (afm.items) {
@@ -2587,8 +2599,9 @@ static size_t animdata_filter_ds_obdata(
     {
       Hair *hair = (Hair *)ob->data;
 
-      if (ads->filterflag2 & ADS_FILTER_NOHAIR)
+      if (ads->filterflag2 & ADS_FILTER_NOHAIR) {
         return 0;
+      }
 
       type = ANIMTYPE_DSHAIR;
       expanded = FILTER_HAIR_OBJD(hair);
@@ -2598,8 +2611,9 @@ static size_t animdata_filter_ds_obdata(
     {
       PointCloud *pointcloud = (PointCloud *)ob->data;
 
-      if (ads->filterflag2 & ADS_FILTER_NOPOINTCLOUD)
+      if (ads->filterflag2 & ADS_FILTER_NOPOINTCLOUD) {
         return 0;
+      }
 
       type = ANIMTYPE_DSPOINTCLOUD;
       expanded = FILTER_POINTS_OBJD(pointcloud);
@@ -2609,8 +2623,9 @@ static size_t animdata_filter_ds_obdata(
     {
       Volume *volume = (Volume *)ob->data;
 
-      if (ads->filterflag2 & ADS_FILTER_NOVOLUME)
+      if (ads->filterflag2 & ADS_FILTER_NOVOLUME) {
         return 0;
+      }
 
       type = ANIMTYPE_DSVOLUME;
       expanded = FILTER_VOLUME_OBJD(volume);
@@ -3139,7 +3154,7 @@ static Base **animdata_filter_ds_sorted_bases(bDopeSheet *ads,
   size_t num_bases = 0;
 
   Base **sorted_bases = MEM_mallocN(sizeof(Base *) * tot_bases, "Dopesheet Usable Sorted Bases");
-  for (Base *base = view_layer->object_bases.first; base; base = base->next) {
+  LISTBASE_FOREACH (Base *, base, &view_layer->object_bases) {
     if (animdata_filter_base_is_ok(ads, base, filter_mode)) {
       sorted_bases[num_bases++] = base;
     }
@@ -3233,7 +3248,7 @@ static size_t animdata_filter_dopesheet(bAnimContext *ac,
     /* Filter and add contents of each base (i.e. object) without them sorting first
      * NOTE: This saves performance in cases where order doesn't matter
      */
-    for (Base *base = view_layer->object_bases.first; base; base = base->next) {
+    LISTBASE_FOREACH (Base *, base, &view_layer->object_bases) {
       if (animdata_filter_base_is_ok(ads, base, filter_mode)) {
         /* since we're still here, this object should be usable */
         items += animdata_filter_dopesheet_ob(ac, anim_data, ads, base, filter_mode);
@@ -3398,12 +3413,13 @@ static size_t animdata_filter_remove_duplis(ListBase *anim_data)
 
 /* ----------- Public API --------------- */
 
-/* This function filters the active data source to leave only animation channels suitable for
+/**
+ * This function filters the active data source to leave only animation channels suitable for
  * usage by the caller. It will return the length of the list
  *
- * *anim_data: is a pointer to a ListBase, to which the filtered animation channels
- * will be placed for use.
- * filter_mode: how should the data be filtered - bitmapping accessed flags
+ * \param anim_data: Is a pointer to a #ListBase,
+ * to which the filtered animation channels will be placed for use.
+ * \param filter_mode: how should the data be filtered - bit-mapping accessed flags.
  */
 size_t ANIM_animdata_filter(bAnimContext *ac,
                             ListBase *anim_data,
@@ -3424,7 +3440,7 @@ size_t ANIM_animdata_filter(bAnimContext *ac,
         SpaceAction *saction = (SpaceAction *)ac->sl;
         bDopeSheet *ads = (saction) ? &saction->ads : NULL;
 
-        /* specially check for AnimData filter... [#36687] */
+        /* specially check for AnimData filter, see T36687. */
         if (UNLIKELY(filter_mode & ANIMFILTER_ANIMDATA)) {
           /* all channels here are within the same AnimData block, hence this special case */
           if (LIKELY(obact->adt)) {
@@ -3445,7 +3461,7 @@ size_t ANIM_animdata_filter(bAnimContext *ac,
       {
         Key *key = (Key *)data;
 
-        /* specially check for AnimData filter... [#36687] */
+        /* specially check for AnimData filter, see T36687. */
         if (UNLIKELY(filter_mode & ANIMFILTER_ANIMDATA)) {
           /* all channels here are within the same AnimData block, hence this special case */
           if (LIKELY(key->adt)) {

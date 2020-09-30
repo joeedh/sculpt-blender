@@ -150,6 +150,7 @@ ccl_device void kernel_adaptive_post_adjust(KernelGlobals *kg,
   }
 #endif /* __DENOISING_FEATURES__ */
 
+  /* Cryptomatte. */
   if (kernel_data.film.cryptomatte_passes) {
     int num_slots = 0;
     num_slots += (kernel_data.film.cryptomatte_passes & CRYPT_OBJECT) ? 1 : 0;
@@ -161,6 +162,14 @@ ccl_device void kernel_adaptive_post_adjust(KernelGlobals *kg,
     for (int slot = 0; slot < num_slots; slot++) {
       id_buffer[slot].y *= sample_multiplier;
     }
+  }
+
+  /* AOVs. */
+  for (int i = 0; i < kernel_data.film.pass_aov_value_num; i++) {
+    *(buffer + kernel_data.film.pass_aov_value + i) *= sample_multiplier;
+  }
+  for (int i = 0; i < kernel_data.film.pass_aov_color_num; i++) {
+    *((ccl_global float4 *)(buffer + kernel_data.film.pass_aov_color) + i) *= sample_multiplier;
   }
 }
 
@@ -176,19 +185,19 @@ ccl_device bool kernel_do_adaptive_filter_x(KernelGlobals *kg, int y, ccl_global
     ccl_global float *buffer = tile->buffer + index * kernel_data.film.pass_stride;
     ccl_global float4 *aux = (ccl_global float4 *)(buffer +
                                                    kernel_data.film.pass_adaptive_aux_buffer);
-    if (aux->w == 0.0f) {
+    if ((*aux).w == 0.0f) {
       any = true;
       if (x > tile->x && !prev) {
         index = index - 1;
         buffer = tile->buffer + index * kernel_data.film.pass_stride;
         aux = (ccl_global float4 *)(buffer + kernel_data.film.pass_adaptive_aux_buffer);
-        aux->w = 0.0f;
+        (*aux).w = 0.0f;
       }
       prev = true;
     }
     else {
       if (prev) {
-        aux->w = 0.0f;
+        (*aux).w = 0.0f;
       }
       prev = false;
     }
@@ -205,19 +214,19 @@ ccl_device bool kernel_do_adaptive_filter_y(KernelGlobals *kg, int x, ccl_global
     ccl_global float *buffer = tile->buffer + index * kernel_data.film.pass_stride;
     ccl_global float4 *aux = (ccl_global float4 *)(buffer +
                                                    kernel_data.film.pass_adaptive_aux_buffer);
-    if (aux->w == 0.0f) {
+    if ((*aux).w == 0.0f) {
       any = true;
       if (y > tile->y && !prev) {
         index = index - tile->stride;
         buffer = tile->buffer + index * kernel_data.film.pass_stride;
         aux = (ccl_global float4 *)(buffer + kernel_data.film.pass_adaptive_aux_buffer);
-        aux->w = 0.0f;
+        (*aux).w = 0.0f;
       }
       prev = true;
     }
     else {
       if (prev) {
-        aux->w = 0.0f;
+        (*aux).w = 0.0f;
       }
       prev = false;
     }

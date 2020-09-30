@@ -18,6 +18,7 @@
 #include "device/device.h"
 #include "render/colorspace.h"
 #include "render/image_oiio.h"
+#include "render/image_vdb.h"
 #include "render/scene.h"
 #include "render/stats.h"
 
@@ -27,6 +28,7 @@
 #include "util/util_logging.h"
 #include "util/util_path.h"
 #include "util/util_progress.h"
+#include "util/util_task.h"
 #include "util/util_texture.h"
 #include "util/util_unique_ptr.h"
 
@@ -171,6 +173,31 @@ device_texture *ImageHandle::image_memory(const int tile_index) const
   return img ? img->mem : NULL;
 }
 
+VDBImageLoader *ImageHandle::vdb_loader(const int tile_index) const
+{
+  if (tile_index >= tile_slots.size()) {
+    return NULL;
+  }
+
+  ImageManager::Image *img = manager->images[tile_slots[tile_index]];
+
+  if (img == NULL) {
+    return NULL;
+  }
+
+  ImageLoader *loader = img->loader;
+
+  if (loader == NULL) {
+    return NULL;
+  }
+
+  if (loader->is_vdb_loader()) {
+    return dynamic_cast<VDBImageLoader *>(loader);
+  }
+
+  return NULL;
+}
+
 bool ImageHandle::operator==(const ImageHandle &other) const
 {
   return manager == other.manager && tile_slots == other.tile_slots;
@@ -257,6 +284,11 @@ bool ImageLoader::equals(const ImageLoader *a, const ImageLoader *b)
   }
 }
 
+bool ImageLoader::is_vdb_loader() const
+{
+  return false;
+}
+
 /* Image Manager */
 
 ImageManager::ImageManager(const DeviceInfo &info)
@@ -283,6 +315,7 @@ void ImageManager::set_osl_texture_system(void *texture_system)
 bool ImageManager::set_animation_frame_update(int frame)
 {
   if (frame != animation_frame) {
+    thread_scoped_lock device_lock(images_mutex);
     animation_frame = frame;
 
     for (size_t slot = 0; slot < images.size(); slot++) {
@@ -360,9 +393,11 @@ ImageHandle ImageManager::add_image(const string &filename,
   return handle;
 }
 
-ImageHandle ImageManager::add_image(ImageLoader *loader, const ImageParams &params)
+ImageHandle ImageManager::add_image(ImageLoader *loader,
+                                    const ImageParams &params,
+                                    const bool builtin)
 {
-  const int slot = add_image_slot(loader, params, true);
+  const int slot = add_image_slot(loader, params, builtin);
 
   ImageHandle handle;
   handle.tile_slots.push_back(slot);
@@ -377,7 +412,7 @@ int ImageManager::add_image_slot(ImageLoader *loader,
   Image *img;
   size_t slot;
 
-  thread_scoped_lock device_lock(device_mutex);
+  thread_scoped_lock device_lock(images_mutex);
 
   /* Fnd existing image. */
   for (slot = 0; slot < images.size(); slot++) {
@@ -418,6 +453,7 @@ int ImageManager::add_image_slot(ImageLoader *loader,
 
 void ImageManager::add_image_user(int slot)
 {
+  thread_scoped_lock device_lock(images_mutex);
   Image *image = images[slot];
   assert(image && image->users >= 1);
 
@@ -426,6 +462,7 @@ void ImageManager::add_image_user(int slot)
 
 void ImageManager::remove_image_user(int slot)
 {
+  thread_scoped_lock device_lock(images_mutex);
   Image *image = images[slot];
   assert(image && image->users >= 1);
 

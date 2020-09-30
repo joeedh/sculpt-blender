@@ -58,7 +58,6 @@ void paintface_flush_flags(struct bContext *C, Object *ob, short flag)
   MPoly *polys, *mp_orig;
   const int *index_array = NULL;
   int totpoly;
-  int i;
 
   BLI_assert((flag & ~(SELECT | ME_HIDE)) == 0);
 
@@ -87,7 +86,7 @@ void paintface_flush_flags(struct bContext *C, Object *ob, short flag)
 
   if (me_orig != NULL && me_eval != NULL && me_orig->totpoly == me->totpoly) {
     /* Update the COW copy of the mesh. */
-    for (i = 0; i < me->totpoly; i++) {
+    for (int i = 0; i < me->totpoly; i++) {
       me_orig->mpoly[i].flag = me->mpoly[i].flag;
     }
 
@@ -101,7 +100,7 @@ void paintface_flush_flags(struct bContext *C, Object *ob, short flag)
       totpoly = me_eval->totpoly;
 
       /* loop over final derived polys */
-      for (i = 0; i < totpoly; i++) {
+      for (int i = 0; i < totpoly; i++) {
         if (index_array[i] != ORIGINDEX_NONE) {
           /* Copy flags onto the final derived poly from the original mesh poly */
           mp_orig = me->mpoly + index_array[i];
@@ -190,7 +189,7 @@ void paintface_reveal(bContext *C, Object *ob, const bool select)
 
 /* Set tface seams based on edge data, uses hash table to find seam edges. */
 
-static void select_linked_tfaces_with_seams(Mesh *me, const unsigned int index, const bool select)
+static void select_linked_tfaces_with_seams(Mesh *me, const uint index, const bool select)
 {
   MPoly *mp;
   MLoop *ml;
@@ -201,7 +200,7 @@ static void select_linked_tfaces_with_seams(Mesh *me, const unsigned int index, 
   BLI_bitmap *edge_tag = BLI_BITMAP_NEW(me->totedge, __func__);
   BLI_bitmap *poly_tag = BLI_BITMAP_NEW(me->totpoly, __func__);
 
-  if (index != (unsigned int)-1) {
+  if (index != (uint)-1) {
     /* only put face under cursor in array */
     mp = &me->mpoly[index];
     BKE_mesh_poly_edgebitmap_insert(edge_tag, mp, me->mloop + mp->loopstart);
@@ -267,7 +266,7 @@ static void select_linked_tfaces_with_seams(Mesh *me, const unsigned int index, 
 void paintface_select_linked(bContext *C, Object *ob, const int mval[2], const bool select)
 {
   Mesh *me;
-  unsigned int index = (unsigned int)-1;
+  uint index = (uint)-1;
 
   me = BKE_mesh_from_object(ob);
   if (me == NULL || me->totpoly == 0) {

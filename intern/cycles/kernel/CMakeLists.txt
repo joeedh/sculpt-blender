@@ -1,3 +1,17 @@
+# Copyright 2011-2020 Blender Foundation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 remove_extra_strict_flags()
 
 set(INC
@@ -81,18 +95,6 @@ set(SRC_BVH_HEADERS
   bvh/bvh_types.h
   bvh/bvh_volume.h
   bvh/bvh_volume_all.h
-  bvh/qbvh_nodes.h
-  bvh/qbvh_shadow_all.h
-  bvh/qbvh_local.h
-  bvh/qbvh_traversal.h
-  bvh/qbvh_volume.h
-  bvh/qbvh_volume_all.h
-  bvh/obvh_nodes.h
-  bvh/obvh_shadow_all.h
-  bvh/obvh_local.h
-  bvh/obvh_traversal.h
-  bvh/obvh_volume.h
-  bvh/obvh_volume_all.h
   bvh/bvh_embree.h
 )
 
@@ -113,6 +115,8 @@ set(SRC_HEADERS
   kernel_id_passes.h
   kernel_jitter.h
   kernel_light.h
+  kernel_light_background.h
+  kernel_light_common.h
   kernel_math.h
   kernel_montecarlo.h
   kernel_passes.h
@@ -375,11 +379,11 @@ if(WITH_CYCLES_CUDA_BINARIES)
   set(CUDA_VERSION "${CUDA_VERSION_MAJOR}${CUDA_VERSION_MINOR}")
 
   # warn for other versions
-  if(CUDA_VERSION MATCHES "101")
+  if((CUDA_VERSION MATCHES "101") OR (CUDA_VERSION MATCHES "102"))
   else()
     message(WARNING
       "CUDA version ${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR} detected, "
-      "build may succeed but only CUDA 10.1 is officially supported")
+      "build may succeed but only CUDA 10.1 and 10.2 are officially supported")
   endif()
 
   # build for each arch
@@ -507,7 +511,7 @@ endif()
 
 # OptiX PTX modules
 
-if(WITH_CYCLES_DEVICE_OPTIX)
+if(WITH_CYCLES_DEVICE_OPTIX AND WITH_CYCLES_CUDA_BINARIES)
   foreach(input ${SRC_OPTIX_KERNELS})
     get_filename_component(input_we ${input} NAME_WE)
 
@@ -549,7 +553,7 @@ if(WITH_CYCLES_DEVICE_OPTIX)
           ${SRC_UTIL_HEADERS}
         COMMAND ${CUBIN_CC_ENV}
             "$<TARGET_FILE:cycles_cubin_cc>"
-            -target 30
+            -target 50
             -ptx
             -i ${CMAKE_CURRENT_SOURCE_DIR}/${input}
             ${cuda_flags}
@@ -573,7 +577,7 @@ if(WITH_CYCLES_DEVICE_OPTIX)
         COMMAND
           ${CUDA_NVCC_EXECUTABLE}
           --ptx
-          -arch=sm_30
+          -arch=sm_50
           ${cuda_flags}
           ${input}
         WORKING_DIRECTORY
@@ -677,7 +681,7 @@ source_group("svm" FILES ${SRC_SVM_HEADERS})
 if(WITH_CYCLES_CUDA)
   add_dependencies(cycles_kernel cycles_kernel_cuda)
 endif()
-if(WITH_CYCLES_DEVICE_OPTIX)
+if(WITH_CYCLES_DEVICE_OPTIX AND WITH_CYCLES_CUDA_BINARIES)
   add_dependencies(cycles_kernel cycles_kernel_optix)
 endif()
 

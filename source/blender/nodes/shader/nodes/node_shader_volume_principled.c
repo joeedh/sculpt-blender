@@ -44,7 +44,7 @@ static bNodeSocketTemplate sh_node_volume_principled_out[] = {
 
 static void node_shader_init_volume_principled(bNodeTree *UNUSED(ntree), bNode *node)
 {
-  for (bNodeSocket *sock = node->inputs.first; sock; sock = sock->next) {
+  LISTBASE_FOREACH (bNodeSocket *, sock, &node->inputs) {
     if (STREQ(sock->name, "Density Attribute")) {
       strcpy(((bNodeSocketValueString *)sock->default_value)->value, "density");
     }
@@ -66,7 +66,7 @@ static int node_shader_gpu_volume_principled(GPUMaterial *mat,
   /* Get volume attributes. */
   GPUNodeLink *density = NULL, *color = NULL, *temperature = NULL;
 
-  for (bNodeSocket *sock = node->inputs.first; sock; sock = sock->next) {
+  LISTBASE_FOREACH (bNodeSocket *, sock, &node->inputs) {
     if (sock->typeinfo->type != SOCK_STRING) {
       continue;
     }
@@ -78,13 +78,13 @@ static int node_shader_gpu_volume_principled(GPUMaterial *mat,
     }
 
     if (STREQ(sock->name, "Density Attribute")) {
-      density = GPU_volume_grid(mat, attribute_name);
+      density = GPU_volume_grid(mat, attribute_name, GPU_VOLUME_DEFAULT_1);
     }
     else if (STREQ(sock->name, "Color Attribute")) {
-      color = GPU_volume_grid(mat, attribute_name);
+      color = GPU_volume_grid(mat, attribute_name, GPU_VOLUME_DEFAULT_1);
     }
     else if (use_blackbody && STREQ(sock->name, "Temperature Attribute")) {
-      temperature = GPU_volume_grid(mat, attribute_name);
+      temperature = GPU_volume_grid(mat, attribute_name, GPU_VOLUME_DEFAULT_0);
     }
   }
 

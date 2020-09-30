@@ -14,21 +14,19 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __FREESTYLE_VIEW_MAP_TESSELATOR_H__
-#define __FREESTYLE_VIEW_MAP_TESSELATOR_H__
+#pragma once
 
 /** \file
  * \ingroup freestyle
  * \brief Class to build a Node Tree designed to be displayed from a Silhouette View Map structure.
  */
 
-/* clang-format off */
 #include "Silhouette.h"
 #include "ViewMap.h"
 
 #include "../scene_graph/LineRep.h"
-#include "../scene_graph/NodeShape.h"
 #include "../scene_graph/NodeGroup.h"
+#include "../scene_graph/NodeShape.h"
 #include "../scene_graph/OrientedLineRep.h"
 #include "../scene_graph/VertexRep.h"
 
@@ -37,7 +35,6 @@
 #ifdef WITH_CXX_GUARDEDALLOC
 #  include "MEM_guardedalloc.h"
 #endif
-/* clang-format on */
 
 namespace Freestyle {
 
@@ -227,5 +224,3 @@ NodeGroup *ViewMapTesselator::Tesselate(ViewEdgesIterator begin, ViewEdgesIterat
 }
 
 } /* namespace Freestyle */
-
-#endif  // __FREESTYLE_VIEW_MAP_TESSELATOR_H__

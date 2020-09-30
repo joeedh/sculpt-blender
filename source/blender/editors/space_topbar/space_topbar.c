@@ -52,7 +52,7 @@
 
 /* ******************** default callbacks for topbar space ***************** */
 
-static SpaceLink *topbar_new(const ScrArea *UNUSED(area), const Scene *UNUSED(scene))
+static SpaceLink *topbar_create(const ScrArea *UNUSED(area), const Scene *UNUSED(scene))
 {
   ARegion *region;
   SpaceTopBar *stopbar;
@@ -84,7 +84,7 @@ static void topbar_free(SpaceLink *UNUSED(sl))
 }
 
 /* spacetype; init callback */
-static void topbar_init(struct wmWindowManager *UNUSED(wm), ScrArea *UNUSED(sa))
+static void topbar_init(struct wmWindowManager *UNUSED(wm), ScrArea *UNUSED(area))
 {
 }
 
@@ -130,7 +130,7 @@ static void topbar_header_region_init(wmWindowManager *UNUSED(wm), ARegion *regi
 }
 
 static void topbar_main_region_listener(wmWindow *UNUSED(win),
-                                        ScrArea *UNUSED(sa),
+                                        ScrArea *UNUSED(area),
                                         ARegion *region,
                                         wmNotifier *wmn,
                                         const Scene *UNUSED(scene))
@@ -161,7 +161,7 @@ static void topbar_main_region_listener(wmWindow *UNUSED(win),
 }
 
 static void topbar_header_listener(wmWindow *UNUSED(win),
-                                   ScrArea *UNUSED(sa),
+                                   ScrArea *UNUSED(area),
                                    ARegion *region,
                                    wmNotifier *wmn,
                                    const Scene *UNUSED(scene))
@@ -195,7 +195,7 @@ static void topbar_header_region_message_subscribe(const struct bContext *UNUSED
                                                    struct WorkSpace *workspace,
                                                    struct Scene *UNUSED(scene),
                                                    struct bScreen *UNUSED(screen),
-                                                   struct ScrArea *UNUSED(sa),
+                                                   struct ScrArea *UNUSED(area),
                                                    struct ARegion *region,
                                                    struct wmMsgBus *mbus)
 {
@@ -250,7 +250,7 @@ void ED_spacetype_topbar(void)
   st->spaceid = SPACE_TOPBAR;
   strncpy(st->name, "Top Bar", BKE_ST_MAXNAME);
 
-  st->new = topbar_new;
+  st->create = topbar_create;
   st->free = topbar_free;
   st->init = topbar_init;
   st->duplicate = topbar_duplicate;

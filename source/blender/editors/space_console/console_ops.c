@@ -287,12 +287,11 @@ static bool console_line_column_from_index(
     *r_col = offset - pos;
     return true;
   }
-  else {
-    *r_cl = NULL;
-    *r_cl_offset = -1;
-    *r_col = -1;
-    return false;
-  }
+
+  *r_cl = NULL;
+  *r_cl_offset = -1;
+  *r_col = -1;
+  return false;
 }
 
 /* static funcs for text editing */
@@ -353,10 +352,10 @@ static int console_move_exec(bContext *C, wmOperator *op)
   }
 
   if (done) {
-    ScrArea *sa = CTX_wm_area(C);
+    ScrArea *area = CTX_wm_area(C);
     ARegion *region = CTX_wm_region(C);
 
-    ED_area_tag_redraw(sa);
+    ED_area_tag_redraw(area);
     console_scroll_bottom(region);
   }
 
@@ -403,9 +402,8 @@ static int console_insert_exec(bContext *C, wmOperator *op)
   if (len == 0) {
     return OPERATOR_CANCELLED;
   }
-  else {
-    console_select_offset(sc, len);
-  }
+
+  console_select_offset(sc, len);
 
   console_textview_update_rect(sc, region);
   ED_area_tag_redraw(CTX_wm_area(C));
@@ -426,21 +424,20 @@ static int console_insert_invoke(bContext *C, wmOperator *op, const wmEvent *eve
     if ((event->ctrl || event->oskey) && !event->utf8_buf[0]) {
       return OPERATOR_PASS_THROUGH;
     }
-    else {
-      char str[BLI_UTF8_MAX + 1];
-      size_t len;
 
-      if (event->utf8_buf[0]) {
-        len = BLI_str_utf8_size_safe(event->utf8_buf);
-        memcpy(str, event->utf8_buf, len);
-      }
-      else {
-        /* in theory, ghost can set value to extended ascii here */
-        len = BLI_str_utf8_from_unicode(event->ascii, str);
-      }
-      str[len] = '\0';
-      RNA_string_set(op->ptr, "text", str);
+    char str[BLI_UTF8_MAX + 1];
+    size_t len;
+
+    if (event->utf8_buf[0]) {
+      len = BLI_str_utf8_size_safe(event->utf8_buf);
+      memcpy(str, event->utf8_buf, len);
     }
+    else {
+      /* in theory, ghost can set value to extended ascii here */
+      len = BLI_str_utf8_from_unicode(event->ascii, str);
+    }
+    str[len] = '\0';
+    RNA_string_set(op->ptr, "text", str);
   }
   return console_insert_exec(C, op);
 }
@@ -674,9 +671,8 @@ static int console_delete_exec(bContext *C, wmOperator *op)
   if (!done) {
     return OPERATOR_CANCELLED;
   }
-  else {
-    console_select_offset(sc, -stride);
-  }
+
+  console_select_offset(sc, -stride);
 
   console_textview_update_rect(sc, region);
   ED_area_tag_redraw(CTX_wm_area(C));
@@ -860,7 +856,7 @@ static int console_history_append_exec(bContext *C, wmOperator *op)
 {
   SpaceConsole *sc = CTX_wm_space_console(C);
   ARegion *region = CTX_wm_region(C);
-  ScrArea *sa = CTX_wm_area(C);
+  ScrArea *area = CTX_wm_area(C);
   ConsoleLine *ci = console_history_verify(C);
   /* own this text in the new line, don't free */
   char *str = RNA_string_get_alloc(op->ptr, "text", NULL, 0);
@@ -885,7 +881,7 @@ static int console_history_append_exec(bContext *C, wmOperator *op)
   console_select_offset(sc, ci->len - prev_len);
   console_line_cursor_set(ci, cursor);
 
-  ED_area_tag_redraw(sa);
+  ED_area_tag_redraw(area);
 
   /* when calling render modally this can be NULL when calling:
    * bpy.ops.render.render('INVOKE_DEFAULT') */

@@ -439,7 +439,8 @@ const char *OSLShaderManager::shader_load_bytecode(const string &hash, const str
 
 /* This is a static function to avoid RTTI link errors with only this
  * file being compiled without RTTI to match OSL and LLVM libraries. */
-OSLNode *OSLShaderManager::osl_node(ShaderManager *manager,
+OSLNode *OSLShaderManager::osl_node(ShaderGraph *graph,
+                                    ShaderManager *manager,
                                     const std::string &filepath,
                                     const std::string &bytecode_hash,
                                     const std::string &bytecode)
@@ -482,7 +483,7 @@ OSLNode *OSLShaderManager::osl_node(ShaderManager *manager,
   }
 
   /* create node */
-  OSLNode *node = OSLNode::create(num_inputs);
+  OSLNode *node = OSLNode::create(graph, num_inputs);
 
   /* add new sockets from parameters */
   set<void *> used_sockets;
@@ -762,10 +763,6 @@ void OSLCompiler::add(ShaderNode *node, const char *name, bool isfilepath)
       current_shader->has_volume_spatial_varying = true;
     if (node->has_attribute_dependency())
       current_shader->has_volume_attribute_dependency = true;
-  }
-
-  if (node->has_object_dependency()) {
-    current_shader->has_object_dependency = true;
   }
 
   if (node->has_integrator_dependency()) {
@@ -1142,7 +1139,6 @@ void OSLCompiler::compile(OSLGlobals *og, Shader *shader)
     shader->has_surface_spatial_varying = false;
     shader->has_volume_spatial_varying = false;
     shader->has_volume_attribute_dependency = false;
-    shader->has_object_dependency = false;
     shader->has_integrator_dependency = false;
 
     /* generate surface shader */

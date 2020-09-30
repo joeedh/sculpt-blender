@@ -46,7 +46,6 @@ set(INC
 
 set(INC_SYS
   ${ZLIB_INCLUDE_DIRS}
-  ${GLEW_INCLUDE_PATH}
 )
 
 set(SRC
@@ -131,7 +130,6 @@ if(WITH_AUDASPACE)
   )
 endif()
 
-add_definitions(${GL_DEFINITIONS})
 
 if(WITH_INTERNATIONAL)
   add_definitions(-DWITH_INTERNATIONAL)
@@ -153,8 +151,8 @@ endif()
 
 if(WITH_HEADLESS)
   add_definitions(-DWITH_HEADLESS)
-elseif(WITH_X11)
-  add_definitions(-DWITH_X11)
+elseif(WITH_GHOST_X11)
+  add_definitions(-DWITH_GHOST_X11)
 endif()
 
 if(WITH_PYTHON)
@@ -166,10 +164,6 @@ endif()
 
 if(WITH_BUILDINFO)
   add_definitions(-DWITH_BUILDINFO)
-endif()
-
-if(WITH_OPENSUBDIV)
-  add_definitions(-DWITH_OPENSUBDIV)
 endif()
 
 if(WITH_INPUT_NDOF)
@@ -191,8 +185,18 @@ endif()
 
 if(WITH_XR_OPENXR)
   add_definitions(-DWITH_XR_OPENXR)
+
+  list(APPEND INC
+    xr
+  )
+
   list(APPEND SRC
-    intern/wm_xr.c
+    xr/intern/wm_xr.c
+    xr/intern/wm_xr_draw.c
+    xr/intern/wm_xr_session.c
+
+    xr/wm_xr.h
+    xr/intern/wm_xr_intern.h
   )
 endif()
 

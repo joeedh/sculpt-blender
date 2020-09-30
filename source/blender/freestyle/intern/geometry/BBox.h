@@ -14,24 +14,21 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __BBOX_H__
-#define __BBOX_H__
+#pragma once
 
 /** \file
  * \ingroup freestyle
  * \brief A class to hold a bounding box
  */
 
-/* clang-format off */
-#include <stdlib.h>
 #include <algorithm>
+#include <stdlib.h>
 
 #include "BLI_utildefines.h"
 
 #ifdef WITH_CXX_GUARDEDALLOC
 #  include "MEM_guardedalloc.h"
 #endif
-/* clang-format on */
 
 namespace Freestyle {
 
@@ -158,5 +155,3 @@ template<class Point> BBox<Point> &operator+(const BBox<Point> &b1, const BBox<P
 }
 
 } /* namespace Freestyle */
-
-#endif  // __BBOX_H__

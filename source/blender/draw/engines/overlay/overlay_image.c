@@ -27,6 +27,8 @@
 #include "BKE_movieclip.h"
 #include "BKE_object.h"
 
+#include "BLI_listbase.h"
+
 #include "DNA_camera_types.h"
 #include "DNA_screen_types.h"
 
@@ -59,11 +61,11 @@ void OVERLAY_image_cache_init(OVERLAY_Data *vedata)
   state = DRW_STATE_WRITE_COLOR | DRW_STATE_WRITE_DEPTH | DRW_STATE_DEPTH_LESS;
   DRW_PASS_CREATE(psl->image_empties_ps, state | pd->clipping_state);
 
-  state = DRW_STATE_WRITE_COLOR | DRW_STATE_DEPTH_LESS_EQUAL | DRW_STATE_BLEND_ALPHA;
+  state = DRW_STATE_WRITE_COLOR | DRW_STATE_DEPTH_LESS_EQUAL | DRW_STATE_BLEND_ALPHA_PREMUL;
   DRW_PASS_CREATE(psl->image_empties_back_ps, state | pd->clipping_state);
   DRW_PASS_CREATE(psl->image_empties_blend_ps, state | pd->clipping_state);
 
-  state = DRW_STATE_WRITE_COLOR | DRW_STATE_BLEND_ALPHA;
+  state = DRW_STATE_WRITE_COLOR | DRW_STATE_BLEND_ALPHA_PREMUL;
   DRW_PASS_CREATE(psl->image_empties_front_ps, state);
   DRW_PASS_CREATE(psl->image_foreground_ps, state);
 }
@@ -102,25 +104,27 @@ static void overlay_image_calc_aspect(Image *ima, const int size[2], float r_ima
   }
 }
 
-static void camera_background_images_stereo_setup(Scene *scene,
-                                                  View3D *v3d,
+static eStereoViews camera_background_images_stereo_eye(const Scene *scene, const View3D *v3d)
+{
+  if ((scene->r.scemode & R_MULTIVIEW) == 0) {
+    return STEREO_LEFT_ID;
+  }
+  if (v3d->stereo3d_camera != STEREO_3D_ID) {
+    /* show only left or right camera */
+    return v3d->stereo3d_camera;
+  }
+
+  return v3d->multiview_eye;
+}
+
+static void camera_background_images_stereo_setup(const Scene *scene,
+                                                  const View3D *v3d,
                                                   Image *ima,
                                                   ImageUser *iuser)
 {
   if (BKE_image_is_stereo(ima)) {
     iuser->flag |= IMA_SHOW_STEREO;
-
-    if ((scene->r.scemode & R_MULTIVIEW) == 0) {
-      iuser->multiview_eye = STEREO_LEFT_ID;
-    }
-    else if (v3d->stereo3d_camera != STEREO_3D_ID) {
-      /* show only left or right camera */
-      iuser->multiview_eye = v3d->stereo3d_camera;
-    }
-    else {
-      iuser->multiview_eye = v3d->multiview_eye;
-    }
-
+    iuser->multiview_eye = camera_background_images_stereo_eye(scene, v3d);
     BKE_image_multiview_index(ima, iuser);
   }
   else {
@@ -157,9 +161,8 @@ static struct GPUTexture *image_camera_background_texture_get(CameraBGImage *bgp
         /* Frame is out of range, dont show. */
         return NULL;
       }
-      else {
-        camera_background_images_stereo_setup(scene, draw_ctx->v3d, image, iuser);
-      }
+
+      camera_background_images_stereo_setup(scene, draw_ctx->v3d, image, iuser);
 
       iuser->scene = draw_ctx->scene;
       ImBuf *ibuf = BKE_image_acquire_ibuf(image, iuser, &lock);
@@ -170,7 +173,7 @@ static struct GPUTexture *image_camera_background_texture_get(CameraBGImage *bgp
       }
       width = ibuf->x;
       height = ibuf->y;
-      tex = GPU_texture_from_blender(image, iuser, ibuf, GL_TEXTURE_2D);
+      tex = BKE_image_get_gpu_texture(image, iuser, ibuf);
       BKE_image_release_ibuf(image, ibuf, lock);
       iuser->scene = NULL;
 
@@ -198,7 +201,7 @@ static struct GPUTexture *image_camera_background_texture_get(CameraBGImage *bgp
       }
 
       BKE_movieclip_user_set_frame(&bgpic->cuser, ctime);
-      tex = GPU_texture_from_movieclip(clip, &bgpic->cuser, GL_TEXTURE_2D);
+      tex = BKE_movieclip_get_gpu_texture(clip, &bgpic->cuser);
       if (tex == NULL) {
         return NULL;
       }
@@ -227,7 +230,7 @@ static void OVERLAY_image_free_movieclips_textures(OVERLAY_Data *data)
   LinkData *link;
   while ((link = BLI_pophead(&data->stl->pd->bg_movie_clips))) {
     MovieClip *clip = (MovieClip *)link->data;
-    GPU_free_texture_movieclip(clip);
+    BKE_movieclip_free_gputexture(clip);
     MEM_freeN(link);
   }
 }
@@ -282,6 +285,9 @@ static void image_camera_background_matrix_get(const Camera *cam,
   translate[3][0] = bgpic->offset[0];
   translate[3][1] = bgpic->offset[1];
   translate[3][2] = cam_corners[0][2];
+  if (cam->type == CAM_ORTHO) {
+    mul_v2_fl(translate[3], cam->ortho_scale);
+  }
   /* These lines are for keeping 2.80 behavior and could be removed to keep 2.79 behavior. */
   translate[3][0] *= min_ff(1.0f, cam_aspect);
   translate[3][1] /= max_ff(1.0f, cam_aspect) * (image_aspect / cam_aspect);
@@ -300,6 +306,8 @@ void OVERLAY_image_camera_cache_populate(OVERLAY_Data *vedata, Object *ob)
   OVERLAY_PrivateData *pd = vedata->stl->pd;
   OVERLAY_PassList *psl = vedata->psl;
   const DRWContextState *draw_ctx = DRW_context_state_get();
+  const View3D *v3d = draw_ctx->v3d;
+  const Scene *scene = draw_ctx->scene;
   Camera *cam = ob->data;
 
   const bool show_frame = BKE_object_empty_image_frame_is_visible_in_view3d(ob, draw_ctx->rv3d);
@@ -308,10 +316,12 @@ void OVERLAY_image_camera_cache_populate(OVERLAY_Data *vedata, Object *ob)
     return;
   }
 
-  float norm_obmat[4][4];
-  normalize_m4_m4(norm_obmat, ob->obmat);
+  const bool stereo_eye = camera_background_images_stereo_eye(scene, v3d) == STEREO_LEFT_ID;
+  const char *viewname = (stereo_eye == STEREO_LEFT_ID) ? STEREO_RIGHT_NAME : STEREO_LEFT_NAME;
+  float modelmat[4][4];
+  BKE_camera_multiview_model_matrix(&scene->r, ob, viewname, modelmat);
 
-  for (CameraBGImage *bgpic = cam->bg_images.first; bgpic; bgpic = bgpic->next) {
+  LISTBASE_FOREACH (CameraBGImage *, bgpic, &cam->bg_images) {
     if (bgpic->flag & CAM_BGIMG_FLAG_DISABLED) {
       continue;
     }
@@ -327,10 +337,10 @@ void OVERLAY_image_camera_cache_populate(OVERLAY_Data *vedata, Object *ob)
     if (tex) {
       image_camera_background_matrix_get(cam, bgpic, draw_ctx, aspect, mat);
 
-      mul_m4_m4m4(mat, norm_obmat, mat);
+      mul_m4_m4m4(mat, modelmat, mat);
       const bool is_foreground = (bgpic->flag & CAM_BGIMG_FLAG_FOREGROUND) != 0;
 
-      float color_premult_alpha[4] = {bgpic->alpha, bgpic->alpha, bgpic->alpha, bgpic->alpha};
+      const float color_premult_alpha[4] = {1.0f, 1.0f, 1.0f, bgpic->alpha};
 
       DRWPass *pass = is_foreground ? psl->image_foreground_ps : psl->image_background_ps;
 
@@ -371,7 +381,7 @@ void OVERLAY_image_empty_cache_populate(OVERLAY_Data *vedata, Object *ob)
     if (ima != NULL) {
       ImageUser iuser = *ob->iuser;
       camera_background_images_stereo_setup(draw_ctx->scene, draw_ctx->v3d, ima, &iuser);
-      tex = GPU_texture_from_blender(ima, &iuser, NULL, GL_TEXTURE_2D);
+      tex = BKE_image_get_gpu_texture(ima, &iuser, NULL);
       if (tex) {
         size[0] = GPU_texture_orig_width(tex);
         size[1] = GPU_texture_orig_height(tex);
@@ -393,16 +403,22 @@ void OVERLAY_image_empty_cache_populate(OVERLAY_Data *vedata, Object *ob)
   /* Use the actual depth if we are doing depth tests to determine the distance to the object */
   char depth_mode = DRW_state_is_depth() ? OB_EMPTY_IMAGE_DEPTH_DEFAULT : ob->empty_image_depth;
   DRWPass *pass = NULL;
-  switch (depth_mode) {
-    case OB_EMPTY_IMAGE_DEPTH_DEFAULT:
-      pass = (use_alpha_blend) ? psl->image_empties_blend_ps : psl->image_empties_ps;
-      break;
-    case OB_EMPTY_IMAGE_DEPTH_BACK:
-      pass = psl->image_empties_back_ps;
-      break;
-    case OB_EMPTY_IMAGE_DEPTH_FRONT:
-      pass = psl->image_empties_front_ps;
-      break;
+  if ((ob->dtx & OB_DRAW_IN_FRONT) != 0) {
+    /* Object In Front overrides image empty depth mode. */
+    pass = psl->image_empties_front_ps;
+  }
+  else {
+    switch (depth_mode) {
+      case OB_EMPTY_IMAGE_DEPTH_DEFAULT:
+        pass = (use_alpha_blend) ? psl->image_empties_blend_ps : psl->image_empties_ps;
+        break;
+      case OB_EMPTY_IMAGE_DEPTH_BACK:
+        pass = psl->image_empties_back_ps;
+        break;
+      case OB_EMPTY_IMAGE_DEPTH_FRONT:
+        pass = psl->image_empties_front_ps;
+        break;
+    }
   }
 
   if (show_frame) {

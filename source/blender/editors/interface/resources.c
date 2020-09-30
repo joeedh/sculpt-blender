@@ -774,9 +774,6 @@ const uchar *UI_ThemeGetColorPtr(bTheme *btheme, int spacetype, int colorid)
           cp = ts->metadatatext;
           break;
 
-        case TH_UV_OTHERS:
-          cp = ts->uv_others;
-          break;
         case TH_UV_SHADOW:
           cp = ts->uv_shadow;
           break;
@@ -1198,7 +1195,7 @@ void UI_GetThemeColor4fv(int colorid, float col[4])
 
 void UI_GetThemeColorType4fv(int colorid, int spacetype, float col[4])
 {
-  const unsigned char *cp = UI_ThemeGetColorPtr(theme_active, spacetype, colorid);
+  const uchar *cp = UI_ThemeGetColorPtr(theme_active, spacetype, colorid);
   col[0] = ((float)cp[0]) / 255.0f;
   col[1] = ((float)cp[1]) / 255.0f;
   col[2] = ((float)cp[2]) / 255.0f;
@@ -1249,9 +1246,9 @@ void UI_GetThemeColorBlendShade3ubv(
   CLAMP(fac, 0.0f, 1.0f);
 
   float blend[3];
-  blend[0] = offset + floorf((1.0f - fac) * cp1[0] + fac * cp2[0]);
-  blend[1] = offset + floorf((1.0f - fac) * cp1[1] + fac * cp2[1]);
-  blend[2] = offset + floorf((1.0f - fac) * cp1[2] + fac * cp2[2]);
+  blend[0] = (offset + floorf((1.0f - fac) * cp1[0] + fac * cp2[0])) / 255.0f;
+  blend[1] = (offset + floorf((1.0f - fac) * cp1[1] + fac * cp2[1])) / 255.0f;
+  blend[2] = (offset + floorf((1.0f - fac) * cp1[2] + fac * cp2[2])) / 255.0f;
 
   unit_float_to_uchar_clamp_v3(col, blend);
 }
@@ -1408,7 +1405,7 @@ bool UI_GetIconThemeColor4ubv(int colorid, uchar col[4])
   if (colorid == 0) {
     return false;
   }
-  else if (colorid == TH_ICON_FUND) {
+  if (colorid == TH_ICON_FUND) {
     /* Always color development fund icon. */
   }
   else if (!((theme_spacetype == SPACE_OUTLINER && theme_regionid == RGN_TYPE_WINDOW) ||
@@ -1471,14 +1468,7 @@ void UI_ThemeClearColor(int colorid)
   float col[3];
 
   UI_GetThemeColor3fv(colorid, col);
-  GPU_clear_color(col[0], col[1], col[2], 0.0f);
-}
-
-void UI_ThemeClearColorAlpha(int colorid, float alpha)
-{
-  float col[3];
-  UI_GetThemeColor3fv(colorid, col);
-  GPU_clear_color(col[0], col[1], col[2], alpha);
+  GPU_clear_color(col[0], col[1], col[2], 1.0f);
 }
 
 int UI_ThemeMenuShadowWidth(void)

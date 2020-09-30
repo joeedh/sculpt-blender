@@ -21,8 +21,7 @@
  * \ingroup editors
  */
 
-#ifndef __ED_DATAFILES_H__
-#define __ED_DATAFILES_H__
+#pragma once
 
 #ifdef __cplusplus
 extern "C" {
@@ -53,9 +52,6 @@ extern char datatoc_alert_icons_png[];
 
 extern int datatoc_splash_png_size;
 extern char datatoc_splash_png[];
-
-extern int datatoc_splash_2x_png_size;
-extern char datatoc_splash_2x_png[];
 
 extern int datatoc_bfont_pfb_size;
 extern char datatoc_bfont_pfb[];
@@ -304,5 +300,3 @@ extern char datatoc_gp_brush_erase_stroke_png[];
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __ED_DATAFILES_H__ */

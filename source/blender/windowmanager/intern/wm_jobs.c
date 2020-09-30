@@ -35,6 +35,7 @@
 
 #include "BKE_context.h"
 #include "BKE_global.h"
+#include "BKE_sequencer.h"
 
 #include "WM_api.h"
 #include "WM_types.h"
@@ -85,7 +86,7 @@ struct wmJob {
    * This performs the actual parallel work.
    * Executed in worker thread(s).
    */
-  void (*startjob)(void *, short *stop, short *do_update, float *progress);
+  wm_jobs_start_callback startjob;
   /**
    * Called if thread defines so (see `do_update` flag), and max once per timer step.
    * Executed in main thread.
@@ -254,7 +255,7 @@ static void wm_jobs_update_progress_bars(wmWindowManager *wm)
   float total_progress = 0.f;
   float jobs_progress = 0;
 
-  for (wmJob *wm_job = wm->jobs.first; wm_job; wm_job = wm_job->next) {
+  LISTBASE_FOREACH (wmJob *, wm_job, &wm->jobs) {
     if (wm_job->threads.first && !wm_job->ready) {
       if (wm_job->flag & WM_JOB_PROGRESS) {
         /* accumulate global progress for running jobs */
@@ -343,9 +344,7 @@ void *WM_jobs_customdata_get(wmJob *wm_job)
   if (!wm_job->customdata) {
     return wm_job->run_customdata;
   }
-  else {
-    return wm_job->customdata;
-  }
+  return wm_job->customdata;
 }
 
 void WM_jobs_customdata_set(wmJob *wm_job, void *customdata, void (*free)(void *))
@@ -377,7 +376,7 @@ void WM_jobs_delay_start(wmJob *wm_job, double delay_time)
 }
 
 void WM_jobs_callbacks(wmJob *wm_job,
-                       void (*startjob)(void *, short *, short *, float *),
+                       wm_jobs_start_callback startjob,
                        void (*initjob)(void *),
                        void (*update)(void *),
                        void (*endjob)(void *))
@@ -558,6 +557,9 @@ void WM_jobs_kill_all(wmWindowManager *wm)
   while ((wm_job = wm->jobs.first)) {
     wm_jobs_kill_job(wm, wm_job);
   }
+
+  /* This job will be automatically restarted */
+  BKE_sequencer_prefetch_stop_all();
 }
 
 /* wait until every job ended, except for one owner (used in undo to keep screen job alive) */

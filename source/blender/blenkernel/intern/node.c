@@ -30,13 +30,18 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Allow using deprecated functionality for .blend file I/O. */
+#define DNA_DEPRECATED_ALLOW
+
 #include "DNA_action_types.h"
 #include "DNA_anim_types.h"
+#include "DNA_gpencil_types.h"
 #include "DNA_light_types.h"
 #include "DNA_linestyle_types.h"
 #include "DNA_material_types.h"
 #include "DNA_node_types.h"
 #include "DNA_scene_types.h"
+#include "DNA_simulation_types.h"
 #include "DNA_texture_types.h"
 #include "DNA_world_types.h"
 
@@ -50,13 +55,17 @@
 
 #include "BLT_translation.h"
 
+#include "BKE_anim_data.h"
 #include "BKE_animsys.h"
+#include "BKE_colortools.h"
 #include "BKE_global.h"
 #include "BKE_idprop.h"
 #include "BKE_idtype.h"
 #include "BKE_lib_id.h"
+#include "BKE_lib_query.h"
 #include "BKE_main.h"
 #include "BKE_node.h"
+#include "BKE_simulation.h"
 
 #include "BLI_ghash.h"
 #include "BLI_threads.h"
@@ -65,12 +74,16 @@
 
 #include "NOD_common.h"
 #include "NOD_composite.h"
+#include "NOD_function.h"
 #include "NOD_shader.h"
+#include "NOD_simulation.h"
 #include "NOD_socket.h"
 #include "NOD_texture.h"
 
 #include "DEG_depsgraph.h"
 #include "DEG_depsgraph_build.h"
+
+#include "BLO_read_write.h"
 
 #define NODE_DEFAULT_MAX_WIDTH 700
 
@@ -85,7 +98,9 @@ static void ntree_set_typeinfo(bNodeTree *ntree, bNodeTreeType *typeinfo);
 static void node_socket_copy(bNodeSocket *sock_dst, const bNodeSocket *sock_src, const int flag);
 static void free_localized_node_groups(bNodeTree *ntree);
 static void node_free_node(bNodeTree *ntree, bNode *node);
-static void node_socket_interface_free(bNodeTree *UNUSED(ntree), bNodeSocket *sock);
+static void node_socket_interface_free(bNodeTree *UNUSED(ntree),
+                                       bNodeSocket *sock,
+                                       const bool do_id_user);
 
 static void ntree_init_data(ID *id)
 {
@@ -97,8 +112,6 @@ static void ntree_copy_data(Main *UNUSED(bmain), ID *id_dst, const ID *id_src, c
 {
   bNodeTree *ntree_dst = (bNodeTree *)id_dst;
   const bNodeTree *ntree_src = (const bNodeTree *)id_src;
-  bNodeSocket *sock_dst, *sock_src;
-  bNodeLink *link_dst;
 
   /* We never handle usercount here for own data. */
   const int flag_subdata = flag | LIB_ID_CREATE_NO_USER_REFCOUNT;
@@ -112,7 +125,7 @@ static void ntree_copy_data(Main *UNUSED(bmain), ID *id_dst, const ID *id_src, c
   /* Since source nodes and sockets are unique pointers we can put everything in a single map. */
   GHash *new_pointers = BLI_ghash_ptr_new(__func__);
 
-  for (const bNode *node_src = ntree_src->nodes.first; node_src; node_src = node_src->next) {
+  LISTBASE_FOREACH (const bNode *, node_src, &ntree_src->nodes) {
     bNode *new_node = BKE_node_copy_ex(ntree_dst, node_src, flag_subdata, true);
     BLI_ghash_insert(new_pointers, (void *)node_src, new_node);
     /* Store mapping to inputs. */
@@ -135,7 +148,7 @@ static void ntree_copy_data(Main *UNUSED(bmain), ID *id_dst, const ID *id_src, c
 
   /* copy links */
   BLI_duplicatelist(&ntree_dst->links, &ntree_src->links);
-  for (link_dst = ntree_dst->links.first; link_dst; link_dst = link_dst->next) {
+  LISTBASE_FOREACH (bNodeLink *, link_dst, &ntree_dst->links) {
     link_dst->fromnode = BLI_ghash_lookup_default(new_pointers, link_dst->fromnode, NULL);
     link_dst->fromsock = BLI_ghash_lookup_default(new_pointers, link_dst->fromsock, NULL);
     link_dst->tonode = BLI_ghash_lookup_default(new_pointers, link_dst->tonode, NULL);
@@ -148,6 +161,7 @@ static void ntree_copy_data(Main *UNUSED(bmain), ID *id_dst, const ID *id_src, c
 
   /* copy interface sockets */
   BLI_duplicatelist(&ntree_dst->inputs, &ntree_src->inputs);
+  bNodeSocket *sock_dst, *sock_src;
   for (sock_dst = ntree_dst->inputs.first, sock_src = ntree_src->inputs.first; sock_dst != NULL;
        sock_dst = sock_dst->next, sock_src = sock_src->next) {
     node_socket_copy(sock_dst, sock_src, flag_subdata);
@@ -192,8 +206,6 @@ static void ntree_copy_data(Main *UNUSED(bmain), ID *id_dst, const ID *id_src, c
 static void ntree_free_data(ID *id)
 {
   bNodeTree *ntree = (bNodeTree *)id;
-  bNode *node, *next;
-  bNodeSocket *sock, *nextsock;
 
   /* XXX hack! node trees should not store execution graphs at all.
    * This should be removed when old tree types no longer require it.
@@ -220,20 +232,17 @@ static void ntree_free_data(ID *id)
 
   BLI_freelistN(&ntree->links); /* do first, then unlink_node goes fast */
 
-  for (node = ntree->nodes.first; node; node = next) {
-    next = node->next;
+  LISTBASE_FOREACH_MUTABLE (bNode *, node, &ntree->nodes) {
     node_free_node(ntree, node);
   }
 
   /* free interface sockets */
-  for (sock = ntree->inputs.first; sock; sock = nextsock) {
-    nextsock = sock->next;
-    node_socket_interface_free(ntree, sock);
+  LISTBASE_FOREACH_MUTABLE (bNodeSocket *, sock, &ntree->inputs) {
+    node_socket_interface_free(ntree, sock, false);
     MEM_freeN(sock);
   }
-  for (sock = ntree->outputs.first; sock; sock = nextsock) {
-    nextsock = sock->next;
-    node_socket_interface_free(ntree, sock);
+  LISTBASE_FOREACH_MUTABLE (bNodeSocket *, sock, &ntree->outputs) {
+    node_socket_interface_free(ntree, sock, false);
     MEM_freeN(sock);
   }
 
@@ -245,6 +254,598 @@ static void ntree_free_data(ID *id)
   if (ntree->id.tag & LIB_TAG_LOCALIZED) {
     BKE_libblock_free_data(&ntree->id, true);
   }
+}
+
+static void library_foreach_node_socket(LibraryForeachIDData *data, bNodeSocket *sock)
+{
+  IDP_foreach_property(
+      sock->prop, IDP_TYPE_FILTER_ID, BKE_lib_query_idpropertiesForeachIDLink_callback, data);
+
+  switch ((eNodeSocketDatatype)sock->type) {
+    case SOCK_OBJECT: {
+      bNodeSocketValueObject *default_value = sock->default_value;
+      BKE_LIB_FOREACHID_PROCESS(data, default_value->value, IDWALK_CB_USER);
+      break;
+    }
+    case SOCK_IMAGE: {
+      bNodeSocketValueImage *default_value = sock->default_value;
+      BKE_LIB_FOREACHID_PROCESS(data, default_value->value, IDWALK_CB_USER);
+      break;
+    }
+    case SOCK_FLOAT:
+    case SOCK_VECTOR:
+    case SOCK_RGBA:
+    case SOCK_BOOLEAN:
+    case SOCK_INT:
+    case SOCK_STRING:
+    case __SOCK_MESH:
+    case SOCK_CUSTOM:
+    case SOCK_SHADER:
+    case SOCK_EMITTERS:
+    case SOCK_EVENTS:
+    case SOCK_FORCES:
+    case SOCK_CONTROL_FLOW:
+      break;
+  }
+}
+
+static void node_foreach_id(ID *id, LibraryForeachIDData *data)
+{
+  bNodeTree *ntree = (bNodeTree *)id;
+
+  BKE_LIB_FOREACHID_PROCESS(data, ntree->gpd, IDWALK_CB_USER);
+
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
+    BKE_LIB_FOREACHID_PROCESS_ID(data, node->id, IDWALK_CB_USER);
+
+    IDP_foreach_property(
+        node->prop, IDP_TYPE_FILTER_ID, BKE_lib_query_idpropertiesForeachIDLink_callback, data);
+    LISTBASE_FOREACH (bNodeSocket *, sock, &node->inputs) {
+      library_foreach_node_socket(data, sock);
+    }
+    LISTBASE_FOREACH (bNodeSocket *, sock, &node->outputs) {
+      library_foreach_node_socket(data, sock);
+    }
+  }
+
+  LISTBASE_FOREACH (bNodeSocket *, sock, &ntree->inputs) {
+    library_foreach_node_socket(data, sock);
+  }
+  LISTBASE_FOREACH (bNodeSocket *, sock, &ntree->outputs) {
+    library_foreach_node_socket(data, sock);
+  }
+}
+
+static void node_foreach_cache(ID *id,
+                               IDTypeForeachCacheFunctionCallback function_callback,
+                               void *user_data)
+{
+  bNodeTree *nodetree = (bNodeTree *)id;
+  IDCacheKey key = {
+      .id_session_uuid = id->session_uuid,
+      .offset_in_ID = offsetof(bNodeTree, previews),
+      .cache_v = nodetree->previews,
+  };
+
+  /* TODO, see also `direct_link_nodetree()` in readfile.c. */
+#if 0
+  function_callback(id, &key, (void **)&nodetree->previews, 0, user_data);
+#endif
+
+  if (nodetree->type == NTREE_COMPOSIT) {
+    LISTBASE_FOREACH (bNode *, node, &nodetree->nodes) {
+      if (node->type == CMP_NODE_MOVIEDISTORTION) {
+        key.offset_in_ID = (size_t)BLI_ghashutil_strhash_p(node->name);
+        key.cache_v = node->storage;
+        function_callback(id, &key, (void **)&node->storage, 0, user_data);
+      }
+    }
+  }
+}
+
+static void write_node_socket_default_value(BlendWriter *writer, bNodeSocket *sock)
+{
+  if (sock->default_value == NULL) {
+    return;
+  }
+
+  switch ((eNodeSocketDatatype)sock->type) {
+    case SOCK_FLOAT:
+      BLO_write_struct(writer, bNodeSocketValueFloat, sock->default_value);
+      break;
+    case SOCK_VECTOR:
+      BLO_write_struct(writer, bNodeSocketValueVector, sock->default_value);
+      break;
+    case SOCK_RGBA:
+      BLO_write_struct(writer, bNodeSocketValueRGBA, sock->default_value);
+      break;
+    case SOCK_BOOLEAN:
+      BLO_write_struct(writer, bNodeSocketValueBoolean, sock->default_value);
+      break;
+    case SOCK_INT:
+      BLO_write_struct(writer, bNodeSocketValueInt, sock->default_value);
+      break;
+    case SOCK_STRING:
+      BLO_write_struct(writer, bNodeSocketValueString, sock->default_value);
+      break;
+    case SOCK_OBJECT:
+      BLO_write_struct(writer, bNodeSocketValueObject, sock->default_value);
+      break;
+    case SOCK_IMAGE:
+      BLO_write_struct(writer, bNodeSocketValueImage, sock->default_value);
+      break;
+    case __SOCK_MESH:
+    case SOCK_CUSTOM:
+    case SOCK_SHADER:
+    case SOCK_EMITTERS:
+    case SOCK_EVENTS:
+    case SOCK_FORCES:
+    case SOCK_CONTROL_FLOW:
+      BLI_assert(false);
+      break;
+  }
+}
+
+static void write_node_socket(BlendWriter *writer, bNodeSocket *sock)
+{
+  /* actual socket writing */
+  BLO_write_struct(writer, bNodeSocket, sock);
+
+  if (sock->prop) {
+    IDP_BlendWrite(writer, sock->prop);
+  }
+
+  write_node_socket_default_value(writer, sock);
+}
+static void write_node_socket_interface(BlendWriter *writer, bNodeSocket *sock)
+{
+  /* actual socket writing */
+  BLO_write_struct(writer, bNodeSocket, sock);
+
+  if (sock->prop) {
+    IDP_BlendWrite(writer, sock->prop);
+  }
+
+  write_node_socket_default_value(writer, sock);
+}
+
+/* this is only direct data, tree itself should have been written */
+void ntreeBlendWrite(BlendWriter *writer, bNodeTree *ntree)
+{
+  /* for link_list() speed, we write per list */
+
+  if (ntree->adt) {
+    BKE_animdata_blend_write(writer, ntree->adt);
+  }
+
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
+    BLO_write_struct(writer, bNode, node);
+
+    if (node->prop) {
+      IDP_BlendWrite(writer, node->prop);
+    }
+
+    LISTBASE_FOREACH (bNodeSocket *, sock, &node->inputs) {
+      write_node_socket(writer, sock);
+    }
+    LISTBASE_FOREACH (bNodeSocket *, sock, &node->outputs) {
+      write_node_socket(writer, sock);
+    }
+
+    LISTBASE_FOREACH (bNodeLink *, link, &node->internal_links) {
+      BLO_write_struct(writer, bNodeLink, link);
+    }
+
+    if (node->storage) {
+      /* could be handlerized at some point, now only 1 exception still */
+      if ((ntree->type == NTREE_SHADER) &&
+          ELEM(node->type, SH_NODE_CURVE_VEC, SH_NODE_CURVE_RGB)) {
+        BKE_curvemapping_blend_write(writer, node->storage);
+      }
+      else if (ntree->type == NTREE_SHADER && (node->type == SH_NODE_SCRIPT)) {
+        NodeShaderScript *nss = (NodeShaderScript *)node->storage;
+        if (nss->bytecode) {
+          BLO_write_string(writer, nss->bytecode);
+        }
+        BLO_write_struct_by_name(writer, node->typeinfo->storagename, node->storage);
+      }
+      else if ((ntree->type == NTREE_COMPOSIT) && ELEM(node->type,
+                                                       CMP_NODE_TIME,
+                                                       CMP_NODE_CURVE_VEC,
+                                                       CMP_NODE_CURVE_RGB,
+                                                       CMP_NODE_HUECORRECT)) {
+        BKE_curvemapping_blend_write(writer, node->storage);
+      }
+      else if ((ntree->type == NTREE_TEXTURE) &&
+               (node->type == TEX_NODE_CURVE_RGB || node->type == TEX_NODE_CURVE_TIME)) {
+        BKE_curvemapping_blend_write(writer, node->storage);
+      }
+      else if ((ntree->type == NTREE_COMPOSIT) && (node->type == CMP_NODE_MOVIEDISTORTION)) {
+        /* pass */
+      }
+      else if ((ntree->type == NTREE_COMPOSIT) && (node->type == CMP_NODE_GLARE)) {
+        /* Simple forward compatibility for fix for T50736.
+         * Not ideal (there is no ideal solution here), but should do for now. */
+        NodeGlare *ndg = node->storage;
+        /* Not in undo case. */
+        if (!BLO_write_is_undo(writer)) {
+          switch (ndg->type) {
+            case 2: /* Grrrr! magic numbers :( */
+              ndg->angle = ndg->streaks;
+              break;
+            case 0:
+              ndg->angle = ndg->star_45;
+              break;
+            default:
+              break;
+          }
+        }
+        BLO_write_struct_by_name(writer, node->typeinfo->storagename, node->storage);
+      }
+      else if ((ntree->type == NTREE_COMPOSIT) && (node->type == CMP_NODE_CRYPTOMATTE)) {
+        NodeCryptomatte *nc = (NodeCryptomatte *)node->storage;
+        if (nc->matte_id) {
+          BLO_write_string(writer, nc->matte_id);
+        }
+        BLO_write_struct_by_name(writer, node->typeinfo->storagename, node->storage);
+      }
+      else if (node->typeinfo != &NodeTypeUndefined) {
+        BLO_write_struct_by_name(writer, node->typeinfo->storagename, node->storage);
+      }
+    }
+
+    if (node->type == CMP_NODE_OUTPUT_FILE) {
+      /* inputs have own storage data */
+      LISTBASE_FOREACH (bNodeSocket *, sock, &node->inputs) {
+        BLO_write_struct(writer, NodeImageMultiFileSocket, sock->storage);
+      }
+    }
+    if (ELEM(node->type, CMP_NODE_IMAGE, CMP_NODE_R_LAYERS)) {
+      /* write extra socket info */
+      LISTBASE_FOREACH (bNodeSocket *, sock, &node->outputs) {
+        BLO_write_struct(writer, NodeImageLayer, sock->storage);
+      }
+    }
+  }
+
+  LISTBASE_FOREACH (bNodeLink *, link, &ntree->links) {
+    BLO_write_struct(writer, bNodeLink, link);
+  }
+
+  LISTBASE_FOREACH (bNodeSocket *, sock, &ntree->inputs) {
+    write_node_socket_interface(writer, sock);
+  }
+  LISTBASE_FOREACH (bNodeSocket *, sock, &ntree->outputs) {
+    write_node_socket_interface(writer, sock);
+  }
+}
+
+static void ntree_blend_write(BlendWriter *writer, ID *id, const void *id_address)
+{
+  bNodeTree *ntree = (bNodeTree *)id;
+  if (ntree->id.us > 0 || BLO_write_is_undo(writer)) {
+    /* Clean up, important in undo case to reduce false detection of changed datablocks. */
+    ntree->init = 0; /* to set callbacks and force setting types */
+    ntree->is_updating = false;
+    ntree->typeinfo = NULL;
+    ntree->interface_type = NULL;
+    ntree->progress = NULL;
+    ntree->execdata = NULL;
+
+    BLO_write_id_struct(writer, bNodeTree, id_address, &ntree->id);
+    /* Note that trees directly used by other IDs (materials etc.) are not 'real' ID, they cannot
+     * be linked, etc., so we write actual id data here only, for 'real' ID trees. */
+    BKE_id_blend_write(writer, &ntree->id);
+
+    ntreeBlendWrite(writer, ntree);
+  }
+}
+
+static void direct_link_node_socket(BlendDataReader *reader, bNodeSocket *sock)
+{
+  BLO_read_data_address(reader, &sock->prop);
+  IDP_BlendDataRead(reader, &sock->prop);
+
+  BLO_read_data_address(reader, &sock->link);
+  sock->typeinfo = NULL;
+  BLO_read_data_address(reader, &sock->storage);
+  BLO_read_data_address(reader, &sock->default_value);
+  sock->cache = NULL;
+}
+
+/* ntree itself has been read! */
+void ntreeBlendReadData(BlendDataReader *reader, bNodeTree *ntree)
+{
+  /* note: writing and reading goes in sync, for speed */
+  ntree->init = 0; /* to set callbacks and force setting types */
+  ntree->is_updating = false;
+  ntree->typeinfo = NULL;
+  ntree->interface_type = NULL;
+
+  ntree->progress = NULL;
+  ntree->execdata = NULL;
+
+  BLO_read_data_address(reader, &ntree->adt);
+  BKE_animdata_blend_read_data(reader, ntree->adt);
+
+  BLO_read_list(reader, &ntree->nodes);
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
+    node->typeinfo = NULL;
+
+    BLO_read_list(reader, &node->inputs);
+    BLO_read_list(reader, &node->outputs);
+
+    BLO_read_data_address(reader, &node->prop);
+    IDP_BlendDataRead(reader, &node->prop);
+
+    BLO_read_list(reader, &node->internal_links);
+    LISTBASE_FOREACH (bNodeLink *, link, &node->internal_links) {
+      BLO_read_data_address(reader, &link->fromnode);
+      BLO_read_data_address(reader, &link->fromsock);
+      BLO_read_data_address(reader, &link->tonode);
+      BLO_read_data_address(reader, &link->tosock);
+    }
+
+    if (node->type == CMP_NODE_MOVIEDISTORTION) {
+      /* Do nothing, this is runtime cache and hence handled by generic code using
+       * `IDTypeInfo.foreach_cache` callback. */
+    }
+    else {
+      BLO_read_data_address(reader, &node->storage);
+    }
+
+    if (node->storage) {
+      /* could be handlerized at some point */
+      switch (node->type) {
+        case SH_NODE_CURVE_VEC:
+        case SH_NODE_CURVE_RGB:
+        case CMP_NODE_TIME:
+        case CMP_NODE_CURVE_VEC:
+        case CMP_NODE_CURVE_RGB:
+        case CMP_NODE_HUECORRECT:
+        case TEX_NODE_CURVE_RGB:
+        case TEX_NODE_CURVE_TIME: {
+          BKE_curvemapping_blend_read(reader, node->storage);
+          break;
+        }
+        case SH_NODE_SCRIPT: {
+          NodeShaderScript *nss = (NodeShaderScript *)node->storage;
+          BLO_read_data_address(reader, &nss->bytecode);
+          break;
+        }
+        case SH_NODE_TEX_POINTDENSITY: {
+          NodeShaderTexPointDensity *npd = (NodeShaderTexPointDensity *)node->storage;
+          memset(&npd->pd, 0, sizeof(npd->pd));
+          break;
+        }
+        case SH_NODE_TEX_IMAGE: {
+          NodeTexImage *tex = (NodeTexImage *)node->storage;
+          tex->iuser.ok = 1;
+          tex->iuser.scene = NULL;
+          break;
+        }
+        case SH_NODE_TEX_ENVIRONMENT: {
+          NodeTexEnvironment *tex = (NodeTexEnvironment *)node->storage;
+          tex->iuser.ok = 1;
+          tex->iuser.scene = NULL;
+          break;
+        }
+        case CMP_NODE_IMAGE:
+        case CMP_NODE_R_LAYERS:
+        case CMP_NODE_VIEWER:
+        case CMP_NODE_SPLITVIEWER: {
+          ImageUser *iuser = node->storage;
+          iuser->ok = 1;
+          iuser->scene = NULL;
+          break;
+        }
+        case CMP_NODE_CRYPTOMATTE: {
+          NodeCryptomatte *nc = (NodeCryptomatte *)node->storage;
+          BLO_read_data_address(reader, &nc->matte_id);
+          break;
+        }
+        case TEX_NODE_IMAGE: {
+          ImageUser *iuser = node->storage;
+          iuser->ok = 1;
+          iuser->scene = NULL;
+          break;
+        }
+        default:
+          break;
+      }
+    }
+  }
+  BLO_read_list(reader, &ntree->links);
+
+  /* and we connect the rest */
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
+    BLO_read_data_address(reader, &node->parent);
+    node->lasty = 0;
+
+    LISTBASE_FOREACH (bNodeSocket *, sock, &node->inputs) {
+      direct_link_node_socket(reader, sock);
+    }
+    LISTBASE_FOREACH (bNodeSocket *, sock, &node->outputs) {
+      direct_link_node_socket(reader, sock);
+    }
+  }
+
+  /* interface socket lists */
+  BLO_read_list(reader, &ntree->inputs);
+  BLO_read_list(reader, &ntree->outputs);
+  LISTBASE_FOREACH (bNodeSocket *, sock, &ntree->inputs) {
+    direct_link_node_socket(reader, sock);
+  }
+  LISTBASE_FOREACH (bNodeSocket *, sock, &ntree->outputs) {
+    direct_link_node_socket(reader, sock);
+  }
+
+  LISTBASE_FOREACH (bNodeLink *, link, &ntree->links) {
+    BLO_read_data_address(reader, &link->fromnode);
+    BLO_read_data_address(reader, &link->tonode);
+    BLO_read_data_address(reader, &link->fromsock);
+    BLO_read_data_address(reader, &link->tosock);
+  }
+
+  /* TODO, should be dealt by new generic cache handling of IDs... */
+  ntree->previews = NULL;
+
+  /* type verification is in lib-link */
+}
+
+static void ntree_blend_read_data(BlendDataReader *reader, ID *id)
+{
+  bNodeTree *ntree = (bNodeTree *)id;
+  ntreeBlendReadData(reader, ntree);
+}
+
+static void lib_link_node_socket(BlendLibReader *reader, Library *lib, bNodeSocket *sock)
+{
+  IDP_BlendReadLib(reader, sock->prop);
+
+  switch ((eNodeSocketDatatype)sock->type) {
+    case SOCK_OBJECT: {
+      bNodeSocketValueObject *default_value = sock->default_value;
+      BLO_read_id_address(reader, lib, &default_value->value);
+      break;
+    }
+    case SOCK_IMAGE: {
+      bNodeSocketValueImage *default_value = sock->default_value;
+      BLO_read_id_address(reader, lib, &default_value->value);
+      break;
+    }
+    case SOCK_FLOAT:
+    case SOCK_VECTOR:
+    case SOCK_RGBA:
+    case SOCK_BOOLEAN:
+    case SOCK_INT:
+    case SOCK_STRING:
+    case __SOCK_MESH:
+    case SOCK_CUSTOM:
+    case SOCK_SHADER:
+    case SOCK_EMITTERS:
+    case SOCK_EVENTS:
+    case SOCK_FORCES:
+    case SOCK_CONTROL_FLOW:
+      break;
+  }
+}
+
+static void lib_link_node_sockets(BlendLibReader *reader, Library *lib, ListBase *sockets)
+{
+  LISTBASE_FOREACH (bNodeSocket *, sock, sockets) {
+    lib_link_node_socket(reader, lib, sock);
+  }
+}
+
+void ntreeBlendReadLib(struct BlendLibReader *reader, struct bNodeTree *ntree)
+{
+  Library *lib = ntree->id.lib;
+
+  BLO_read_id_address(reader, lib, &ntree->gpd);
+
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
+    /* Link ID Properties -- and copy this comment EXACTLY for easy finding
+     * of library blocks that implement this.*/
+    IDP_BlendReadLib(reader, node->prop);
+
+    BLO_read_id_address(reader, lib, &node->id);
+
+    lib_link_node_sockets(reader, lib, &node->inputs);
+    lib_link_node_sockets(reader, lib, &node->outputs);
+  }
+
+  lib_link_node_sockets(reader, lib, &ntree->inputs);
+  lib_link_node_sockets(reader, lib, &ntree->outputs);
+
+  /* Set node->typeinfo pointers. This is done in lib linking, after the
+   * first versioning that can change types still without functions that
+   * update the typeinfo pointers. Versioning after lib linking needs
+   * these top be valid. */
+  ntreeSetTypes(NULL, ntree);
+
+  /* For nodes with static socket layout, add/remove sockets as needed
+   * to match the static layout. */
+  if (!BLO_read_lib_is_undo(reader)) {
+    LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
+      node_verify_socket_templates(ntree, node);
+    }
+  }
+}
+
+static void ntree_blend_read_lib(BlendLibReader *reader, ID *id)
+{
+  bNodeTree *ntree = (bNodeTree *)id;
+  ntreeBlendReadLib(reader, ntree);
+}
+
+static void expand_node_socket(BlendExpander *expander, bNodeSocket *sock)
+{
+  IDP_BlendReadExpand(expander, sock->prop);
+
+  if (sock->default_value != NULL) {
+
+    switch ((eNodeSocketDatatype)sock->type) {
+      case SOCK_OBJECT: {
+        bNodeSocketValueObject *default_value = sock->default_value;
+        BLO_expand(expander, default_value->value);
+        break;
+      }
+      case SOCK_IMAGE: {
+        bNodeSocketValueImage *default_value = sock->default_value;
+        BLO_expand(expander, default_value->value);
+        break;
+      }
+      case SOCK_FLOAT:
+      case SOCK_VECTOR:
+      case SOCK_RGBA:
+      case SOCK_BOOLEAN:
+      case SOCK_INT:
+      case SOCK_STRING:
+      case __SOCK_MESH:
+      case SOCK_CUSTOM:
+      case SOCK_SHADER:
+      case SOCK_EMITTERS:
+      case SOCK_EVENTS:
+      case SOCK_FORCES:
+      case SOCK_CONTROL_FLOW:
+        break;
+    }
+  }
+}
+
+static void expand_node_sockets(BlendExpander *expander, ListBase *sockets)
+{
+  LISTBASE_FOREACH (bNodeSocket *, sock, sockets) {
+    expand_node_socket(expander, sock);
+  }
+}
+
+void ntreeBlendReadExpand(BlendExpander *expander, bNodeTree *ntree)
+{
+  if (ntree->gpd) {
+    BLO_expand(expander, ntree->gpd);
+  }
+
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
+    if (node->id && node->type != CMP_NODE_R_LAYERS) {
+      BLO_expand(expander, node->id);
+    }
+
+    IDP_BlendReadExpand(expander, node->prop);
+
+    expand_node_sockets(expander, &node->inputs);
+    expand_node_sockets(expander, &node->outputs);
+  }
+
+  expand_node_sockets(expander, &ntree->inputs);
+  expand_node_sockets(expander, &ntree->outputs);
+}
+
+static void ntree_blend_read_expand(BlendExpander *expander, ID *id)
+{
+  bNodeTree *ntree = (bNodeTree *)id;
+  ntreeBlendReadExpand(expander, ntree);
 }
 
 IDTypeInfo IDType_ID_NT = {
@@ -261,6 +862,13 @@ IDTypeInfo IDType_ID_NT = {
     .copy_data = ntree_copy_data,
     .free_data = ntree_free_data,
     .make_local = NULL,
+    .foreach_id = node_foreach_id,
+    .foreach_cache = node_foreach_cache,
+
+    .blend_write = ntree_blend_write,
+    .blend_read_data = ntree_blend_read_data,
+    .blend_read_lib = ntree_blend_read_lib,
+    .blend_read_expand = ntree_blend_read_expand,
 };
 
 static void node_add_sockets_from_type(bNodeTree *ntree, bNode *node, bNodeType *ntype)
@@ -425,9 +1033,6 @@ static void update_typeinfo(Main *bmain,
   }
 
   FOREACH_NODETREE_BEGIN (bmain, ntree, id) {
-    bNode *node;
-    bNodeSocket *sock;
-
     ntree->init |= NTREE_TYPE_INIT;
 
     if (treetype && STREQ(ntree->idname, treetype->idname)) {
@@ -435,18 +1040,18 @@ static void update_typeinfo(Main *bmain,
     }
 
     /* initialize nodes */
-    for (node = ntree->nodes.first; node; node = node->next) {
+    LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
       if (nodetype && STREQ(node->idname, nodetype->idname)) {
         node_set_typeinfo(C, ntree, node, unregister ? NULL : nodetype);
       }
 
       /* initialize node sockets */
-      for (sock = node->inputs.first; sock; sock = sock->next) {
+      LISTBASE_FOREACH (bNodeSocket *, sock, &node->inputs) {
         if (socktype && STREQ(sock->idname, socktype->idname)) {
           node_socket_set_typeinfo(ntree, sock, unregister ? NULL : socktype);
         }
       }
-      for (sock = node->outputs.first; sock; sock = sock->next) {
+      LISTBASE_FOREACH (bNodeSocket *, sock, &node->outputs) {
         if (socktype && STREQ(sock->idname, socktype->idname)) {
           node_socket_set_typeinfo(ntree, sock, unregister ? NULL : socktype);
         }
@@ -454,12 +1059,12 @@ static void update_typeinfo(Main *bmain,
     }
 
     /* initialize tree sockets */
-    for (sock = ntree->inputs.first; sock; sock = sock->next) {
+    LISTBASE_FOREACH (bNodeSocket *, sock, &ntree->inputs) {
       if (socktype && STREQ(sock->idname, socktype->idname)) {
         node_socket_set_typeinfo(ntree, sock, unregister ? NULL : socktype);
       }
     }
-    for (sock = ntree->outputs.first; sock; sock = sock->next) {
+    LISTBASE_FOREACH (bNodeSocket *, sock, &ntree->outputs) {
       if (socktype && STREQ(sock->idname, socktype->idname)) {
         node_socket_set_typeinfo(ntree, sock, unregister ? NULL : socktype);
       }
@@ -476,28 +1081,25 @@ static void update_typeinfo(Main *bmain,
  */
 void ntreeSetTypes(const struct bContext *C, bNodeTree *ntree)
 {
-  bNode *node;
-  bNodeSocket *sock;
-
   ntree->init |= NTREE_TYPE_INIT;
 
   ntree_set_typeinfo(ntree, ntreeTypeFind(ntree->idname));
 
-  for (node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     node_set_typeinfo(C, ntree, node, nodeTypeFind(node->idname));
 
-    for (sock = node->inputs.first; sock; sock = sock->next) {
+    LISTBASE_FOREACH (bNodeSocket *, sock, &node->inputs) {
       node_socket_set_typeinfo(ntree, sock, nodeSocketTypeFind(sock->idname));
     }
-    for (sock = node->outputs.first; sock; sock = sock->next) {
+    LISTBASE_FOREACH (bNodeSocket *, sock, &node->outputs) {
       node_socket_set_typeinfo(ntree, sock, nodeSocketTypeFind(sock->idname));
     }
   }
 
-  for (sock = ntree->inputs.first; sock; sock = sock->next) {
+  LISTBASE_FOREACH (bNodeSocket *, sock, &ntree->inputs) {
     node_socket_set_typeinfo(ntree, sock, nodeSocketTypeFind(sock->idname));
   }
-  for (sock = ntree->outputs.first; sock; sock = sock->next) {
+  LISTBASE_FOREACH (bNodeSocket *, sock, &ntree->outputs) {
     node_socket_set_typeinfo(ntree, sock, nodeSocketTypeFind(sock->idname));
   }
 }
@@ -557,10 +1159,8 @@ GHashIterator *ntreeTypeGetIterator(void)
 
 bNodeType *nodeTypeFind(const char *idname)
 {
-  bNodeType *nt;
-
   if (idname[0]) {
-    nt = BLI_ghash_lookup(nodetypes_hash, idname);
+    bNodeType *nt = BLI_ghash_lookup(nodetypes_hash, idname);
     if (nt) {
       return nt;
     }
@@ -631,10 +1231,8 @@ GHashIterator *nodeTypeGetIterator(void)
 
 bNodeSocketType *nodeSocketTypeFind(const char *idname)
 {
-  bNodeSocketType *st;
-
   if (idname[0]) {
-    st = BLI_ghash_lookup(nodesockettypes_hash, idname);
+    bNodeSocketType *st = BLI_ghash_lookup(nodesockettypes_hash, idname);
     if (st) {
       return st;
     }
@@ -679,10 +1277,10 @@ GHashIterator *nodeSocketTypeGetIterator(void)
   return BLI_ghashIterator_new(nodesockettypes_hash);
 }
 
-struct bNodeSocket *nodeFindSocket(bNode *node, int in_out, const char *identifier)
+struct bNodeSocket *nodeFindSocket(const bNode *node, int in_out, const char *identifier)
 {
-  bNodeSocket *sock = (in_out == SOCK_IN ? node->inputs.first : node->outputs.first);
-  for (; sock; sock = sock->next) {
+  const ListBase *sockets = (in_out == SOCK_IN) ? &node->inputs : &node->outputs;
+  LISTBASE_FOREACH (bNodeSocket *, sock, sockets) {
     if (STREQ(sock->identifier, identifier)) {
       return sock;
     }
@@ -694,8 +1292,7 @@ struct bNodeSocket *nodeFindSocket(bNode *node, int in_out, const char *identifi
 static bool unique_identifier_check(void *arg, const char *identifier)
 {
   struct ListBase *lb = arg;
-  bNodeSocket *sock;
-  for (sock = lb->first; sock; sock = sock->next) {
+  LISTBASE_FOREACH (bNodeSocket *, sock, lb) {
     if (STREQ(sock->identifier, identifier)) {
       return true;
     }
@@ -711,7 +1308,6 @@ static bNodeSocket *make_socket(bNodeTree *ntree,
                                 const char *identifier,
                                 const char *name)
 {
-  bNodeSocket *sock;
   char auto_identifier[MAX_NAME];
 
   if (identifier && identifier[0] != '\0') {
@@ -726,7 +1322,7 @@ static bNodeSocket *make_socket(bNodeTree *ntree,
   BLI_uniquename_cb(
       unique_identifier_check, lb, "socket", '.', auto_identifier, sizeof(auto_identifier));
 
-  sock = MEM_callocN(sizeof(bNodeSocket), "sock");
+  bNodeSocket *sock = MEM_callocN(sizeof(bNodeSocket), "sock");
   sock->in_out = in_out;
 
   BLI_strncpy(sock->identifier, auto_identifier, NODE_MAXSTR);
@@ -743,6 +1339,66 @@ static bNodeSocket *make_socket(bNodeTree *ntree,
   return sock;
 }
 
+static void socket_id_user_increment(bNodeSocket *sock)
+{
+  switch ((eNodeSocketDatatype)sock->type) {
+    case SOCK_OBJECT: {
+      bNodeSocketValueObject *default_value = sock->default_value;
+      id_us_plus((ID *)default_value->value);
+      break;
+    }
+    case SOCK_IMAGE: {
+      bNodeSocketValueImage *default_value = sock->default_value;
+      id_us_plus((ID *)default_value->value);
+      break;
+    }
+    case SOCK_FLOAT:
+    case SOCK_VECTOR:
+    case SOCK_RGBA:
+    case SOCK_BOOLEAN:
+    case SOCK_INT:
+    case SOCK_STRING:
+    case __SOCK_MESH:
+    case SOCK_CUSTOM:
+    case SOCK_SHADER:
+    case SOCK_EMITTERS:
+    case SOCK_EVENTS:
+    case SOCK_FORCES:
+    case SOCK_CONTROL_FLOW:
+      break;
+  }
+}
+
+static void socket_id_user_decrement(bNodeSocket *sock)
+{
+  switch ((eNodeSocketDatatype)sock->type) {
+    case SOCK_OBJECT: {
+      bNodeSocketValueObject *default_value = sock->default_value;
+      id_us_min(&default_value->value->id);
+      break;
+    }
+    case SOCK_IMAGE: {
+      bNodeSocketValueImage *default_value = sock->default_value;
+      id_us_min(&default_value->value->id);
+      break;
+    }
+    case SOCK_FLOAT:
+    case SOCK_VECTOR:
+    case SOCK_RGBA:
+    case SOCK_BOOLEAN:
+    case SOCK_INT:
+    case SOCK_STRING:
+    case __SOCK_MESH:
+    case SOCK_CUSTOM:
+    case SOCK_SHADER:
+    case SOCK_EMITTERS:
+    case SOCK_EVENTS:
+    case SOCK_FORCES:
+    case SOCK_CONTROL_FLOW:
+      break;
+  }
+}
+
 void nodeModifySocketType(
     bNodeTree *ntree, bNode *UNUSED(node), bNodeSocket *sock, int type, int subtype)
 {
@@ -754,6 +1410,7 @@ void nodeModifySocketType(
   }
 
   if (sock->default_value) {
+    socket_id_user_decrement(sock);
     MEM_freeN(sock->default_value);
     sock->default_value = NULL;
   }
@@ -770,6 +1427,10 @@ bNodeSocket *nodeAddSocket(bNodeTree *ntree,
                            const char *identifier,
                            const char *name)
 {
+  BLI_assert(node->type != NODE_FRAME);
+  BLI_assert(!(in_out == SOCK_IN && node->type == NODE_GROUP_INPUT));
+  BLI_assert(!(in_out == SOCK_OUT && node->type == NODE_GROUP_OUTPUT));
+
   ListBase *lb = (in_out == SOCK_IN ? &node->inputs : &node->outputs);
   bNodeSocket *sock = make_socket(ntree, node, in_out, lb, idname, identifier, name);
 
@@ -857,6 +1518,18 @@ const char *nodeStaticSocketType(int type, int subtype)
       return "NodeSocketString";
     case SOCK_SHADER:
       return "NodeSocketShader";
+    case SOCK_OBJECT:
+      return "NodeSocketObject";
+    case SOCK_IMAGE:
+      return "NodeSocketImage";
+    case SOCK_EMITTERS:
+      return "NodeSocketEmitters";
+    case SOCK_EVENTS:
+      return "NodeSocketEvents";
+    case SOCK_FORCES:
+      return "NodeSocketForces";
+    case SOCK_CONTROL_FLOW:
+      return "NodeSocketControlFlow";
   }
   return NULL;
 }
@@ -918,6 +1591,18 @@ const char *nodeStaticSocketInterfaceType(int type, int subtype)
       return "NodeSocketInterfaceString";
     case SOCK_SHADER:
       return "NodeSocketInterfaceShader";
+    case SOCK_OBJECT:
+      return "NodeSocketInterfaceObject";
+    case SOCK_IMAGE:
+      return "NodeSocketInterfaceImage";
+    case SOCK_EMITTERS:
+      return "NodeSocketInterfaceEmitters";
+    case SOCK_EVENTS:
+      return "NodeSocketInterfaceEvents";
+    case SOCK_FORCES:
+      return "NodeSocketInterfaceForces";
+    case SOCK_CONTROL_FLOW:
+      return "NodeSocketInterfaceControlFlow";
   }
   return NULL;
 }
@@ -931,14 +1616,13 @@ bNodeSocket *nodeAddStaticSocket(bNodeTree *ntree,
                                  const char *name)
 {
   const char *idname = nodeStaticSocketType(type, subtype);
-  bNodeSocket *sock;
 
   if (!idname) {
     CLOG_ERROR(&LOG, "static node socket type %d undefined", type);
     return NULL;
   }
 
-  sock = nodeAddSocket(ntree, node, in_out, idname, identifier, name);
+  bNodeSocket *sock = nodeAddSocket(ntree, node, in_out, idname, identifier, name);
   sock->type = type;
   return sock;
 }
@@ -953,14 +1637,13 @@ bNodeSocket *nodeInsertStaticSocket(bNodeTree *ntree,
                                     const char *name)
 {
   const char *idname = nodeStaticSocketType(type, subtype);
-  bNodeSocket *sock;
 
   if (!idname) {
     CLOG_ERROR(&LOG, "static node socket type %d undefined", type);
     return NULL;
   }
 
-  sock = nodeInsertSocket(ntree, node, in_out, idname, next_sock, identifier, name);
+  bNodeSocket *sock = nodeInsertSocket(ntree, node, in_out, idname, next_sock, identifier, name);
   sock->type = type;
   return sock;
 }
@@ -976,16 +1659,16 @@ static void node_socket_free(bNodeTree *UNUSED(ntree),
   }
 
   if (sock->default_value) {
+    if (do_id_user) {
+      socket_id_user_decrement(sock);
+    }
     MEM_freeN(sock->default_value);
   }
 }
 
 void nodeRemoveSocket(bNodeTree *ntree, bNode *node, bNodeSocket *sock)
 {
-  bNodeLink *link, *next;
-
-  for (link = ntree->links.first; link; link = next) {
-    next = link->next;
+  LISTBASE_FOREACH_MUTABLE (bNodeLink *, link, &ntree->links) {
     if (link->fromsock == sock || link->tosock == sock) {
       nodeRemLink(ntree, link);
     }
@@ -1003,25 +1686,19 @@ void nodeRemoveSocket(bNodeTree *ntree, bNode *node, bNodeSocket *sock)
 
 void nodeRemoveAllSockets(bNodeTree *ntree, bNode *node)
 {
-  bNodeSocket *sock, *sock_next;
-  bNodeLink *link, *next;
-
-  for (link = ntree->links.first; link; link = next) {
-    next = link->next;
+  LISTBASE_FOREACH_MUTABLE (bNodeLink *, link, &ntree->links) {
     if (link->fromnode == node || link->tonode == node) {
       nodeRemLink(ntree, link);
     }
   }
 
-  for (sock = node->inputs.first; sock; sock = sock_next) {
-    sock_next = sock->next;
+  LISTBASE_FOREACH_MUTABLE (bNodeSocket *, sock, &node->inputs) {
     node_socket_free(ntree, sock, node, true);
     MEM_freeN(sock);
   }
   BLI_listbase_clear(&node->inputs);
 
-  for (sock = node->outputs.first; sock; sock = sock_next) {
-    sock_next = sock->next;
+  LISTBASE_FOREACH_MUTABLE (bNodeSocket *, sock, &node->outputs) {
     node_socket_free(ntree, sock, node, true);
     MEM_freeN(sock);
   }
@@ -1036,36 +1713,28 @@ bNode *nodeFindNodebyName(bNodeTree *ntree, const char *name)
   return BLI_findstring(&ntree->nodes, name, offsetof(bNode, name));
 }
 
-/* finds a node based on given socket */
-int nodeFindNode(bNodeTree *ntree, bNodeSocket *sock, bNode **nodep, int *sockindex)
+/* Finds a node based on given socket and returns true on success. */
+bool nodeFindNode(bNodeTree *ntree, bNodeSocket *sock, bNode **r_node, int *r_sockindex)
 {
-  int in_out = sock->in_out;
-  bNode *node;
-  bNodeSocket *tsock;
-  int index = 0;
+  *r_node = NULL;
 
-  for (node = ntree->nodes.first; node; node = node->next) {
-    tsock = (in_out == SOCK_IN ? node->inputs.first : node->outputs.first);
-    for (index = 0; tsock; tsock = tsock->next, index++) {
-      if (tsock == sock) {
-        break;
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
+    ListBase *sockets = (sock->in_out == SOCK_IN) ? &node->inputs : &node->outputs;
+    int index = 0;
+    LISTBASE_FOREACH (bNodeSocket *, tsock, sockets) {
+      if (sock == tsock) {
+        if (r_node != NULL) {
+          *r_node = node;
+        }
+        if (r_sockindex != NULL) {
+          *r_sockindex = index;
+        }
+        return true;
       }
-    }
-    if (tsock) {
-      break;
+      index++;
     }
   }
-
-  if (node) {
-    *nodep = node;
-    if (sockindex) {
-      *sockindex = index;
-    }
-    return 1;
-  }
-
-  *nodep = NULL;
-  return 0;
+  return false;
 }
 
 /**
@@ -1076,9 +1745,7 @@ bNode *nodeFindRootParent(bNode *node)
   if (node->parent) {
     return nodeFindRootParent(node->parent);
   }
-  else {
-    return node->type == NODE_FRAME ? node : NULL;
-  }
+  return node->type == NODE_FRAME ? node : NULL;
 }
 
 /**
@@ -1090,7 +1757,7 @@ bool nodeIsChildOf(const bNode *parent, const bNode *child)
   if (parent == child) {
     return true;
   }
-  else if (child->parent) {
+  if (child->parent) {
     return nodeIsChildOf(parent, child->parent);
   }
   return false;
@@ -1109,9 +1776,7 @@ void nodeChainIter(const bNodeTree *ntree,
                    void *userdata,
                    const bool reversed)
 {
-  bNodeLink *link;
-
-  for (link = ntree->links.first; link; link = link->next) {
+  LISTBASE_FOREACH (bNodeLink *, link, &ntree->links) {
     if ((link->flag & NODE_LINK_VALID) == 0) {
       /* Skip links marked as cyclic. */
       continue;
@@ -1149,9 +1814,8 @@ static void iter_backwards_ex(const bNodeTree *ntree,
     if (link->fromnode->iter_flag & recursion_mask) {
       continue;
     }
-    else {
-      link->fromnode->iter_flag |= recursion_mask;
-    }
+
+    link->fromnode->iter_flag |= recursion_mask;
 
     if (!callback(link->fromnode, link->tonode, userdata)) {
       return;
@@ -1220,9 +1884,7 @@ void nodeUniqueName(bNodeTree *ntree, bNode *node)
 
 bNode *nodeAddNode(const struct bContext *C, bNodeTree *ntree, const char *idname)
 {
-  bNode *node;
-
-  node = MEM_callocN(sizeof(bNode), "new node");
+  bNode *node = MEM_callocN(sizeof(bNode), "new node");
   BLI_addtail(&ntree->nodes, node);
 
   BLI_strncpy(node->idname, idname, sizeof(node->idname));
@@ -1262,6 +1924,10 @@ static void node_socket_copy(bNodeSocket *sock_dst, const bNodeSocket *sock_src,
 
   if (sock_src->default_value) {
     sock_dst->default_value = MEM_dupallocN(sock_src->default_value);
+
+    if ((flag & LIB_ID_CREATE_NO_USER_REFCOUNT) == 0) {
+      socket_id_user_increment(sock_dst);
+    }
   }
 
   sock_dst->stack_index = 0;
@@ -1473,17 +2139,13 @@ bool nodeLinkIsHidden(bNodeLink *link)
 
 void nodeInternalRelink(bNodeTree *ntree, bNode *node)
 {
-  bNodeLink *link, *link_next;
-
   /* store link pointers in output sockets, for efficient lookup */
-  for (link = node->internal_links.first; link; link = link->next) {
+  LISTBASE_FOREACH (bNodeLink *, link, &node->internal_links) {
     link->tosock->link = link;
   }
 
   /* redirect downstream links */
-  for (link = ntree->links.first; link; link = link_next) {
-    link_next = link->next;
-
+  LISTBASE_FOREACH_MUTABLE (bNodeLink *, link, &ntree->links) {
     /* do we have internal link? */
     if (link->fromnode == node) {
       if (link->fromsock->link) {
@@ -1514,9 +2176,7 @@ void nodeInternalRelink(bNodeTree *ntree, bNode *node)
   }
 
   /* remove remaining upstream links */
-  for (link = ntree->links.first; link; link = link_next) {
-    link_next = link->next;
-
+  LISTBASE_FOREACH_MUTABLE (bNodeLink *, link, &ntree->links) {
     if (link->tonode == node) {
       nodeRemLink(ntree, link);
     }
@@ -1549,8 +2209,7 @@ void nodeFromView(bNode *node, float x, float y, float *rx, float *ry)
 
 bool nodeAttachNodeCheck(bNode *node, bNode *parent)
 {
-  bNode *parent_recurse;
-  for (parent_recurse = node; parent_recurse; parent_recurse = parent_recurse->parent) {
+  for (bNode *parent_recurse = node; parent_recurse; parent_recurse = parent_recurse->parent) {
     if (parent_recurse == parent) {
       return true;
     }
@@ -1561,11 +2220,10 @@ bool nodeAttachNodeCheck(bNode *node, bNode *parent)
 
 void nodeAttachNode(bNode *node, bNode *parent)
 {
-  float locx, locy;
-
   BLI_assert(parent->type == NODE_FRAME);
   BLI_assert(nodeAttachNodeCheck(parent, node) == false);
 
+  float locx, locy;
   nodeToView(node, 0.0f, 0.0f, &locx, &locy);
 
   node->parent = parent;
@@ -1575,13 +2233,11 @@ void nodeAttachNode(bNode *node, bNode *parent)
 
 void nodeDetachNode(struct bNode *node)
 {
-  float locx, locy;
-
   if (node->parent) {
-
     BLI_assert(node->parent->type == NODE_FRAME);
 
     /* transform to view space */
+    float locx, locy;
     nodeToView(node, 0.0f, 0.0f, &locx, &locy);
     node->locx = locx;
     node->locy = locy;
@@ -1633,7 +2289,7 @@ void nodePositionRelative(bNode *from_node,
 
 void nodePositionPropagate(bNode *node)
 {
-  for (bNodeSocket *nsock = node->inputs.first; nsock; nsock = nsock->next) {
+  LISTBASE_FOREACH (bNodeSocket *, nsock, &node->inputs) {
     if (nsock->link != NULL) {
       bNodeLink *link = nsock->link;
       nodePositionRelative(link->fromnode, link->tonode, link->fromsock, link->tosock);
@@ -1698,9 +2354,7 @@ int BKE_node_preview_used(bNode *node)
 bNodePreview *BKE_node_preview_verify(
     bNodeInstanceHash *previews, bNodeInstanceKey key, int xsize, int ysize, bool create)
 {
-  bNodePreview *preview;
-
-  preview = BKE_node_instance_hash_lookup(previews, key);
+  bNodePreview *preview = BKE_node_instance_hash_lookup(previews, key);
   if (!preview) {
     if (create) {
       preview = MEM_callocN(sizeof(bNodePreview), "node preview");
@@ -1725,7 +2379,7 @@ bNodePreview *BKE_node_preview_verify(
   }
 
   if (preview->rect == NULL) {
-    preview->rect = MEM_callocN(4 * xsize + xsize * ysize * sizeof(char) * 4, "node preview rect");
+    preview->rect = MEM_callocN(4 * xsize + xsize * ysize * sizeof(char[4]), "node preview rect");
     preview->xsize = xsize;
     preview->ysize = ysize;
   }
@@ -1758,8 +2412,7 @@ static void node_preview_init_tree_recursive(bNodeInstanceHash *previews,
                                              int ysize,
                                              int create)
 {
-  bNode *node;
-  for (node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     bNodeInstanceKey key = BKE_node_instance_key(parent_key, ntree, node);
 
     if (BKE_node_preview_used(node)) {
@@ -1793,8 +2446,7 @@ static void node_preview_tag_used_recursive(bNodeInstanceHash *previews,
                                             bNodeTree *ntree,
                                             bNodeInstanceKey parent_key)
 {
-  bNode *node;
-  for (node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     bNodeInstanceKey key = BKE_node_instance_key(parent_key, ntree, node);
 
     if (BKE_node_preview_used(node)) {
@@ -1842,12 +2494,11 @@ void BKE_node_preview_clear(bNodePreview *preview)
 
 void BKE_node_preview_clear_tree(bNodeTree *ntree)
 {
-  bNodeInstanceHashIterator iter;
-
   if (!ntree || !ntree->previews) {
     return;
   }
 
+  bNodeInstanceHashIterator iter;
   NODE_INSTANCE_HASH_ITER (iter, ntree->previews) {
     bNodePreview *preview = BKE_node_instance_hash_iterator_get_value(&iter);
     BKE_node_preview_clear(preview);
@@ -1863,7 +2514,7 @@ static void node_preview_sync(bNodePreview *to, bNodePreview *from)
   if (to->rect && from->rect) {
     int xsize = to->xsize;
     int ysize = to->ysize;
-    memcpy(to->rect, from->rect, xsize * ysize * sizeof(char) * 4);
+    memcpy(to->rect, from->rect, xsize * ysize * sizeof(char[4]));
   }
 }
 
@@ -1871,12 +2522,12 @@ void BKE_node_preview_sync_tree(bNodeTree *to_ntree, bNodeTree *from_ntree)
 {
   bNodeInstanceHash *from_previews = from_ntree->previews;
   bNodeInstanceHash *to_previews = to_ntree->previews;
-  bNodeInstanceHashIterator iter;
 
   if (!from_previews || !to_previews) {
     return;
   }
 
+  bNodeInstanceHashIterator iter;
   NODE_INSTANCE_HASH_ITER (iter, from_previews) {
     bNodeInstanceKey key = BKE_node_instance_hash_iterator_get_key(&iter);
     bNodePreview *from = BKE_node_instance_hash_iterator_get_value(&iter);
@@ -1904,9 +2555,8 @@ void BKE_node_preview_merge_tree(bNodeTree *to_ntree, bNodeTree *from_ntree, boo
     BKE_node_preview_remove_unused(to_ntree);
   }
   else {
-    bNodeInstanceHashIterator iter;
-
     if (from_ntree->previews) {
+      bNodeInstanceHashIterator iter;
       NODE_INSTANCE_HASH_ITER (iter, from_ntree->previews) {
         bNodeInstanceKey key = BKE_node_instance_hash_iterator_get_key(&iter);
         bNodePreview *preview = BKE_node_instance_hash_iterator_get_value(&iter);
@@ -1954,13 +2604,8 @@ void BKE_node_preview_set_pixel(
 /* goes over entire tree */
 void nodeUnlinkNode(bNodeTree *ntree, bNode *node)
 {
-  bNodeLink *link, *next;
-  bNodeSocket *sock;
-  ListBase *lb;
-
-  for (link = ntree->links.first; link; link = next) {
-    next = link->next;
-
+  LISTBASE_FOREACH_MUTABLE (bNodeLink *, link, &ntree->links) {
+    ListBase *lb;
     if (link->fromnode == node) {
       lb = &node->outputs;
       if (link->tonode) {
@@ -1975,13 +2620,11 @@ void nodeUnlinkNode(bNodeTree *ntree, bNode *node)
     }
 
     if (lb) {
-      for (sock = lb->first; sock; sock = sock->next) {
+      LISTBASE_FOREACH (bNodeSocket *, sock, lb) {
         if (link->fromsock == sock || link->tosock == sock) {
+          nodeRemLink(ntree, link);
           break;
         }
-      }
-      if (sock) {
-        nodeRemLink(ntree, link);
       }
     }
   }
@@ -1989,8 +2632,7 @@ void nodeUnlinkNode(bNodeTree *ntree, bNode *node)
 
 static void node_unlink_attached(bNodeTree *ntree, bNode *parent)
 {
-  bNode *node;
-  for (node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->parent == parent) {
       nodeDetachNode(node);
     }
@@ -2001,8 +2643,6 @@ static void node_unlink_attached(bNodeTree *ntree, bNode *parent)
  * that does not happen here. */
 static void node_free_node(bNodeTree *ntree, bNode *node)
 {
-  bNodeSocket *sock, *nextsock;
-
   /* since it is called while free database, node->id is undefined */
 
   /* can be called for nodes outside a node tree (e.g. clipboard) */
@@ -2028,14 +2668,12 @@ static void node_free_node(bNodeTree *ntree, bNode *node)
     node->typeinfo->freefunc(node);
   }
 
-  for (sock = node->inputs.first; sock; sock = nextsock) {
-    nextsock = sock->next;
+  LISTBASE_FOREACH_MUTABLE (bNodeSocket *, sock, &node->inputs) {
     /* Remember, no ID user refcount management here! */
     node_socket_free(ntree, sock, node, false);
     MEM_freeN(sock);
   }
-  for (sock = node->outputs.first; sock; sock = nextsock) {
-    nextsock = sock->next;
+  LISTBASE_FOREACH_MUTABLE (bNodeSocket *, sock, &node->outputs) {
     /* Remember, no ID user refcount management here! */
     node_socket_free(ntree, sock, node, false);
     MEM_freeN(sock);
@@ -2082,6 +2720,13 @@ void nodeRemoveNode(Main *bmain, bNodeTree *ntree, bNode *node, bool do_id_user)
     if (node->id) {
       id_us_min(node->id);
     }
+
+    LISTBASE_FOREACH (bNodeSocket *, sock, &node->inputs) {
+      socket_id_user_decrement(sock);
+    }
+    LISTBASE_FOREACH (bNodeSocket *, sock, &node->outputs) {
+      socket_id_user_decrement(sock);
+    }
   }
 
   /* Remove animation data. */
@@ -2101,31 +2746,34 @@ void nodeRemoveNode(Main *bmain, bNodeTree *ntree, bNode *node, bool do_id_user)
   node_free_node(ntree, node);
 }
 
-static void node_socket_interface_free(bNodeTree *UNUSED(ntree), bNodeSocket *sock)
+static void node_socket_interface_free(bNodeTree *UNUSED(ntree),
+                                       bNodeSocket *sock,
+                                       const bool do_id_user)
 {
   if (sock->prop) {
-    IDP_FreeProperty(sock->prop);
+    IDP_FreeProperty_ex(sock->prop, do_id_user);
   }
 
   if (sock->default_value) {
+    if (do_id_user) {
+      socket_id_user_decrement(sock);
+    }
     MEM_freeN(sock->default_value);
   }
 }
 
 static void free_localized_node_groups(bNodeTree *ntree)
 {
-  bNode *node;
-
   /* Only localized node trees store a copy for each node group tree.
    * Each node group tree in a localized node tree can be freed,
    * since it is a localized copy itself (no risk of accessing free'd
-   * data in main, see [#37939]).
+   * data in main, see T37939).
    */
   if (!(ntree->id.tag & LIB_TAG_LOCALIZED)) {
     return;
   }
 
-  for (node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if ((ELEM(node->type, NODE_GROUP, NODE_CUSTOM_GROUP)) && node->id) {
       bNodeTree *ngroup = (bNodeTree *)node->id;
       ntreeFreeTree(ngroup);
@@ -2142,7 +2790,7 @@ void ntreeFreeTree(bNodeTree *ntree)
   BKE_animdata_free(&ntree->id, false);
 }
 
-void ntreeFreeNestedTree(bNodeTree *ntree)
+void ntreeFreeEmbeddedTree(bNodeTree *ntree)
 {
   ntreeFreeTree(ntree);
   BKE_libblock_free_data(&ntree->id, true);
@@ -2172,25 +2820,19 @@ void ntreeFreeCache(bNodeTree *ntree)
 
 void ntreeSetOutput(bNodeTree *ntree)
 {
-  bNode *node;
-
   /* find the active outputs, might become tree type dependent handler */
-  for (node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->typeinfo->nclass == NODE_CLASS_OUTPUT) {
-      bNode *tnode;
-      int output = 0;
-
       /* we need a check for which output node should be tagged like this, below an exception */
       if (node->type == CMP_NODE_OUTPUT_FILE) {
         continue;
       }
 
+      int output = 0;
       /* there is more types having output class, each one is checked */
-      for (tnode = ntree->nodes.first; tnode; tnode = tnode->next) {
+      LISTBASE_FOREACH (bNode *, tnode, &ntree->nodes) {
         if (tnode->typeinfo->nclass == NODE_CLASS_OUTPUT) {
-
           if (ntree->type == NTREE_COMPOSIT) {
-
             /* same type, exception for viewer */
             if (tnode->type == node->type ||
                 (ELEM(tnode->type, CMP_NODE_VIEWER, CMP_NODE_SPLITVIEWER) &&
@@ -2223,10 +2865,8 @@ void ntreeSetOutput(bNodeTree *ntree)
 
     /* group node outputs use this flag too */
     if (node->type == NODE_GROUP_OUTPUT) {
-      bNode *tnode;
       int output = 0;
-
-      for (tnode = ntree->nodes.first; tnode; tnode = tnode->next) {
+      LISTBASE_FOREACH (bNode *, tnode, &ntree->nodes) {
         if (tnode->type == NODE_GROUP_OUTPUT) {
           if (tnode->flag & NODE_DO_OUTPUT) {
             output++;
@@ -2265,6 +2905,8 @@ bNodeTree **BKE_ntree_ptr_from_id(ID *id)
       return &((Scene *)id)->nodetree;
     case ID_LS:
       return &((FreestyleLineStyle *)id)->nodetree;
+    case ID_SIM:
+      return &((Simulation *)id)->nodetree;
     default:
       return NULL;
   }
@@ -2286,6 +2928,7 @@ ID *BKE_node_tree_find_owner_ID(Main *bmain, struct bNodeTree *ntree)
                        &bmain->textures,
                        &bmain->scenes,
                        &bmain->linestyles,
+                       &bmain->simulations,
                        NULL};
 
   for (int i = 0; lists[i] != NULL; i++) {
@@ -2299,33 +2942,29 @@ ID *BKE_node_tree_find_owner_ID(Main *bmain, struct bNodeTree *ntree)
   return NULL;
 }
 
-int ntreeNodeExists(bNodeTree *ntree, bNode *testnode)
+bool ntreeNodeExists(bNodeTree *ntree, bNode *testnode)
 {
-  bNode *node = ntree->nodes.first;
-  for (; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node == testnode) {
-      return 1;
+      return true;
     }
   }
-  return 0;
+  return false;
 }
 
-int ntreeOutputExists(bNode *node, bNodeSocket *testsock)
+bool ntreeOutputExists(bNode *node, bNodeSocket *testsock)
 {
-  bNodeSocket *sock = node->outputs.first;
-  for (; sock; sock = sock->next) {
+  LISTBASE_FOREACH (bNodeSocket *, sock, &node->outputs) {
     if (sock == testsock) {
-      return 1;
+      return true;
     }
   }
-  return 0;
+  return false;
 }
 
 void ntreeNodeFlagSet(const bNodeTree *ntree, const int flag, const bool enable)
 {
-  bNode *node = ntree->nodes.first;
-
-  for (; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (enable) {
       node->flag |= flag;
     }
@@ -2339,18 +2978,16 @@ void ntreeNodeFlagSet(const bNodeTree *ntree, const int flag, const bool enable)
 bNodeTree *ntreeLocalize(bNodeTree *ntree)
 {
   if (ntree) {
-    bNodeTree *ltree;
-    bNode *node;
-
     /* Make full copy outside of Main database.
      * Note: previews are not copied here.
      */
+    bNodeTree *ltree;
     BKE_id_copy_ex(
         NULL, &ntree->id, (ID **)&ltree, (LIB_ID_COPY_LOCALIZE | LIB_ID_COPY_NO_ANIMDATA));
 
     ltree->id.tag |= LIB_TAG_LOCALIZED;
 
-    for (node = ltree->nodes.first; node; node = node->next) {
+    LISTBASE_FOREACH (bNode *, node, &ltree->nodes) {
       if ((ELEM(node->type, NODE_GROUP, NODE_CUSTOM_GROUP)) && node->id) {
         node->id = (ID *)ntreeLocalize((bNodeTree *)node->id);
       }
@@ -2373,9 +3010,8 @@ bNodeTree *ntreeLocalize(bNodeTree *ntree)
 
     return ltree;
   }
-  else {
-    return NULL;
-  }
+
+  return NULL;
 }
 
 /* sync local composite with real tree */
@@ -2412,14 +3048,13 @@ static bNodeSocket *make_socket_interface(bNodeTree *ntree,
                                           const char *name)
 {
   bNodeSocketType *stype = nodeSocketTypeFind(idname);
-  bNodeSocket *sock;
   int own_index = ntree->cur_index++;
 
   if (stype == NULL) {
     return NULL;
   }
 
-  sock = MEM_callocN(sizeof(bNodeSocket), "socket template");
+  bNodeSocket *sock = MEM_callocN(sizeof(bNodeSocket), "socket template");
   BLI_strncpy(sock->idname, stype->idname, sizeof(sock->idname));
   node_socket_set_typeinfo(ntree, sock, stype);
   sock->in_out = in_out;
@@ -2446,8 +3081,8 @@ static bNodeSocket *make_socket_interface(bNodeTree *ntree,
 
 bNodeSocket *ntreeFindSocketInterface(bNodeTree *ntree, int in_out, const char *identifier)
 {
-  bNodeSocket *iosock = (in_out == SOCK_IN ? ntree->inputs.first : ntree->outputs.first);
-  for (; iosock; iosock = iosock->next) {
+  ListBase *sockets = (in_out == SOCK_IN) ? &ntree->inputs : &ntree->outputs;
+  LISTBASE_FOREACH (bNodeSocket *, iosock, sockets) {
     if (STREQ(iosock->identifier, identifier)) {
       return iosock;
     }
@@ -2460,9 +3095,7 @@ bNodeSocket *ntreeAddSocketInterface(bNodeTree *ntree,
                                      const char *idname,
                                      const char *name)
 {
-  bNodeSocket *iosock;
-
-  iosock = make_socket_interface(ntree, in_out, idname, name);
+  bNodeSocket *iosock = make_socket_interface(ntree, in_out, idname, name);
   if (in_out == SOCK_IN) {
     BLI_addtail(&ntree->inputs, iosock);
     ntree->update |= NTREE_UPDATE_GROUP_IN;
@@ -2471,16 +3104,13 @@ bNodeSocket *ntreeAddSocketInterface(bNodeTree *ntree,
     BLI_addtail(&ntree->outputs, iosock);
     ntree->update |= NTREE_UPDATE_GROUP_OUT;
   }
-
   return iosock;
 }
 
 bNodeSocket *ntreeInsertSocketInterface(
     bNodeTree *ntree, int in_out, const char *idname, bNodeSocket *next_sock, const char *name)
 {
-  bNodeSocket *iosock;
-
-  iosock = make_socket_interface(ntree, in_out, idname, name);
+  bNodeSocket *iosock = make_socket_interface(ntree, in_out, idname, name);
   if (in_out == SOCK_IN) {
     BLI_insertlinkbefore(&ntree->inputs, next_sock, iosock);
     ntree->update |= NTREE_UPDATE_GROUP_IN;
@@ -2489,7 +3119,6 @@ bNodeSocket *ntreeInsertSocketInterface(
     BLI_insertlinkbefore(&ntree->outputs, next_sock, iosock);
     ntree->update |= NTREE_UPDATE_GROUP_OUT;
   }
-
   return iosock;
 }
 
@@ -2528,7 +3157,7 @@ void ntreeRemoveSocketInterface(bNodeTree *ntree, bNodeSocket *sock)
   BLI_remlink(&ntree->inputs, sock);
   BLI_remlink(&ntree->outputs, sock);
 
-  node_socket_interface_free(ntree, sock);
+  node_socket_interface_free(ntree, sock, true);
   MEM_freeN(sock);
 
   ntree->update |= NTREE_UPDATE_GROUP;
@@ -2569,8 +3198,6 @@ static void ntree_interface_identifier(bNodeTree *ntree,
 
 static void ntree_interface_type_create(bNodeTree *ntree)
 {
-  StructRNA *srna;
-  bNodeSocket *sock;
   /* strings are generated from base string + ID name, sizes are sufficient */
   char base[MAX_ID_NAME + 64], identifier[MAX_ID_NAME + 64], name[MAX_ID_NAME + 64],
       description[MAX_ID_NAME + 64];
@@ -2580,7 +3207,7 @@ static void ntree_interface_type_create(bNodeTree *ntree)
   ntree_interface_identifier(ntree, base, identifier, sizeof(identifier), name, description);
 
   /* register a subtype of PropertyGroup */
-  srna = RNA_def_struct_ptr(&BLENDER_RNA, identifier, &RNA_PropertyGroup);
+  StructRNA *srna = RNA_def_struct_ptr(&BLENDER_RNA, identifier, &RNA_PropertyGroup);
   RNA_def_struct_ui_text(srna, name, description);
   RNA_def_struct_duplicate_pointers(&BLENDER_RNA, srna);
 
@@ -2589,13 +3216,13 @@ static void ntree_interface_type_create(bNodeTree *ntree)
   RNA_struct_blender_type_set(srna, ntree);
 
   /* add socket properties */
-  for (sock = ntree->inputs.first; sock; sock = sock->next) {
+  LISTBASE_FOREACH (bNodeSocket *, sock, &ntree->inputs) {
     bNodeSocketType *stype = sock->typeinfo;
     if (stype && stype->interface_register_properties) {
       stype->interface_register_properties(ntree, sock, srna);
     }
   }
-  for (sock = ntree->outputs.first; sock; sock = sock->next) {
+  LISTBASE_FOREACH (bNodeSocket *, sock, &ntree->outputs) {
     bNodeSocketType *stype = sock->typeinfo;
     if (stype && stype->interface_register_properties) {
       stype->interface_register_properties(ntree, sock, srna);
@@ -2661,7 +3288,7 @@ void ntreeInterfaceTypeUpdate(bNodeTree *ntree)
 bNode *ntreeFindType(const bNodeTree *ntree, int type)
 {
   if (ntree) {
-    for (bNode *node = ntree->nodes.first; node; node = node->next) {
+    LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
       if (node->type == type) {
         return node;
       }
@@ -2677,28 +3304,22 @@ bool ntreeHasType(const bNodeTree *ntree, int type)
 
 bool ntreeHasTree(const bNodeTree *ntree, const bNodeTree *lookup)
 {
-  bNode *node;
-
   if (ntree == lookup) {
     return true;
   }
-
-  for (node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (ELEM(node->type, NODE_GROUP, NODE_CUSTOM_GROUP) && node->id) {
       if (ntreeHasTree((bNodeTree *)node->id, lookup)) {
         return true;
       }
     }
   }
-
   return false;
 }
 
 bNodeLink *nodeFindLink(bNodeTree *ntree, bNodeSocket *from, bNodeSocket *to)
 {
-  bNodeLink *link;
-
-  for (link = ntree->links.first; link; link = link->next) {
+  LISTBASE_FOREACH (bNodeLink *, link, &ntree->links) {
     if (link->fromsock == from && link->tosock == to) {
       return link;
     }
@@ -2711,10 +3332,8 @@ bNodeLink *nodeFindLink(bNodeTree *ntree, bNodeSocket *from, bNodeSocket *to)
 
 int nodeCountSocketLinks(bNodeTree *ntree, bNodeSocket *sock)
 {
-  bNodeLink *link;
   int tot = 0;
-
-  for (link = ntree->links.first; link; link = link->next) {
+  LISTBASE_FOREACH (bNodeLink *, link, &ntree->links) {
     if (link->fromsock == sock || link->tosock == sock) {
       tot++;
     }
@@ -2724,18 +3343,16 @@ int nodeCountSocketLinks(bNodeTree *ntree, bNodeSocket *sock)
 
 bNode *nodeGetActive(bNodeTree *ntree)
 {
-  bNode *node;
-
   if (ntree == NULL) {
     return NULL;
   }
 
-  for (node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->flag & NODE_ACTIVE) {
-      break;
+      return node;
     }
   }
-  return node;
+  return NULL;
 }
 
 static bNode *node_get_active_id_recursive(bNodeInstanceKey active_key,
@@ -2744,8 +3361,7 @@ static bNode *node_get_active_id_recursive(bNodeInstanceKey active_key,
                                            short idtype)
 {
   if (parent_key.value == active_key.value || active_key.value == 0) {
-    bNode *node;
-    for (node = ntree->nodes.first; node; node = node->next) {
+    LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
       if (node->id && GS(node->id->name) == idtype) {
         if (node->flag & NODE_ACTIVE_ID) {
           return node;
@@ -2754,14 +3370,13 @@ static bNode *node_get_active_id_recursive(bNodeInstanceKey active_key,
     }
   }
   else {
-    bNode *node, *tnode;
     /* no node with active ID in this tree, look inside groups */
-    for (node = ntree->nodes.first; node; node = node->next) {
+    LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
       if (node->type == NODE_GROUP) {
         bNodeTree *group = (bNodeTree *)node->id;
         if (group) {
           bNodeInstanceKey group_key = BKE_node_instance_key(parent_key, ntree, node);
-          tnode = node_get_active_id_recursive(active_key, group_key, group, idtype);
+          bNode *tnode = node_get_active_id_recursive(active_key, group_key, group, idtype);
           if (tnode) {
             return tnode;
           }
@@ -2769,7 +3384,6 @@ static bNode *node_get_active_id_recursive(bNodeInstanceKey active_key,
       }
     }
   }
-
   return NULL;
 }
 
@@ -2780,21 +3394,18 @@ bNode *nodeGetActiveID(bNodeTree *ntree, short idtype)
     return node_get_active_id_recursive(
         ntree->active_viewer_key, NODE_INSTANCE_KEY_BASE, ntree, idtype);
   }
-  else {
-    return NULL;
-  }
+  return NULL;
 }
 
 bool nodeSetActiveID(bNodeTree *ntree, short idtype, ID *id)
 {
-  bNode *node;
   bool ok = false;
 
   if (ntree == NULL) {
     return ok;
   }
 
-  for (node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->id && GS(node->id->name) == idtype) {
       if (id && ok == false && node->id == id) {
         node->flag |= NODE_ACTIVE_ID;
@@ -2810,7 +3421,7 @@ bool nodeSetActiveID(bNodeTree *ntree, short idtype, ID *id)
    * if active ID node has been found already,
    * just pass NULL so other matching nodes are deactivated.
    */
-  for (node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->type == NODE_GROUP) {
       ok |= nodeSetActiveID((bNodeTree *)node->id, idtype, (ok == false ? id : NULL));
     }
@@ -2822,13 +3433,11 @@ bool nodeSetActiveID(bNodeTree *ntree, short idtype, ID *id)
 /* two active flags, ID nodes have special flag for buttons display */
 void nodeClearActiveID(bNodeTree *ntree, short idtype)
 {
-  bNode *node;
-
   if (ntree == NULL) {
     return;
   }
 
-  for (node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->id && GS(node->id->name) == idtype) {
       node->flag &= ~NODE_ACTIVE_ID;
     }
@@ -2841,15 +3450,13 @@ void nodeSetSelected(bNode *node, bool select)
     node->flag |= NODE_SELECT;
   }
   else {
-    bNodeSocket *sock;
-
     node->flag &= ~NODE_SELECT;
 
     /* deselect sockets too */
-    for (sock = node->inputs.first; sock; sock = sock->next) {
+    LISTBASE_FOREACH (bNodeSocket *, sock, &node->inputs) {
       sock->flag &= ~NODE_SELECT;
     }
-    for (sock = node->outputs.first; sock; sock = sock->next) {
+    LISTBASE_FOREACH (bNodeSocket *, sock, &node->outputs) {
       sock->flag &= ~NODE_SELECT;
     }
   }
@@ -2857,13 +3464,11 @@ void nodeSetSelected(bNode *node, bool select)
 
 void nodeClearActive(bNodeTree *ntree)
 {
-  bNode *node;
-
   if (ntree == NULL) {
     return;
   }
 
-  for (node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     node->flag &= ~(NODE_ACTIVE | NODE_ACTIVE_ID);
   }
 }
@@ -2871,10 +3476,8 @@ void nodeClearActive(bNodeTree *ntree)
 /* two active flags, ID nodes have special flag for buttons display */
 void nodeSetActive(bNodeTree *ntree, bNode *node)
 {
-  bNode *tnode;
-
   /* make sure only one node is active, and only one per ID type */
-  for (tnode = ntree->nodes.first; tnode; tnode = tnode->next) {
+  LISTBASE_FOREACH (bNode *, tnode, &ntree->nodes) {
     tnode->flag &= ~NODE_ACTIVE;
 
     if (node->id && tnode->id) {
@@ -2918,9 +3521,8 @@ int nodeSocketLinkLimit(struct bNodeSocket *sock)
     int limit = (sock->in_out == SOCK_IN) ? stype->input_link_limit : stype->output_link_limit;
     return limit;
   }
-  else {
-    return sock->limit;
-  }
+
+  return sock->limit;
 }
 
 /* ************** Node Clipboard *********** */
@@ -2963,17 +3565,12 @@ void BKE_node_clipboard_init(struct bNodeTree *ntree)
 
 void BKE_node_clipboard_clear(void)
 {
-  bNode *node, *node_next;
-  bNodeLink *link, *link_next;
-
-  for (link = node_clipboard.links.first; link; link = link_next) {
-    link_next = link->next;
+  LISTBASE_FOREACH_MUTABLE (bNodeLink *, link, &node_clipboard.links) {
     nodeRemLink(NULL, link);
   }
   BLI_listbase_clear(&node_clipboard.links);
 
-  for (node = node_clipboard.nodes.first; node; node = node_next) {
-    node_next = node->next;
+  LISTBASE_FOREACH_MUTABLE (bNode *, node, &node_clipboard.nodes) {
     node_free_node(NULL, node);
   }
   BLI_listbase_clear(&node_clipboard.nodes);
@@ -3037,7 +3634,7 @@ void BKE_node_clipboard_add_node(bNode *node)
     BLI_strncpy(node_info->id_name, node->id->name, sizeof(node_info->id_name));
     if (ID_IS_LINKED(node->id)) {
       BLI_strncpy(
-          node_info->library_name, node->id->lib->filepath, sizeof(node_info->library_name));
+          node_info->library_name, node->id->lib->filepath_abs, sizeof(node_info->library_name));
     }
     else {
       node_info->library_name[0] = '\0';
@@ -3210,9 +3807,8 @@ bool BKE_node_instance_hash_tag_key(bNodeInstanceHash *hash, bNodeInstanceKey ke
     entry->tag = 1;
     return true;
   }
-  else {
-    return false;
-  }
+
+  return false;
 }
 
 void BKE_node_instance_hash_remove_untagged(bNodeInstanceHash *hash,
@@ -3225,9 +3821,7 @@ void BKE_node_instance_hash_remove_untagged(bNodeInstanceHash *hash,
                                                BKE_node_instance_hash_size(hash),
                                            "temporary node instance key list");
   bNodeInstanceHashIterator iter;
-  int num_untagged, i;
-
-  num_untagged = 0;
+  int num_untagged = 0;
   NODE_INSTANCE_HASH_ITER (iter, hash) {
     bNodeInstanceHashEntry *value = BKE_node_instance_hash_iterator_get_value(&iter);
 
@@ -3236,7 +3830,7 @@ void BKE_node_instance_hash_remove_untagged(bNodeInstanceHash *hash,
     }
   }
 
-  for (i = 0; i < num_untagged; i++) {
+  for (int i = 0; i < num_untagged; i++) {
     BKE_node_instance_hash_remove(hash, untagged[i], valfreefp);
   }
 
@@ -3248,16 +3842,14 @@ void BKE_node_instance_hash_remove_untagged(bNodeInstanceHash *hash,
 /* node is guaranteed to be not checked before */
 static int node_get_deplist_recurs(bNodeTree *ntree, bNode *node, bNode ***nsort)
 {
-  bNode *fromnode;
-  bNodeLink *link;
   int level = 0xFFF;
 
   node->done = true;
 
   /* check linked nodes */
-  for (link = ntree->links.first; link; link = link->next) {
+  LISTBASE_FOREACH (bNodeLink *, link, &ntree->links) {
     if (link->tonode == node) {
-      fromnode = link->fromnode;
+      bNode *fromnode = link->fromnode;
       if (fromnode->done == 0) {
         fromnode->level = node_get_deplist_recurs(ntree, fromnode, nsort);
       }
@@ -3287,12 +3879,10 @@ static int node_get_deplist_recurs(bNodeTree *ntree, bNode *node, bNode ***nsort
 
 void ntreeGetDependencyList(struct bNodeTree *ntree, struct bNode ***deplist, int *totnodes)
 {
-  bNode *node, **nsort;
-
   *totnodes = 0;
 
   /* first clear data */
-  for (node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     node->done = false;
     (*totnodes)++;
   }
@@ -3301,10 +3891,11 @@ void ntreeGetDependencyList(struct bNodeTree *ntree, struct bNode ***deplist, in
     return;
   }
 
+  bNode **nsort;
   nsort = *deplist = MEM_callocN((*totnodes) * sizeof(bNode *), "sorted node array");
 
   /* recursive check */
-  for (node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->done == 0) {
       node->level = node_get_deplist_recurs(ntree, node, &nsort);
     }
@@ -3314,15 +3905,13 @@ void ntreeGetDependencyList(struct bNodeTree *ntree, struct bNode ***deplist, in
 /* only updates node->level for detecting cycles links */
 static void ntree_update_node_level(bNodeTree *ntree)
 {
-  bNode *node;
-
   /* first clear tag */
-  for (node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     node->done = false;
   }
 
   /* recursive check */
-  for (node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->done == 0) {
       node->level = node_get_deplist_recurs(ntree, node, NULL);
     }
@@ -3331,21 +3920,17 @@ static void ntree_update_node_level(bNodeTree *ntree)
 
 void ntreeTagUsedSockets(bNodeTree *ntree)
 {
-  bNode *node;
-  bNodeSocket *sock;
-  bNodeLink *link;
-
   /* first clear data */
-  for (node = ntree->nodes.first; node; node = node->next) {
-    for (sock = node->inputs.first; sock; sock = sock->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
+    LISTBASE_FOREACH (bNodeSocket *, sock, &node->inputs) {
       sock->flag &= ~SOCK_IN_USE;
     }
-    for (sock = node->outputs.first; sock; sock = sock->next) {
+    LISTBASE_FOREACH (bNodeSocket *, sock, &node->outputs) {
       sock->flag &= ~SOCK_IN_USE;
     }
   }
 
-  for (link = ntree->links.first; link; link = link->next) {
+  LISTBASE_FOREACH (bNodeLink *, link, &ntree->links) {
     link->fromsock->flag |= SOCK_IN_USE;
     link->tosock->flag |= SOCK_IN_USE;
   }
@@ -3353,18 +3938,14 @@ void ntreeTagUsedSockets(bNodeTree *ntree)
 
 static void ntree_update_link_pointers(bNodeTree *ntree)
 {
-  bNode *node;
-  bNodeSocket *sock;
-  bNodeLink *link;
-
   /* first clear data */
-  for (node = ntree->nodes.first; node; node = node->next) {
-    for (sock = node->inputs.first; sock; sock = sock->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
+    LISTBASE_FOREACH (bNodeSocket *, sock, &node->inputs) {
       sock->link = NULL;
     }
   }
 
-  for (link = ntree->links.first; link; link = link->next) {
+  LISTBASE_FOREACH (bNodeLink *, link, &ntree->links) {
     link->tosock->link = link;
   }
 
@@ -3373,9 +3954,7 @@ static void ntree_update_link_pointers(bNodeTree *ntree)
 
 static void ntree_validate_links(bNodeTree *ntree)
 {
-  bNodeLink *link;
-
-  for (link = ntree->links.first; link; link = link->next) {
+  LISTBASE_FOREACH (bNodeLink *, link, &ntree->links) {
     link->flag |= NODE_LINK_VALID;
     if (link->fromnode && link->tonode && link->fromnode->level <= link->tonode->level) {
       link->flag &= ~NODE_LINK_VALID;
@@ -3395,7 +3974,7 @@ void ntreeUpdateAllNew(Main *main)
    * might have been set in file reading or versioning. */
   FOREACH_NODETREE_BEGIN (main, ntree, owner_id) {
     if (owner_id->tag & LIB_TAG_NEW) {
-      for (bNode *node = ntree->nodes.first; node; node = node->next) {
+      LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
         if (node->typeinfo->group_update_func) {
           node->typeinfo->group_update_func(ntree, node);
         }
@@ -3413,7 +3992,7 @@ void ntreeUpdateAllUsers(Main *main, ID *ngroup)
   FOREACH_NODETREE_BEGIN (main, ntree, owner_id) {
     bool need_update = false;
 
-    for (bNode *node = ntree->nodes.first; node; node = node->next) {
+    LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
       if (node->id == ngroup) {
         if (node->typeinfo->group_update_func) {
           node->typeinfo->group_update_func(ntree, node);
@@ -3430,10 +4009,18 @@ void ntreeUpdateAllUsers(Main *main, ID *ngroup)
   FOREACH_NODETREE_END;
 }
 
+static void ntreeUpdateSimulationDependencies(Main *main, bNodeTree *simulation_ntree)
+{
+  FOREACH_NODETREE_BEGIN (main, ntree, owner_id) {
+    if (GS(owner_id->name) == ID_SIM && ntree == simulation_ntree) {
+      BKE_simulation_update_dependencies((Simulation *)owner_id, main);
+    }
+  }
+  FOREACH_NODETREE_END;
+}
+
 void ntreeUpdateTree(Main *bmain, bNodeTree *ntree)
 {
-  bNode *node;
-
   if (!ntree) {
     return;
   }
@@ -3450,7 +4037,7 @@ void ntreeUpdateTree(Main *bmain, bNodeTree *ntree)
   }
 
   /* update individual nodes */
-  for (node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     /* node tree update tags override individual node update flags */
     if ((node->update & NODE_UPDATE) || (ntree->update & NTREE_UPDATE)) {
       if (node->typeinfo->updatefunc) {
@@ -3472,7 +4059,6 @@ void ntreeUpdateTree(Main *bmain, bNodeTree *ntree)
     ntreeInterfaceTypeUpdate(ntree);
   }
 
-  /* XXX hack, should be done by depsgraph!! */
   if (bmain) {
     ntreeUpdateAllUsers(bmain, &ntree->id);
   }
@@ -3488,8 +4074,13 @@ void ntreeUpdateTree(Main *bmain, bNodeTree *ntree)
     ntree_validate_links(ntree);
   }
 
+  if (bmain != NULL && ntree->typeinfo == ntreeType_Simulation &&
+      (ntree->id.flag & LIB_EMBEDDED_DATA)) {
+    ntreeUpdateSimulationDependencies(bmain, ntree);
+  }
+
   /* clear update flags */
-  for (node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     node->update = 0;
   }
   ntree->update = 0;
@@ -3519,7 +4110,6 @@ void nodeUpdate(bNodeTree *ntree, bNode *node)
 
 bool nodeUpdateID(bNodeTree *ntree, ID *id)
 {
-  bNode *node;
   bool changed = false;
 
   if (ELEM(NULL, id, ntree)) {
@@ -3532,7 +4122,7 @@ bool nodeUpdateID(bNodeTree *ntree, ID *id)
   }
   ntree->is_updating = true;
 
-  for (node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->id == id) {
       changed = true;
       node->update |= NODE_UPDATE_ID;
@@ -3544,7 +4134,7 @@ bool nodeUpdateID(bNodeTree *ntree, ID *id)
     }
   }
 
-  for (node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     nodeUpdateInternalLinks(ntree, node);
   }
 
@@ -3612,6 +4202,7 @@ static bool node_poll_instance_default(bNode *node, bNodeTree *ntree)
   return node->typeinfo->poll(node->typeinfo, ntree);
 }
 
+/* NOLINTNEXTLINE: readability-function-size */
 void node_type_base(bNodeType *ntype, int type, const char *name, short nclass, short flag)
 {
   /* Use static type info header to map static int type to identifier string and RNA struct type.
@@ -3624,9 +4215,9 @@ void node_type_base(bNodeType *ntype, int type, const char *name, short nclass, 
 #define DefNode(Category, ID, DefFunc, EnumName, StructName, UIName, UIDesc) \
   case ID: \
     BLI_strncpy(ntype->idname, #Category #StructName, sizeof(ntype->idname)); \
-    ntype->ext.srna = RNA_struct_find(#Category #StructName); \
-    BLI_assert(ntype->ext.srna != NULL); \
-    RNA_struct_blender_type_set(ntype->ext.srna, ntype); \
+    ntype->rna_ext.srna = RNA_struct_find(#Category #StructName); \
+    BLI_assert(ntype->rna_ext.srna != NULL); \
+    RNA_struct_blender_type_set(ntype->rna_ext.srna, ntype); \
     break;
 
   switch (type) {
@@ -3702,30 +4293,28 @@ void node_type_socket_templates(struct bNodeType *ntype,
                                 struct bNodeSocketTemplate *inputs,
                                 struct bNodeSocketTemplate *outputs)
 {
-  bNodeSocketTemplate *ntemp;
-
   ntype->inputs = inputs;
   ntype->outputs = outputs;
 
   /* automatically generate unique identifiers */
   if (inputs) {
     /* clear identifier strings (uninitialized memory) */
-    for (ntemp = inputs; ntemp->type >= 0; ntemp++) {
+    for (bNodeSocketTemplate *ntemp = inputs; ntemp->type >= 0; ntemp++) {
       ntemp->identifier[0] = '\0';
     }
 
-    for (ntemp = inputs; ntemp->type >= 0; ntemp++) {
+    for (bNodeSocketTemplate *ntemp = inputs; ntemp->type >= 0; ntemp++) {
       BLI_strncpy(ntemp->identifier, ntemp->name, sizeof(ntemp->identifier));
       unique_socket_template_identifier(inputs, ntemp, ntemp->identifier, '_');
     }
   }
   if (outputs) {
     /* clear identifier strings (uninitialized memory) */
-    for (ntemp = outputs; ntemp->type >= 0; ntemp++) {
+    for (bNodeSocketTemplate *ntemp = outputs; ntemp->type >= 0; ntemp++) {
       ntemp->identifier[0] = '\0';
     }
 
-    for (ntemp = outputs; ntemp->type >= 0; ntemp++) {
+    for (bNodeSocketTemplate *ntemp = outputs; ntemp->type >= 0; ntemp++) {
       BLI_strncpy(ntemp->identifier, ntemp->name, sizeof(ntemp->identifier));
       unique_socket_template_identifier(outputs, ntemp, ntemp->identifier, '_');
     }
@@ -4113,6 +4702,37 @@ static void registerTextureNodes(void)
   register_node_type_tex_proc_distnoise();
 }
 
+static void registerSimulationNodes(void)
+{
+  register_node_type_sim_group();
+
+  register_node_type_sim_particle_simulation();
+  register_node_type_sim_force();
+  register_node_type_sim_set_particle_attribute();
+  register_node_type_sim_particle_birth_event();
+  register_node_type_sim_particle_time_step_event();
+  register_node_type_sim_execute_condition();
+  register_node_type_sim_multi_execute();
+  register_node_type_sim_particle_mesh_emitter();
+  register_node_type_sim_particle_mesh_collision_event();
+  register_node_type_sim_emit_particles();
+  register_node_type_sim_time();
+  register_node_type_sim_particle_attribute();
+  register_node_type_sim_age_reached_event();
+  register_node_type_sim_kill_particle();
+}
+
+static void registerFunctionNodes(void)
+{
+  register_node_type_fn_boolean_math();
+  register_node_type_fn_float_compare();
+  register_node_type_fn_switch();
+  register_node_type_fn_group_instance_id();
+  register_node_type_fn_combine_strings();
+  register_node_type_fn_object_transforms();
+  register_node_type_fn_random_float();
+}
+
 void init_nodesystem(void)
 {
   nodetreetypes_hash = BLI_ghash_str_new("nodetreetypes_hash gh");
@@ -4126,6 +4746,7 @@ void init_nodesystem(void)
   register_node_tree_type_cmp();
   register_node_tree_type_sh();
   register_node_tree_type_tex();
+  register_node_tree_type_sim();
 
   register_node_type_frame();
   register_node_type_reroute();
@@ -4135,14 +4756,16 @@ void init_nodesystem(void)
   registerCompositNodes();
   registerShaderNodes();
   registerTextureNodes();
+  registerSimulationNodes();
+  registerFunctionNodes();
 }
 
 void free_nodesystem(void)
 {
   if (nodetypes_hash) {
     NODE_TYPES_BEGIN (nt) {
-      if (nt->ext.free) {
-        nt->ext.free(nt->ext.data);
+      if (nt->rna_ext.free) {
+        nt->rna_ext.free(nt->rna_ext.data);
       }
     }
     NODE_TYPES_END;
@@ -4168,8 +4791,8 @@ void free_nodesystem(void)
 
   if (nodetreetypes_hash) {
     NODE_TREE_TYPES_BEGIN (nt) {
-      if (nt->ext.free) {
-        nt->ext.free(nt->ext.data);
+      if (nt->rna_ext.free) {
+        nt->rna_ext.free(nt->rna_ext.data);
       }
     }
     NODE_TREE_TYPES_END;
@@ -4191,6 +4814,7 @@ void BKE_node_tree_iter_init(struct NodeTreeIterStore *ntreeiter, struct Main *b
   ntreeiter->light = bmain->lights.first;
   ntreeiter->world = bmain->worlds.first;
   ntreeiter->linestyle = bmain->linestyles.first;
+  ntreeiter->simulation = bmain->simulations.first;
 }
 bool BKE_node_tree_iter_step(struct NodeTreeIterStore *ntreeiter,
                              bNodeTree **r_nodetree,
@@ -4231,6 +4855,11 @@ bool BKE_node_tree_iter_step(struct NodeTreeIterStore *ntreeiter,
     *r_id = (ID *)ntreeiter->linestyle;
     ntreeiter->linestyle = ntreeiter->linestyle->id.next;
   }
+  else if (ntreeiter->simulation) {
+    *r_nodetree = ntreeiter->simulation->nodetree;
+    *r_id = (ID *)ntreeiter->simulation;
+    ntreeiter->simulation = ntreeiter->simulation->id.next;
+  }
   else {
     return false;
   }
@@ -4244,7 +4873,7 @@ bool BKE_node_tree_iter_step(struct NodeTreeIterStore *ntreeiter,
 void BKE_nodetree_remove_layer_n(bNodeTree *ntree, Scene *scene, const int layer_index)
 {
   BLI_assert(layer_index != -1);
-  for (bNode *node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->type == CMP_NODE_R_LAYERS && (Scene *)node->id == scene) {
       if (node->custom1 == layer_index) {
         node->custom1 = 0;

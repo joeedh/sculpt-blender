@@ -28,7 +28,6 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "DNA_screen_types.h"
 #include "DNA_userdef_types.h"
 
 #include "BLI_listbase.h"
@@ -147,8 +146,9 @@ void UI_fontstyle_draw_ex(const uiFontStyle *fs,
                           const uchar col[4],
                           const struct uiFontStyleDraw_Params *fs_params,
                           size_t len,
-                          float *r_xofs,
-                          float *r_yofs)
+                          int *r_xofs,
+                          int *r_yofs,
+                          struct ResultBLF *r_info)
 {
   int xofs = 0, yofs;
   int font_flag = BLF_CLIPPING;
@@ -169,6 +169,12 @@ void UI_fontstyle_draw_ex(const uiFontStyle *fs,
   if (fs_params->word_wrap == 1) {
     font_flag |= BLF_WORD_WRAP;
   }
+  if (fs->bold) {
+    font_flag |= BLF_BOLD;
+  }
+  if (fs->italic) {
+    font_flag |= BLF_ITALIC;
+  }
 
   BLF_enable(fs->uifont_id, font_flag);
 
@@ -178,7 +184,7 @@ void UI_fontstyle_draw_ex(const uiFontStyle *fs,
   }
   else {
     /* draw from boundbox center */
-    float height = BLF_ascender(fs->uifont_id) + BLF_descender(fs->uifont_id);
+    const float height = BLF_ascender(fs->uifont_id) + BLF_descender(fs->uifont_id);
     yofs = ceil(0.5f * (BLI_rcti_size_y(rect) - height));
   }
 
@@ -196,7 +202,7 @@ void UI_fontstyle_draw_ex(const uiFontStyle *fs,
   BLF_position(fs->uifont_id, rect->xmin + xofs, rect->ymin + yofs, 0.0f);
   BLF_color4ubv(fs->uifont_id, col);
 
-  BLF_draw(fs->uifont_id, str, len);
+  BLF_draw_ex(fs->uifont_id, str, len, r_info);
 
   BLF_disable(fs->uifont_id, font_flag);
 
@@ -210,9 +216,9 @@ void UI_fontstyle_draw(const uiFontStyle *fs,
                        const uchar col[4],
                        const struct uiFontStyleDraw_Params *fs_params)
 {
-  float xofs, yofs;
+  int xofs, yofs;
 
-  UI_fontstyle_draw_ex(fs, rect, str, col, fs_params, BLF_DRAW_STR_DUMMY_MAX, &xofs, &yofs);
+  UI_fontstyle_draw_ex(fs, rect, str, col, fs_params, BLF_DRAW_STR_DUMMY_MAX, &xofs, &yofs, NULL);
 }
 
 /* drawn same as above, but at 90 degree angle */
@@ -328,7 +334,7 @@ void UI_fontstyle_draw_simple_backdrop(const uiFontStyle *fs,
     const float margin = height / 4.0f;
 
     /* backdrop */
-    float color[4] = {col_bg[0], col_bg[1], col_bg[2], 0.5f};
+    const float color[4] = {col_bg[0], col_bg[1], col_bg[2], 0.5f};
 
     UI_draw_roundbox_corner_set(UI_CNR_ALL);
     UI_draw_roundbox_aa(true,
@@ -420,7 +426,6 @@ int UI_fontstyle_height_max(const uiFontStyle *fs)
 /* reading without uifont will create one */
 void uiStyleInit(void)
 {
-  uiFont *font;
   uiStyle *style = U.uistyles.first;
 
   /* recover from uninitialized dpi */
@@ -429,7 +434,7 @@ void uiStyleInit(void)
   }
   CLAMP(U.dpi, 48, 144);
 
-  for (font = U.uifonts.first; font; font = font->next) {
+  LISTBASE_FOREACH (uiFont *, font, &U.uifonts) {
     BLF_unload_id(font->blf_id);
   }
 
@@ -443,24 +448,24 @@ void uiStyleInit(void)
     blf_mono_font_render = -1;
   }
 
-  font = U.uifonts.first;
+  uiFont *font_first = U.uifonts.first;
 
   /* default builtin */
-  if (font == NULL) {
-    font = MEM_callocN(sizeof(uiFont), "ui font");
-    BLI_addtail(&U.uifonts, font);
+  if (font_first == NULL) {
+    font_first = MEM_callocN(sizeof(uiFont), "ui font");
+    BLI_addtail(&U.uifonts, font_first);
   }
 
   if (U.font_path_ui[0]) {
-    BLI_strncpy(font->filename, U.font_path_ui, sizeof(font->filename));
-    font->uifont_id = UIFONT_CUSTOM1;
+    BLI_strncpy(font_first->filename, U.font_path_ui, sizeof(font_first->filename));
+    font_first->uifont_id = UIFONT_CUSTOM1;
   }
   else {
-    BLI_strncpy(font->filename, "default", sizeof(font->filename));
-    font->uifont_id = UIFONT_DEFAULT;
+    BLI_strncpy(font_first->filename, "default", sizeof(font_first->filename));
+    font_first->uifont_id = UIFONT_DEFAULT;
   }
 
-  for (font = U.uifonts.first; font; font = font->next) {
+  LISTBASE_FOREACH (uiFont *, font, &U.uifonts) {
     const bool unique = false;
 
     if (font->uifont_id == UIFONT_DEFAULT) {
@@ -512,7 +517,8 @@ void uiStyleInit(void)
 
   /* Set default flags based on UI preferences (not render fonts) */
   {
-    int flag_disable = (BLF_MONOCHROME | BLF_HINTING_NONE | BLF_HINTING_SLIGHT | BLF_HINTING_FULL);
+    const int flag_disable = (BLF_MONOCHROME | BLF_HINTING_NONE | BLF_HINTING_SLIGHT |
+                              BLF_HINTING_FULL);
     int flag_enable = 0;
 
     if (U.text_render & USER_TEXT_HINTING_NONE) {
@@ -529,7 +535,7 @@ void uiStyleInit(void)
       flag_enable |= BLF_MONOCHROME;
     }
 
-    for (font = U.uifonts.first; font; font = font->next) {
+    LISTBASE_FOREACH (uiFont *, font, &U.uifonts) {
       if (font->blf_id != -1) {
         BLF_disable(font->blf_id, flag_disable);
         BLF_enable(font->blf_id, flag_enable);

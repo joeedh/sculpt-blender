@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __CREATOR_INTERN_H__
-#define __CREATOR_INTERN_H__
+#pragma once
 
 /** \file
  * \ingroup creator
@@ -55,10 +54,8 @@ extern struct ApplicationState app_state; /* creator.c */
 
 /* for the callbacks: */
 #ifndef WITH_PYTHON_MODULE
-#  define BLEND_VERSION_FMT "Blender %d.%02d (sub %d)"
-#  define BLEND_VERSION_ARG BLENDER_VERSION / 100, BLENDER_VERSION % 100, BLENDER_SUBVERSION
-/* pass directly to printf */
-#  define BLEND_VERSION_STRING_FMT BLEND_VERSION_FMT "\n", BLEND_VERSION_ARG
+#  define BLEND_VERSION_FMT "Blender %d.%02d.%d"
+#  define BLEND_VERSION_ARG BLENDER_VERSION / 100, BLENDER_VERSION % 100, BLENDER_VERSION_PATCH
 #endif
 
 #ifdef WITH_BUILDINFO_HEADER
@@ -84,5 +81,3 @@ extern char build_cxxflags[];
 extern char build_linkflags[];
 extern char build_system[];
 #endif
-
-#endif /* __CREATOR_INTERN_H__ */

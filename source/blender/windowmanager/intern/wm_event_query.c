@@ -61,18 +61,28 @@ void WM_event_print(const wmEvent *event)
     const char *unknown = "UNKNOWN";
     const char *type_id = unknown;
     const char *val_id = unknown;
+    const char *prev_type_id = unknown;
+    const char *prev_val_id = unknown;
 
     RNA_enum_identifier(rna_enum_event_type_items, event->type, &type_id);
     RNA_enum_identifier(rna_enum_event_value_items, event->val, &val_id);
 
+    RNA_enum_identifier(rna_enum_event_type_items, event->prevtype, &prev_type_id);
+    RNA_enum_identifier(rna_enum_event_value_items, event->prevval, &prev_val_id);
+
     printf(
         "wmEvent  type:%d / %s, val:%d / %s,\n"
+        "         prev_type:%d / %s, prev_val:%d / %s,\n"
         "         shift:%d, ctrl:%d, alt:%d, oskey:%d, keymodifier:%d, is_repeat:%d,\n"
         "         mouse:(%d,%d), ascii:'%c', utf8:'%.*s', pointer:%p\n",
         event->type,
         type_id,
         event->val,
         val_id,
+        event->prevtype,
+        prev_type_id,
+        event->prevval,
+        prev_val_id,
         event->shift,
         event->ctrl,
         event->alt,
@@ -212,7 +222,7 @@ bool WM_event_is_modal_tweak_exit(const wmEvent *event, int tweak_event)
     }
     else {
       /* if the initial event wasn't a tweak event then
-       * ignore USER_RELEASECONFIRM setting: see [#26756] */
+       * ignore USER_RELEASECONFIRM setting: see T26756. */
       if (ELEM(tweak_event, EVT_TWEAK_L, EVT_TWEAK_M, EVT_TWEAK_R) == 0) {
         return 1;
       }

@@ -20,7 +20,6 @@
  * to.
  */
 
-/* clang-format off */
 #include <sstream>
 
 #include "Silhouette.h"
@@ -28,17 +27,14 @@
 
 #include "../geometry/Geom.h"
 
-#include "../image/ImagePyramid.h"
 #include "../image/Image.h"
+#include "../image/ImagePyramid.h"
 
 #include "BKE_global.h"
 #include "BLI_math.h"
 
-extern "C" {
 #include "IMB_imbuf.h"
 #include "IMB_imbuf_types.h"
-}
-/* clang-format on */
 
 namespace Freestyle {
 
@@ -150,9 +146,8 @@ double *SteerableViewMap::AddFEdge(FEdge *iFEdge)
   return res;
 }
 
-unsigned SteerableViewMap::getSVMNumber(const Vec2f &orient)
+unsigned SteerableViewMap::getSVMNumber(Vec2f dir)
 {
-  Vec2f dir(orient);
   // soc unsigned res = 0;
   real norm = dir.norm();
   if (norm < 1.0e-6) {
@@ -197,9 +192,7 @@ void SteerableViewMap::buildImagesPyramids(GrayImage **steerableBases,
 {
   for (unsigned int i = 0; i <= _nbOrientations; ++i) {
     ImagePyramid *svm = (_imagesPyramids)[i];
-    if (svm) {
-      delete svm;
-    }
+    delete svm;
     if (copy) {
       svm = new GaussianPyramid(*(steerableBases[i]), iNbLevels, iSigma);
     }

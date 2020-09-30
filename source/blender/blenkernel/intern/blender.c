@@ -66,9 +66,9 @@
 Global G;
 UserDef U;
 
-char versionstr[48] = "";
-
-/* ********** free ********** */
+/* -------------------------------------------------------------------- */
+/** \name Blender Free on Exit
+ * \{ */
 
 /* only to be called on exit blender */
 void BKE_blender_free(void)
@@ -102,26 +102,63 @@ void BKE_blender_free(void)
   free_nodesystem();
 }
 
-void BKE_blender_version_string(char *version_str,
-                                size_t maxncpy,
-                                short version,
-                                short subversion,
-                                bool v_prefix,
-                                bool include_subversion)
-{
-  const char *prefix = v_prefix ? "v" : "";
+/** \} */
 
-  if (include_subversion && subversion > 0) {
-    BLI_snprintf(
-        version_str, maxncpy, "%s%d.%02d.%d", prefix, version / 100, version % 100, subversion);
+/* -------------------------------------------------------------------- */
+/** \name Blender Version Access
+ * \{ */
+
+static char blender_version_string[48] = "";
+
+static void blender_version_init(void)
+{
+  const char *version_cycle = "";
+  if (STREQ(STRINGIFY(BLENDER_VERSION_CYCLE), "alpha")) {
+    version_cycle = " Alpha";
+  }
+  else if (STREQ(STRINGIFY(BLENDER_VERSION_CYCLE), "beta")) {
+    version_cycle = " Beta";
+  }
+  else if (STREQ(STRINGIFY(BLENDER_VERSION_CYCLE), "rc")) {
+    version_cycle = " Release Candidate";
+  }
+  else if (STREQ(STRINGIFY(BLENDER_VERSION_CYCLE), "release")) {
+    version_cycle = "";
   }
   else {
-    BLI_snprintf(version_str, maxncpy, "%s%d.%02d", prefix, version / 100, version % 100);
+    BLI_assert(!"Invalid Blender version cycle");
   }
+
+  BLI_snprintf(blender_version_string,
+               ARRAY_SIZE(blender_version_string),
+               "%d.%02d.%d%s",
+               BLENDER_VERSION / 100,
+               BLENDER_VERSION % 100,
+               BLENDER_VERSION_PATCH,
+               version_cycle);
 }
+
+const char *BKE_blender_version_string(void)
+{
+  return blender_version_string;
+}
+
+bool BKE_blender_version_is_alpha(void)
+{
+  bool is_alpha = STREQ(STRINGIFY(BLENDER_VERSION_CYCLE), "alpha");
+  return is_alpha;
+}
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Blender #Global Initialize/Clear
+ * \{ */
 
 void BKE_blender_globals_init(void)
 {
+  blender_version_init();
+
   memset(&G, 0, sizeof(Global));
 
   U.savetime = 1;
@@ -129,9 +166,6 @@ void BKE_blender_globals_init(void)
   G_MAIN = BKE_main_new();
 
   strcpy(G.ima, "//");
-
-  BKE_blender_version_string(
-      versionstr, sizeof(versionstr), BLENDER_VERSION, BLENDER_SUBVERSION, true, true);
 
 #ifndef WITH_PYTHON_SECURITY /* default */
   G.f |= G_FLAG_SCRIPT_AUTOEXEC;
@@ -149,7 +183,11 @@ void BKE_blender_globals_clear(void)
   G_MAIN = NULL;
 }
 
-/***/
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Blender Preferences
+ * \{ */
 
 static void keymap_item_free(wmKeyMapItem *kmi)
 {
@@ -182,7 +220,7 @@ static void userdef_free_keymaps(UserDef *userdef)
 {
   for (wmKeyMap *km = userdef->user_keymaps.first, *km_next; km; km = km_next) {
     km_next = km->next;
-    for (wmKeyMapDiffItem *kmdi = km->diff_items.first; kmdi; kmdi = kmdi->next) {
+    LISTBASE_FOREACH (wmKeyMapDiffItem *, kmdi, &km->diff_items) {
       if (kmdi->add_item) {
         keymap_item_free(kmdi->add_item);
         MEM_freeN(kmdi->add_item);
@@ -193,7 +231,7 @@ static void userdef_free_keymaps(UserDef *userdef)
       }
     }
 
-    for (wmKeyMapItem *kmi = km->items.first; kmi; kmi = kmi->next) {
+    LISTBASE_FOREACH (wmKeyMapItem *, kmi, &km->items) {
       keymap_item_free(kmi);
     }
 
@@ -240,8 +278,8 @@ static void userdef_free_addons(UserDef *userdef)
  */
 void BKE_blender_userdef_data_free(UserDef *userdef, bool clear_fonts)
 {
-#define U _invalid_access_ /* ensure no accidental global access */
-#ifdef U                   /* quiet warning */
+#define U BLI_STATIC_ASSERT(false, "Global 'U' not allowed, only use arguments passed in!")
+#ifdef U /* quiet warning */
 #endif
 
   userdef_free_keymaps(userdef);
@@ -250,7 +288,7 @@ void BKE_blender_userdef_data_free(UserDef *userdef, bool clear_fonts)
   userdef_free_addons(userdef);
 
   if (clear_fonts) {
-    for (uiFont *font = userdef->uifonts.first; font; font = font->next) {
+    LISTBASE_FOREACH (uiFont *, font, &userdef->uifonts) {
       BLF_unload_id(font->blf_id);
     }
     BLF_default_set(-1);
@@ -264,6 +302,12 @@ void BKE_blender_userdef_data_free(UserDef *userdef, bool clear_fonts)
 
 #undef U
 }
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Blender Preferences (Application Templates)
+ * \{ */
 
 /**
  * Write U from userdef.
@@ -336,6 +380,9 @@ void BKE_blender_userdef_app_template_data_set_and_free(UserDef *userdef)
   MEM_freeN(userdef);
 }
 
+/** \} */
+
+/* -------------------------------------------------------------------- */
 /** \name Blender's AtExit
  *
  * \note Don't use MEM_mallocN so functions can be registered at any time.

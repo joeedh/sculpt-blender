@@ -59,7 +59,7 @@ static Object *object_volume_add(bContext *C, wmOperator *op, const char *name)
   ushort local_view_bits;
   float loc[3], rot[3];
 
-  if (!ED_object_add_generic_get_opts(C, op, 'Z', loc, rot, NULL, &local_view_bits, NULL)) {
+  if (!ED_object_add_generic_get_opts(C, op, 'Z', loc, rot, NULL, NULL, &local_view_bits, NULL)) {
     return false;
   }
   return ED_object_add_type(C, OB_VOLUME, name, loc, rot, false, local_view_bits);
@@ -96,7 +96,7 @@ static int volume_import_exec(bContext *C, wmOperator *op)
   bool imported = false;
 
   ListBase ranges = ED_image_filesel_detect_sequences(bmain, op, false);
-  for (ImageFrameRange *range = ranges.first; range; range = range->next) {
+  LISTBASE_FOREACH (ImageFrameRange *, range, &ranges) {
     char filename[FILE_MAX];
     BLI_split_file_part(range->filepath, filename, sizeof(filename));
     BLI_path_extension_replace(filename, sizeof(filename), "");
@@ -109,11 +109,6 @@ static int volume_import_exec(bContext *C, wmOperator *op)
       BLI_path_rel(volume->filepath, BKE_main_blendfile_path(bmain));
     }
 
-    volume->is_sequence = (range->length > 1);
-    volume->frame_duration = (volume->is_sequence) ? range->length : 0;
-    volume->frame_start = 1;
-    volume->frame_offset = (volume->is_sequence) ? range->offset - 1 : 0;
-
     if (!BKE_volume_load(volume, bmain)) {
       BKE_reportf(op->reports,
                   RPT_WARNING,
@@ -124,7 +119,7 @@ static int volume_import_exec(bContext *C, wmOperator *op)
       BKE_id_delete(bmain, &volume->id);
       continue;
     }
-    else if (BKE_volume_is_points_only(volume)) {
+    if (BKE_volume_is_points_only(volume)) {
       BKE_reportf(op->reports,
                   RPT_WARNING,
                   "Volume \"%s\" contains points, only voxel grids are supported",
@@ -134,9 +129,18 @@ static int volume_import_exec(bContext *C, wmOperator *op)
       continue;
     }
 
+    /* Set sequence parameters after trying to load the first frame, for file validation we want
+     * to use a consistent frame rather than whatever corresponds to the current scene frame. */
+    volume->is_sequence = (range->length > 1);
+    volume->frame_duration = (volume->is_sequence) ? range->length : 0;
+    volume->frame_start = 1;
+    volume->frame_offset = (volume->is_sequence) ? range->offset - 1 : 0;
+
     if (BKE_volume_is_y_up(volume)) {
       object->rot[0] += M_PI_2;
     }
+
+    BKE_volume_unload(volume);
 
     imported = true;
   }

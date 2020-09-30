@@ -64,7 +64,7 @@
 
 /* ******************** default callbacks for ipo space ***************** */
 
-static SpaceLink *graph_new(const ScrArea *UNUSED(sa), const Scene *scene)
+static SpaceLink *graph_create(const ScrArea *UNUSED(area), const Scene *scene)
 {
   ARegion *region;
   SpaceGraph *sipo;
@@ -145,14 +145,14 @@ static void graph_free(SpaceLink *sl)
   }
 
   if (si->runtime.ghost_curves.first) {
-    free_fcurves(&si->runtime.ghost_curves);
+    BKE_fcurves_free(&si->runtime.ghost_curves);
   }
 }
 
 /* spacetype; init callback */
-static void graph_init(struct wmWindowManager *wm, ScrArea *sa)
+static void graph_init(struct wmWindowManager *wm, ScrArea *area)
 {
-  SpaceGraph *sipo = (SpaceGraph *)sa->spacedata.first;
+  SpaceGraph *sipo = (SpaceGraph *)area->spacedata.first;
 
   /* init dopesheet data if non-existent (i.e. for old files) */
   if (sipo->ads == NULL) {
@@ -163,9 +163,9 @@ static void graph_init(struct wmWindowManager *wm, ScrArea *sa)
   /* force immediate init of any invalid F-Curve colors */
   /* XXX: but, don't do SIPO_TEMP_NEEDCHANSYNC (i.e. channel select state sync)
    * as this is run on each region resize; setting this here will cause selection
-   * state to be lost on area/region resizing. [#35744]
+   * state to be lost on area/region resizing. T35744.
    */
-  ED_area_tag_refresh(sa);
+  ED_area_tag_refresh(area);
 }
 
 static SpaceLink *graph_duplicate(SpaceLink *sl)
@@ -200,14 +200,9 @@ static void graph_main_region_draw(const bContext *C, ARegion *region)
   Scene *scene = CTX_data_scene(C);
   bAnimContext ac;
   View2D *v2d = &region->v2d;
-  View2DScrollers *scrollers;
-  float col[3];
-  short cfra_flag = 0;
 
   /* clear and setup matrix */
-  UI_GetThemeColor3fv(TH_BACK, col);
-  GPU_clear_color(col[0], col[1], col[2], 0.0);
-  GPU_clear(GPU_COLOR_BIT);
+  UI_ThemeClearColor(TH_BACK);
 
   UI_view2d_view_ortho(v2d);
 
@@ -251,7 +246,7 @@ static void graph_main_region_draw(const bContext *C, ARegion *region)
 
       /* Draw a green line to indicate the cursor value */
       immUniformThemeColorShadeAlpha(TH_CFRAME, -10, -50);
-      GPU_blend(true);
+      GPU_blend(GPU_BLEND_ALPHA);
       GPU_line_width(2.0);
 
       immBegin(GPU_PRIM_LINES, 2);
@@ -259,7 +254,7 @@ static void graph_main_region_draw(const bContext *C, ARegion *region)
       immVertex2f(pos, v2d->cur.xmax, y);
       immEnd();
 
-      GPU_blend(false);
+      GPU_blend(GPU_BLEND_NONE);
     }
 
     /* current frame or vertical component of vertical component of the cursor */
@@ -270,7 +265,7 @@ static void graph_main_region_draw(const bContext *C, ARegion *region)
       /* to help differentiate this from the current frame,
        * draw slightly darker like the horizontal one */
       immUniformThemeColorShadeAlpha(TH_CFRAME, -40, -50);
-      GPU_blend(true);
+      GPU_blend(GPU_BLEND_ALPHA);
       GPU_line_width(2.0);
 
       immBegin(GPU_PRIM_LINES, 2);
@@ -278,18 +273,10 @@ static void graph_main_region_draw(const bContext *C, ARegion *region)
       immVertex2f(pos, x, v2d->cur.ymax);
       immEnd();
 
-      GPU_blend(false);
+      GPU_blend(GPU_BLEND_NONE);
     }
 
     immUnbindProgram();
-  }
-
-  if (sipo->mode != SIPO_MODE_DRIVERS) {
-    /* current frame */
-    if (sipo->flag & SIPO_DRAWTIME) {
-      cfra_flag |= DRAWCFRA_UNIT_SECONDS;
-    }
-    ANIM_draw_cfra(C, v2d, cfra_flag);
   }
 
   /* markers */
@@ -316,12 +303,22 @@ static void graph_main_region_draw(const bContext *C, ARegion *region)
 
   /* time-scrubbing */
   ED_time_scrub_draw(region, scene, display_seconds, false);
+}
+
+static void graph_main_region_draw_overlay(const bContext *C, ARegion *region)
+{
+  /* draw entirely, view changes should be handled here */
+  const SpaceGraph *sipo = CTX_wm_space_graph(C);
+  const Scene *scene = CTX_data_scene(C);
+  const bool draw_vert_line = sipo->mode != SIPO_MODE_DRIVERS;
+  View2D *v2d = &region->v2d;
+
+  /* scrubbing region */
+  ED_time_scrub_draw_current_frame(region, scene, sipo->flag & SIPO_DRAWTIME, draw_vert_line);
 
   /* scrollers */
   // FIXME: args for scrollers depend on the type of data being shown...
-  scrollers = UI_view2d_scrollers_calc(v2d, NULL);
-  UI_view2d_scrollers_draw(v2d, scrollers);
-  UI_view2d_scrollers_free(scrollers);
+  UI_view2d_scrollers_draw(v2d, NULL);
 
   /* scale numbers */
   {
@@ -358,13 +355,9 @@ static void graph_channel_region_draw(const bContext *C, ARegion *region)
 {
   bAnimContext ac;
   View2D *v2d = &region->v2d;
-  View2DScrollers *scrollers;
-  float col[3];
 
   /* clear and setup matrix */
-  UI_GetThemeColor3fv(TH_BACK, col);
-  GPU_clear_color(col[0], col[1], col[2], 0.0);
-  GPU_clear(GPU_COLOR_BIT);
+  UI_ThemeClearColor(TH_BACK);
 
   UI_view2d_view_ortho(v2d);
 
@@ -380,9 +373,7 @@ static void graph_channel_region_draw(const bContext *C, ARegion *region)
   UI_view2d_view_restore(C);
 
   /* scrollers */
-  scrollers = UI_view2d_scrollers_calc(v2d, NULL);
-  UI_view2d_scrollers_draw(v2d, scrollers);
-  UI_view2d_scrollers_free(scrollers);
+  UI_view2d_scrollers_draw(v2d, NULL);
 }
 
 /* add handlers, stuff you only do once or on area/region changes */
@@ -413,7 +404,7 @@ static void graph_buttons_region_draw(const bContext *C, ARegion *region)
 }
 
 static void graph_region_listener(wmWindow *UNUSED(win),
-                                  ScrArea *UNUSED(sa),
+                                  ScrArea *UNUSED(area),
                                   ARegion *region,
                                   wmNotifier *wmn,
                                   const Scene *UNUSED(scene))
@@ -483,12 +474,12 @@ static void graph_region_message_subscribe(const struct bContext *UNUSED(C),
                                            struct WorkSpace *UNUSED(workspace),
                                            struct Scene *scene,
                                            struct bScreen *screen,
-                                           struct ScrArea *sa,
+                                           struct ScrArea *area,
                                            struct ARegion *region,
                                            struct wmMsgBus *mbus)
 {
   PointerRNA ptr;
-  RNA_pointer_create(&screen->id, &RNA_SpaceGraphEditor, sa->spacedata.first, &ptr);
+  RNA_pointer_create(&screen->id, &RNA_SpaceGraphEditor, area->spacedata.first, &ptr);
 
   wmMsgSubscribeValue msg_sub_value_region_tag_redraw = {
       .owner = region,
@@ -556,11 +547,11 @@ static void graph_region_message_subscribe(const struct bContext *UNUSED(C),
 
 /* editor level listener */
 static void graph_listener(wmWindow *UNUSED(win),
-                           ScrArea *sa,
+                           ScrArea *area,
                            wmNotifier *wmn,
                            Scene *UNUSED(scene))
 {
-  SpaceGraph *sipo = (SpaceGraph *)sa->spacedata.first;
+  SpaceGraph *sipo = (SpaceGraph *)area->spacedata.first;
 
   /* context changes */
   switch (wmn->category) {
@@ -568,10 +559,10 @@ static void graph_listener(wmWindow *UNUSED(win),
       /* for selection changes of animation data, we can just redraw...
        * otherwise autocolor might need to be done again */
       if (ELEM(wmn->data, ND_KEYFRAME, ND_ANIMCHAN) && (wmn->action == NA_SELECTED)) {
-        ED_area_tag_redraw(sa);
+        ED_area_tag_redraw(area);
       }
       else {
-        ED_area_tag_refresh(sa);
+        ED_area_tag_refresh(area);
       }
       break;
     case NC_SCENE:
@@ -580,11 +571,11 @@ static void graph_listener(wmWindow *UNUSED(win),
                             * (needs flag set to do syncing). */
         case ND_OB_SELECT:
           sipo->runtime.flag |= SIPO_RUNTIME_FLAG_NEED_CHAN_SYNC;
-          ED_area_tag_refresh(sa);
+          ED_area_tag_refresh(area);
           break;
 
         default: /* just redrawing the view will do */
-          ED_area_tag_redraw(sa);
+          ED_area_tag_redraw(area);
           break;
       }
       break;
@@ -594,13 +585,13 @@ static void graph_listener(wmWindow *UNUSED(win),
                               * (needs flag set to do syncing). */
         case ND_BONE_ACTIVE:
           sipo->runtime.flag |= SIPO_RUNTIME_FLAG_NEED_CHAN_SYNC;
-          ED_area_tag_refresh(sa);
+          ED_area_tag_refresh(area);
           break;
         case ND_TRANSFORM:
           break; /*do nothing*/
 
         default: /* just redrawing the view will do */
-          ED_area_tag_redraw(sa);
+          ED_area_tag_redraw(area);
           break;
       }
       break;
@@ -608,26 +599,26 @@ static void graph_listener(wmWindow *UNUSED(win),
       if (wmn->action == NA_SELECTED) {
         /* selection changed, so force refresh to flush (needs flag set to do syncing) */
         sipo->runtime.flag |= SIPO_RUNTIME_FLAG_NEED_CHAN_SYNC;
-        ED_area_tag_refresh(sa);
+        ED_area_tag_refresh(area);
       }
       break;
     case NC_SPACE:
       if (wmn->data == ND_SPACE_GRAPH) {
-        ED_area_tag_redraw(sa);
+        ED_area_tag_redraw(area);
       }
       break;
     case NC_WINDOW:
       if (sipo->runtime.flag &
           (SIPO_RUNTIME_FLAG_NEED_CHAN_SYNC | SIPO_RUNTIME_FLAG_NEED_CHAN_SYNC_COLOR)) {
         /* force redraw/refresh after undo/redo - prevents "black curve" problem */
-        ED_area_tag_refresh(sa);
+        ED_area_tag_refresh(area);
       }
       break;
 
       // XXX: restore the case below if not enough updates occur...
       // default:
       //  if (wmn->data == ND_KEYS)
-      //      ED_area_tag_redraw(sa);
+      //      ED_area_tag_redraw(area);
   }
 }
 
@@ -754,9 +745,9 @@ static void graph_refresh_fcurve_colors(const bContext *C)
   ANIM_animdata_freelist(&anim_data);
 }
 
-static void graph_refresh(const bContext *C, ScrArea *sa)
+static void graph_refresh(const bContext *C, ScrArea *area)
 {
-  SpaceGraph *sipo = (SpaceGraph *)sa->spacedata.first;
+  SpaceGraph *sipo = (SpaceGraph *)area->spacedata.first;
 
   /* updates to data needed depends on Graph Editor mode... */
   switch (sipo->mode) {
@@ -780,7 +771,7 @@ static void graph_refresh(const bContext *C, ScrArea *sa)
   if (sipo->runtime.flag & SIPO_RUNTIME_FLAG_NEED_CHAN_SYNC) {
     ANIM_sync_animchannels_to_data(C);
     sipo->runtime.flag &= ~SIPO_RUNTIME_FLAG_NEED_CHAN_SYNC;
-    ED_area_tag_redraw(sa);
+    ED_area_tag_redraw(area);
   }
 
   /* We could check 'SIPO_RUNTIME_FLAG_NEED_CHAN_SYNC_COLOR', but color is recalculated anyway. */
@@ -789,7 +780,7 @@ static void graph_refresh(const bContext *C, ScrArea *sa)
 #if 0 /* Done below. */
     graph_refresh_fcurve_colors(C);
 #endif
-    ED_area_tag_redraw(sa);
+    ED_area_tag_redraw(area);
   }
 
   sipo->runtime.flag &= ~(SIPO_RUNTIME_FLAG_TWEAK_HANDLES_LEFT |
@@ -799,7 +790,7 @@ static void graph_refresh(const bContext *C, ScrArea *sa)
   graph_refresh_fcurve_colors(C);
 }
 
-static void graph_id_remap(ScrArea *UNUSED(sa), SpaceLink *slink, ID *old_id, ID *new_id)
+static void graph_id_remap(ScrArea *UNUSED(area), SpaceLink *slink, ID *old_id, ID *new_id)
 {
   SpaceGraph *sgraph = (SpaceGraph *)slink;
 
@@ -813,15 +804,15 @@ static void graph_id_remap(ScrArea *UNUSED(sa), SpaceLink *slink, ID *old_id, ID
   }
 }
 
-static int graph_space_subtype_get(ScrArea *sa)
+static int graph_space_subtype_get(ScrArea *area)
 {
-  SpaceGraph *sgraph = sa->spacedata.first;
+  SpaceGraph *sgraph = area->spacedata.first;
   return sgraph->mode;
 }
 
-static void graph_space_subtype_set(ScrArea *sa, int value)
+static void graph_space_subtype_set(ScrArea *area, int value)
 {
-  SpaceGraph *sgraph = sa->spacedata.first;
+  SpaceGraph *sgraph = area->spacedata.first;
   sgraph->mode = value;
 }
 
@@ -841,7 +832,7 @@ void ED_spacetype_ipo(void)
   st->spaceid = SPACE_GRAPH;
   strncpy(st->name, "Graph", BKE_ST_MAXNAME);
 
-  st->new = graph_new;
+  st->create = graph_create;
   st->free = graph_free;
   st->init = graph_init;
   st->duplicate = graph_duplicate;
@@ -859,6 +850,7 @@ void ED_spacetype_ipo(void)
   art->regionid = RGN_TYPE_WINDOW;
   art->init = graph_main_region_init;
   art->draw = graph_main_region_draw;
+  art->draw_overlay = graph_main_region_draw_overlay;
   art->listener = graph_region_listener;
   art->message_subscribe = graph_region_message_subscribe;
   art->keymapflag = ED_KEYMAP_VIEW2D | ED_KEYMAP_ANIMATION | ED_KEYMAP_FRAMES;

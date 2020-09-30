@@ -78,7 +78,7 @@ class NODE_HT_header(Header):
 
                 types_that_support_material = {'MESH', 'CURVE', 'SURFACE', 'FONT', 'META',
                                                'GPENCIL', 'VOLUME', 'HAIR', 'POINTCLOUD'}
-                # disable material slot buttons when pinned, cannot find correct slot within id_from (#36589)
+                # disable material slot buttons when pinned, cannot find correct slot within id_from (T36589)
                 # disable also when the selected object does not support materials
                 has_material_slots = not snode.pin and ob_type in types_that_support_material
 
@@ -151,6 +151,14 @@ class NODE_HT_header(Header):
             if snode_id:
                 layout.prop(snode_id, "use_nodes")
 
+        elif snode.tree_type == 'SimulationNodeTree':
+            row = layout.row(align=True)
+            row.prop(snode, "simulation", text="")
+            row.operator("simulation.new", text="", icon='ADD')
+            simulation = snode.simulation
+            if simulation:
+                row.prop(snode.simulation, "use_fake_user", text="")
+
         else:
             # Custom node tree is edited as independent ID block
             NODE_MT_editor_menus.draw_collapsible(context, layout)
@@ -208,13 +216,15 @@ class NODE_MT_add(bpy.types.Menu):
         layout = self.layout
 
         layout.operator_context = 'INVOKE_DEFAULT'
-        props = layout.operator("node.add_search", text="Search...", icon='VIEWZOOM')
-        props.use_transform = True
 
-        layout.separator()
+        if nodeitems_utils.has_node_categories(context):
+            props = layout.operator("node.add_search", text="Search...", icon='VIEWZOOM')
+            props.use_transform = True
 
-        # actual node submenus are defined by draw functions from node categories
-        nodeitems_utils.draw_node_categories_menu(self, context)
+            layout.separator()
+
+            # actual node submenus are defined by draw functions from node categories
+            nodeitems_utils.draw_node_categories_menu(self, context)
 
 
 class NODE_MT_view(Menu):
@@ -267,7 +277,7 @@ class NODE_MT_select(Menu):
 
         layout.separator()
         layout.operator("node.select_all").action = 'TOGGLE'
-        layout.operator("node.select_all", text="Inverse").action = 'INVERT'
+        layout.operator("node.select_all", text="Invert").action = 'INVERT'
         layout.operator("node.select_linked_from")
         layout.operator("node.select_linked_to")
 
@@ -425,7 +435,7 @@ class NODE_MT_context_menu(Menu):
         layout.operator("node.delete")
         layout.operator("node.clipboard_copy", text="Copy")
         layout.operator("node.clipboard_paste", text="Paste")
-        layout.operator_context = 'EXEC_DEFAULT'
+        layout.operator_context = 'EXEC_REGION_WIN'
 
         layout.operator("node.delete_reconnect")
 

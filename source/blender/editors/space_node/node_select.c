@@ -24,21 +24,27 @@
 #include <stdlib.h>
 
 #include "DNA_node_types.h"
+#include "DNA_windowmanager_types.h"
 
+#include "BLI_alloca.h"
 #include "BLI_lasso_2d.h"
+#include "BLI_listbase.h"
 #include "BLI_math.h"
 #include "BLI_rect.h"
 #include "BLI_string.h"
+#include "BLI_string_search.h"
 #include "BLI_string_utf8.h"
 #include "BLI_utildefines.h"
 
 #include "BKE_context.h"
 #include "BKE_main.h"
 #include "BKE_node.h"
+#include "BKE_workspace.h"
 
 #include "ED_node.h" /* own include */
 #include "ED_screen.h"
 #include "ED_select_utils.h"
+#include "ED_view3d.h"
 
 #include "RNA_access.h"
 #include "RNA_define.h"
@@ -50,9 +56,41 @@
 #include "UI_resources.h"
 #include "UI_view2d.h"
 
+#include "DEG_depsgraph.h"
+
 #include "MEM_guardedalloc.h"
 
 #include "node_intern.h" /* own include */
+
+/* Function to detect if there is a visible view3d that uses workbench in texture mode.
+ * This function is for fixing T76970 for Blender 2.83. The actual fix should add a mechanism in
+ * the depsgraph that can be used by the draw engines to check if they need to be redrawn.
+ *
+ * We don't want to add these risky changes this close before releasing 2.83 without good testing
+ * hence this workaround. There are still cases were too many updates happen. For example when you
+ * have both a Cycles and workbench with textures viewport.
+ * */
+static bool has_workbench_in_texture_color(const wmWindowManager *wm,
+                                           const Scene *scene,
+                                           const Object *ob)
+{
+  LISTBASE_FOREACH (wmWindow *, win, &wm->windows) {
+    if (win->scene != scene) {
+      continue;
+    }
+    const bScreen *screen = BKE_workspace_active_screen_get(win->workspace_hook);
+    LISTBASE_FOREACH (ScrArea *, area, &screen->areabase) {
+      if (area->spacetype == SPACE_VIEW3D) {
+        const View3D *v3d = area->spacedata.first;
+
+        if (ED_view3d_has_workbench_in_texture_color(scene, ob, v3d)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
 
 /* -------------------------------------------------------------------- */
 /** \name Public Node Selection API
@@ -284,7 +322,7 @@ static bool node_select_grouped_name(SpaceNode *snode, bNode *node_act, const bo
 {
   bNode *node;
   bool changed = false;
-  const unsigned int delims[] = {'.', '-', '_', '\0'};
+  const uint delims[] = {'.', '-', '_', '\0'};
   size_t pref_len_act, pref_len_curr;
   const char *sep, *suf_act, *suf_curr;
 
@@ -412,6 +450,10 @@ void node_select_single(bContext *C, bNode *node)
 {
   Main *bmain = CTX_data_main(C);
   SpaceNode *snode = CTX_wm_space_node(C);
+  const Object *ob = CTX_data_active_object(C);
+  const Scene *scene = CTX_data_scene(C);
+  const wmWindowManager *wm = CTX_wm_manager(C);
+  bool active_texture_changed = false;
   bNode *tnode;
 
   for (tnode = snode->edittree->nodes.first; tnode; tnode = tnode->next) {
@@ -421,10 +463,13 @@ void node_select_single(bContext *C, bNode *node)
   }
   nodeSetSelected(node, true);
 
-  ED_node_set_active(bmain, snode->edittree, node);
+  ED_node_set_active(bmain, snode->edittree, node, &active_texture_changed);
   ED_node_set_active_viewer_key(snode);
 
   ED_node_sort(snode->edittree);
+  if (active_texture_changed && has_workbench_in_texture_color(wm, scene, ob)) {
+    DEG_id_tag_update(&snode->edittree->id, ID_RECALC_COPY_ON_WRITE);
+  }
 
   WM_event_add_notifier(C, NC_NODE | NA_SELECTED, NULL);
 }
@@ -437,6 +482,9 @@ static int node_mouse_select(bContext *C,
   Main *bmain = CTX_data_main(C);
   SpaceNode *snode = CTX_wm_space_node(C);
   ARegion *region = CTX_wm_region(C);
+  const Object *ob = CTX_data_active_object(C);
+  const Scene *scene = CTX_data_scene(C);
+  const wmWindowManager *wm = CTX_wm_manager(C);
   bNode *node, *tnode;
   bNodeSocket *sock = NULL;
   bNodeSocket *tsock;
@@ -543,11 +591,15 @@ static int node_mouse_select(bContext *C,
 
   /* update node order */
   if (ret_value != OPERATOR_CANCELLED) {
+    bool active_texture_changed = false;
     if (node != NULL && ret_value != OPERATOR_RUNNING_MODAL) {
-      ED_node_set_active(bmain, snode->edittree, node);
+      ED_node_set_active(bmain, snode->edittree, node, &active_texture_changed);
     }
     ED_node_set_active_viewer_key(snode);
     ED_node_sort(snode->edittree);
+    if (active_texture_changed && has_workbench_in_texture_color(wm, scene, ob)) {
+      DEG_id_tag_update(&snode->edittree->id, ID_RECALC_COPY_ON_WRITE);
+    }
 
     WM_event_add_notifier(C, NC_NODE | NA_SELECTED, NULL);
   }
@@ -622,7 +674,7 @@ static int node_box_select_exec(bContext *C, wmOperator *op)
     ED_node_select_all(&snode->edittree->nodes, SEL_DESELECT);
   }
 
-  for (bNode *node = snode->edittree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &snode->edittree->nodes) {
     bool is_inside;
     if (node->type == NODE_FRAME) {
       is_inside = BLI_rctf_inside_rctf(&rectf, &node->totr);
@@ -765,7 +817,10 @@ static int node_lasso_select_invoke(bContext *C, wmOperator *op, const wmEvent *
   return WM_gesture_lasso_invoke(C, op, event);
 }
 
-static bool do_lasso_select_node(bContext *C, const int mcords[][2], short moves, eSelectOp sel_op)
+static bool do_lasso_select_node(bContext *C,
+                                 const int mcoords[][2],
+                                 const int mcoords_len,
+                                 eSelectOp sel_op)
 {
   SpaceNode *snode = CTX_wm_space_node(C);
   bNode *node;
@@ -782,7 +837,7 @@ static bool do_lasso_select_node(bContext *C, const int mcords[][2], short moves
   }
 
   /* get rectangle from operator */
-  BLI_lasso_boundbox(&rect, mcords, moves);
+  BLI_lasso_boundbox(&rect, mcoords, mcoords_len);
 
   /* do actual selection */
   for (node = snode->edittree->nodes.first; node; node = node->next) {
@@ -798,7 +853,7 @@ static bool do_lasso_select_node(bContext *C, const int mcords[][2], short moves
     if (UI_view2d_view_to_region_clip(
             &region->v2d, cent[0], cent[1], &screen_co[0], &screen_co[1]) &&
         BLI_rcti_isect_pt(&rect, screen_co[0], screen_co[1]) &&
-        BLI_lasso_is_point_inside(mcords, moves, screen_co[0], screen_co[1], INT_MAX)) {
+        BLI_lasso_is_point_inside(mcoords, mcoords_len, screen_co[0], screen_co[1], INT_MAX)) {
       nodeSetSelected(node, select);
       changed = true;
     }
@@ -813,15 +868,15 @@ static bool do_lasso_select_node(bContext *C, const int mcords[][2], short moves
 
 static int node_lasso_select_exec(bContext *C, wmOperator *op)
 {
-  int mcords_tot;
-  const int(*mcords)[2] = WM_gesture_lasso_path_to_array(C, op, &mcords_tot);
+  int mcoords_len;
+  const int(*mcoords)[2] = WM_gesture_lasso_path_to_array(C, op, &mcoords_len);
 
-  if (mcords) {
+  if (mcoords) {
     const eSelectOp sel_op = RNA_enum_get(op->ptr, "mode");
 
-    do_lasso_select_node(C, mcords, mcords_tot, sel_op);
+    do_lasso_select_node(C, mcoords, mcoords_len, sel_op);
 
-    MEM_freeN((void *)mcords);
+    MEM_freeN((void *)mcoords);
 
     return OPERATOR_FINISHED;
   }
@@ -1044,9 +1099,7 @@ static int node_select_same_type_step_exec(bContext *C, wmOperator *op)
         if (node->type == active->type) {
           break;
         }
-        else {
-          node = NULL;
-        }
+        node = NULL;
       }
       if (node) {
         active = node;
@@ -1111,34 +1164,49 @@ void NODE_OT_select_same_type_step(wmOperatorType *ot)
 /** \name Find Node by Name Operator
  * \{ */
 
-/* generic  search invoke */
-static void node_find_cb(const struct bContext *C,
-                         void *UNUSED(arg),
-                         const char *str,
-                         uiSearchItems *items)
+static void node_find_create_label(const bNode *node, char *str, int maxlen)
 {
-  SpaceNode *snode = CTX_wm_space_node(C);
-  bNode *node;
-
-  for (node = snode->edittree->nodes.first; node; node = node->next) {
-
-    if (BLI_strcasestr(node->name, str) || BLI_strcasestr(node->label, str)) {
-      char name[256];
-
-      if (node->label[0]) {
-        BLI_snprintf(name, 256, "%s (%s)", node->name, node->label);
-      }
-      else {
-        BLI_strncpy(name, node->name, 256);
-      }
-      if (!UI_search_item_add(items, name, node, ICON_NONE, 0)) {
-        break;
-      }
-    }
+  if (node->label[0]) {
+    BLI_snprintf(str, maxlen, "%s (%s)", node->name, node->label);
+  }
+  else {
+    BLI_strncpy(str, node->name, maxlen);
   }
 }
 
-static void node_find_call_cb(struct bContext *C, void *UNUSED(arg1), void *arg2)
+/* generic  search invoke */
+static void node_find_update_fn(const struct bContext *C,
+                                void *UNUSED(arg),
+                                const char *str,
+                                uiSearchItems *items)
+{
+  SpaceNode *snode = CTX_wm_space_node(C);
+
+  StringSearch *search = BLI_string_search_new();
+
+  LISTBASE_FOREACH (bNode *, node, &snode->edittree->nodes) {
+    char name[256];
+    node_find_create_label(node, name, ARRAY_SIZE(name));
+    BLI_string_search_add(search, name, node);
+  }
+
+  bNode **filtered_nodes;
+  int filtered_amount = BLI_string_search_query(search, str, (void ***)&filtered_nodes);
+
+  for (int i = 0; i < filtered_amount; i++) {
+    bNode *node = filtered_nodes[i];
+    char name[256];
+    node_find_create_label(node, name, ARRAY_SIZE(name));
+    if (!UI_search_item_add(items, name, node, ICON_NONE, 0, 0)) {
+      break;
+    }
+  }
+
+  MEM_freeN(filtered_nodes);
+  BLI_string_search_free(search);
+}
+
+static void node_find_exec_fn(struct bContext *C, void *UNUSED(arg1), void *arg2)
 {
   SpaceNode *snode = CTX_wm_space_node(C);
   bNode *active = arg2;
@@ -1178,7 +1246,7 @@ static uiBlock *node_find_menu(bContext *C, ARegion *region, void *arg_op)
                        0,
                        0,
                        "");
-  UI_but_func_search_set(but, NULL, node_find_cb, op->type, NULL, node_find_call_cb, NULL);
+  UI_but_func_search_set(but, NULL, node_find_update_fn, op->type, NULL, node_find_exec_fn, NULL);
   UI_but_flag_enable(but, UI_BUT_ACTIVATE_ON_INIT);
 
   /* fake button, it holds space for search items */
