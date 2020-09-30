@@ -25,6 +25,7 @@ set(INC
   ../blenloader
   ../blentranslation
   ../bmesh
+  ../trimesh
   ../depsgraph
   ../draw
   ../gpencil_modifiers
@@ -403,6 +404,7 @@ set(LIB
   bf_blenloader
   bf_blentranslation
   bf_bmesh
+  bf_trimesh
   bf_depsgraph
   bf_draw
   bf_gpencil_modifiers

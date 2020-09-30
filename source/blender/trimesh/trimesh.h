@@ -7,9 +7,11 @@
 
 #include <stdint.h>
 
-struct OptTriVert;
-struct OptTriEdge;
-struct OptTri;
+struct Main;
+struct TMVert;
+struct TMEdge;
+struct TMTri;
+struct Mesh;
 
 enum {
   TRIMESH_SELECT = 1<<1,
@@ -211,6 +213,7 @@ void TM_tag_thread_boundaries_once(TM_TriMesh *tm, TMFace **tris, int tottri);
 //called after BLI_trimesh_thread_tag
 //last island is always boundary triangles
 void TM_build_islands(TM_TriMesh *tm, TMFace **tris, int tottri, TMTriIsland** r_islands, int *r_totisland);
+void TM_free_islands(TMTriIsland* islands, int totisland, bool free_islands);
 
 #define TRIMESH_ELEM_CD_SET_INT(ele, offset, f) (*((int *)((char *)(ele)->customdata + (offset))) = (f))
 #define TRIMESH_ELEM_CD_GET_INT(ele, offset) (*((int *)((char *)(ele)->customdata + (offset))))

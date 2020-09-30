@@ -28,7 +28,7 @@
 #include "BLI_utildefines.h"
 
 #include "BLI_threadsafe_mempool.h"
-#include "BLI_trimesh.h"
+#include "trimesh.h"
 
 #include "BKE_DerivedMesh.h"
 #include "BKE_ccg.h"

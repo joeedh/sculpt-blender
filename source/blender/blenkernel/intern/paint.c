@@ -74,7 +74,7 @@
 #include "RNA_enum_types.h"
 
 #include "bmesh.h"
-#include "BLI_trimesh.h"
+#include "trimesh.h"
 
 static void palette_init_data(ID *id)
 {
