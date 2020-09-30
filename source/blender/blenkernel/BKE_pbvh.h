@@ -119,7 +119,7 @@ void BKE_pbvh_build_bmesh(PBVH *bvh,
                           const int cd_vert_node_offset,
                           const int cd_face_node_offset);
 void BKE_pbvh_build_trimesh(PBVH *bvh,
-  struct BLI_TriMesh *bm,
+  struct TM_TriMesh *bm,
   bool smooth_shading,
   struct TriMeshLog *log,
   const int cd_vert_node_offset,
@@ -240,7 +240,7 @@ int BKE_pbvh_get_grid_num_vertices(const PBVH *pbvh);
 
 /* Only valid for type == PBVH_BMESH */
 struct BMesh *BKE_pbvh_get_bmesh(PBVH *pbvh);
-struct BLI_TriMesh *BKE_pbvh_get_trimesh(PBVH *pbvh);
+struct TM_TriMesh *BKE_pbvh_get_trimesh(PBVH *pbvh);
 void BKE_pbvh_topology_detail_size_set(PBVH *pbvh, float detail_size);
 
 typedef enum {
@@ -309,7 +309,7 @@ void BKE_pbvh_bmesh_after_stroke(PBVH *bvh);
 struct GSet *BKE_pbvh_trimesh_node_unique_verts(PBVHNode *node);
 struct GSet *BKE_pbvh_trimesh_node_other_verts(PBVHNode *node);
 struct GSet *BKE_pbvh_trimesh_node_faces(PBVHNode *node);
-void BKE_pbvh_trimesh_node_save_orig(struct BLI_TriMesh *tm, PBVHNode *node);
+void BKE_pbvh_trimesh_node_save_orig(struct TM_TriMesh *tm, PBVHNode *node);
 void BKE_pbvh_trimesh_after_stroke(PBVH *bvh);
 
 /* Update Bounding Box/Redraw and clear flags */

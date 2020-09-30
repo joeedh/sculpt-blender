@@ -124,20 +124,20 @@ void trimesh_element_destroy(void *elem, int threadnr) {
 }
 
 #ifdef WITH_TRIMESH_CUSTOMDATA
-static TMLoopData *trimesh_make_loop(BLI_TriMesh *tm, int threadnr) {
+static TMLoopData *trimesh_make_loop(TM_TriMesh *tm, int threadnr) {
   TMLoopData *loop = BLI_safepool_alloc(tm->pools[POOL_LOOP], threadnr);
   trimesh_element_init(loop, &tm->ldata);
 
   return loop;
 }
 
-static void trimesh_kill_loop(BLI_TriMesh *tm, TMLoopData *l, int threadnr) {
+static void trimesh_kill_loop(TM_TriMesh *tm, TMLoopData *l, int threadnr) {
   trimesh_element_destroy(l, threadnr, &tm->ldata);
 }
 #endif
 
-BLI_TriMesh* BLI_trimesh_new(int maxthread) {
-  BLI_TriMesh* tm = MEM_callocN(sizeof(*tm), "OptTriMesh");
+TM_TriMesh* TMesh_new(int maxthread) {
+  TM_TriMesh* tm = MEM_callocN(sizeof(*tm), "OptTriMesh");
   int i;
 
   for (i = 0; i < MAX_TRIMESH_POOLS; i++) {
@@ -148,7 +148,7 @@ BLI_TriMesh* BLI_trimesh_new(int maxthread) {
 }
 
 
-static void simplelist_remove(BLI_TriMesh *tm, optmesh_simplelist *list, void *item, int pool, int threadnr) {
+static void simplelist_remove(TM_TriMesh *tm, optmesh_simplelist *list, void *item, int pool, int threadnr) {
   if (list->length == 0) {
     return;
   }
@@ -167,7 +167,7 @@ static void simplelist_remove(BLI_TriMesh *tm, optmesh_simplelist *list, void *i
   }
 }
 
-static void simplelist_free(BLI_TriMesh *tm, optmesh_simplelist *list, int pool, int threadnr) {
+static void simplelist_free(TM_TriMesh *tm, optmesh_simplelist *list, int pool, int threadnr) {
   if (list->is_pool_allocd) {
     BLI_safepool_free(tm->pools[pool], list->items);
   } else {
@@ -175,7 +175,7 @@ static void simplelist_free(BLI_TriMesh *tm, optmesh_simplelist *list, int pool,
   }
 }
 
-static void simplelist_append(BLI_TriMesh* tm, optmesh_simplelist* list, void *item, int pool, int threadnr) {
+static void simplelist_append(TM_TriMesh* tm, optmesh_simplelist* list, void *item, int pool, int threadnr) {
   list->length++;
 
   if (list->length > list->_size) {
@@ -199,7 +199,7 @@ static void simplelist_append(BLI_TriMesh* tm, optmesh_simplelist* list, void *i
 
 #define OTHER_VERT(e, v) ((v) == (e)->v1 ? (e)->v2 : (e)->v1)
 
-static TMEdge *ensure_edge(BLI_TriMesh* tm, TMVert* v1, TMVert* v2, int threadnr, bool skipcd) {
+static TMEdge *ensure_edge(TM_TriMesh* tm, TMVert* v1, TMVert* v2, int threadnr, bool skipcd) {
   for (int i = 0; i < v1->edges.length; i++) {
     TMEdge *e = v1->edges.items[i];
 
@@ -226,39 +226,39 @@ static TMEdge *ensure_edge(BLI_TriMesh* tm, TMVert* v1, TMVert* v2, int threadnr
   return e;
 }
 
-void BLI_trimesh_vert_iternew(BLI_TriMesh *tm, BLI_TriMeshIter* iter) {
+void TM_vert_iternew(TM_TriMesh *tm, TM_TriMeshIter* iter) {
   memset(iter, 0, sizeof(*iter));
   iter->pool = POOL_VERTEX;
 
   BLI_safepool_iternew(tm->pools[POOL_VERTEX], &iter->iter);
 }
 
-void BLI_trimesh_edge_iternew(BLI_TriMesh *tm, BLI_TriMeshIter* iter) {
+void TM_edge_iternew(TM_TriMesh *tm, TM_TriMeshIter* iter) {
   memset(iter, 0, sizeof(*iter));
   iter->pool = POOL_EDGE;
 
   BLI_safepool_iternew(tm->pools[POOL_EDGE], &iter->iter);
 }
 
-void BLI_trimesh_tri_iternew(BLI_TriMesh *tm, BLI_TriMeshIter* iter) {
+void TM_tri_iternew(TM_TriMesh *tm, TM_TriMeshIter* iter) {
   memset(iter, 0, sizeof(*iter));
   iter->pool = POOL_TRI;
 
   BLI_safepool_iternew(tm->pools[POOL_TRI], &iter->iter);
 }
 
-void *BLI_trimesh_iterstep(BLI_TriMeshIter* iter) {
+void *TM_iterstep(TM_TriMeshIter* iter) {
   return BLI_safepool_iterstep(&iter->iter);
 }
 
-static TMEdge *edge_add_tri(BLI_TriMesh* tm, TMVert* v1, TMVert* v2, TMFace* tri, int threadnr, bool skipcd) {
+static TMEdge *edge_add_tri(TM_TriMesh* tm, TMVert* v1, TMVert* v2, TMFace* tri, int threadnr, bool skipcd) {
   TMEdge *e = ensure_edge(tm, v1, v2, threadnr, skipcd);
   simplelist_append(tm, &e->tris, tri, POOL_TLIST, threadnr);
 
   return e;
 }
 
-TMVert *BLI_trimesh_make_vert(BLI_TriMesh *tm, float co[3], float no[3], int threadnr, bool skipcd) {
+TMVert *TM_make_vert(TM_TriMesh *tm, float co[3], float no[3], int threadnr, bool skipcd) {
   TMVert *v = BLI_safepool_alloc(tm->pools[POOL_VERTEX], threadnr);
 
 #ifdef WITH_TRIMESH_CUSTOMDATA
@@ -273,11 +273,11 @@ TMVert *BLI_trimesh_make_vert(BLI_TriMesh *tm, float co[3], float no[3], int thr
   copy_v3_v3(v->no, no);
 }
 
-TMEdge *BLI_trimesh_get_edge(BLI_TriMesh *tm, TMVert *v1, TMVert *v2, int threadnr, bool skipcd) {
+TMEdge *TM_get_edge(TM_TriMesh *tm, TMVert *v1, TMVert *v2, int threadnr, bool skipcd) {
   return ensure_edge(tm, v1, v2, threadnr, skipcd);
 }
 
-TMFace *BLI_trimesh_make_tri(BLI_TriMesh *tm, TMVert *v1, TMVert *v2, TMVert *v3, int threadnr, bool skipcd) {
+TMFace *TM_make_tri(TM_TriMesh *tm, TMVert *v1, TMVert *v2, TMVert *v3, int threadnr, bool skipcd) {
   TMFace *tri = BLI_safepool_alloc(tm->pools[POOL_TRI], threadnr);
 
   memset(tri, 0, sizeof(*tri));
@@ -305,7 +305,7 @@ TMFace *BLI_trimesh_make_tri(BLI_TriMesh *tm, TMVert *v1, TMVert *v2, TMVert *v3
   return tri;
 }
 
-void BLI_trimesh_add(BLI_TriMesh *tm, float* vertCos, float* vertNos, int totvert, int* triIndices, int tottri, int threadnr, bool skipcd) {
+void TM_add(TM_TriMesh *tm, float* vertCos, float* vertNos, int totvert, int* triIndices, int tottri, int threadnr, bool skipcd) {
   float* vco, * vno;
   BLI_ThreadSafePool *vpool = tm->pools[POOL_VERTEX];
   BLI_ThreadSafePool *fpool = tm->pools[POOL_EDGE];
@@ -322,7 +322,7 @@ void BLI_trimesh_add(BLI_TriMesh *tm, float* vertCos, float* vertNos, int totver
   vno = vertNos;
 
   for (i = 0; i < totvert; i++, vco += 3, vno += 3) {
-    TMVert *v = BLI_trimesh_make_vert(tm, vco, vno, threadnr, skipcd);
+    TMVert *v = TM_make_vert(tm, vco, vno, threadnr, skipcd);
     vmap[i] = v;
   }
 
@@ -332,7 +332,7 @@ void BLI_trimesh_add(BLI_TriMesh *tm, float* vertCos, float* vertNos, int totver
     TMVert *v2 = vmap[triIndices[1]];
     TMVert *v3 = vmap[triIndices[2]];
 
-    TMFace *tri = BLI_trimesh_make_tri(tm, v1, v2, v3, threadnr, skipcd);
+    TMFace *tri = TM_make_tri(tm, v1, v2, v3, threadnr, skipcd);
   }
 
   MEM_freeN(vmap);
@@ -340,7 +340,7 @@ void BLI_trimesh_add(BLI_TriMesh *tm, float* vertCos, float* vertNos, int totver
 
 
 //we do somewhat weird things with stack, it's returned by this function
-static void **trimesh_tag_step(BLI_TriMesh* tm, TMVert* v, void** stack, int tag, int maxelem) {
+static void **trimesh_tag_step(TM_TriMesh* tm, TMVert* v, void** stack, int tag, int maxelem) {
   BLI_array_declare(stack);
 
   v->threadtag = tag;
@@ -383,7 +383,7 @@ static void **trimesh_tag_step(BLI_TriMesh* tm, TMVert* v, void** stack, int tag
 }
 
 //if tottris is -1 then all triangles will be tagged
-void BLI_trimesh_thread_tag(BLI_TriMesh *tm, TMFace** tris, int tottri) {
+void TM_thread_tag(TM_TriMesh *tm, TMFace** tris, int tottri) {
   void **stack = NULL;
   BLI_array_declare(stack);
 
@@ -464,7 +464,7 @@ void BLI_trimesh_thread_tag(BLI_TriMesh *tm, TMFace** tris, int tottri) {
   BLI_array_free(stack);
 }
 
-void BLI_trimesh_clear_threadtags(BLI_TriMesh *tm) {
+void TM_clear_threadtags(TM_TriMesh *tm) {
   for (int i=0; i<3; i++) {
     ThreadSafePoolIter iter;
     TMElement *item;
@@ -478,10 +478,10 @@ void BLI_trimesh_clear_threadtags(BLI_TriMesh *tm) {
   }
 }
 
-void BLI_trimesh_tag_thread_boundaries(BLI_TriMesh *tm, TMFace **tris, int tottri) {
+void TM_tag_thread_boundaries(TM_TriMesh *tm, TMFace **tris, int tottri) {
   //propegate boundary tag twice
   for (int i=0; i<2; i++) {
-    BLI_trimesh_tag_thread_boundaries_once(tm, tris, tottri);
+    TM_tag_thread_boundaries_once(tm, tris, tottri);
 
     //needed to avoid triggering double tagging detection code
     for (int i=0; i<tottri; i++) {
@@ -496,7 +496,7 @@ void BLI_trimesh_tag_thread_boundaries(BLI_TriMesh *tm, TMFace **tris, int tottr
   }
 }
 
-void BLI_trimesh_tag_thread_boundaries_once(BLI_TriMesh *tm, TMFace **tris, int tottri) {
+void TM_tag_thread_boundaries_once(TM_TriMesh *tm, TMFace **tris, int tottri) {
   for (int i = 0; i < tottri; i++) {
     TMFace *tri = tris[i];
 
@@ -521,8 +521,8 @@ void BLI_trimesh_tag_thread_boundaries_once(BLI_TriMesh *tm, TMFace **tris, int 
 
 //called after BLI_trimesh_thread_tag
 //last island is always boundary triangles
-void BLI_trimesh_build_islands(BLI_TriMesh *tm, TMFace **tris, int tottri, OptTriIsland** r_islands, int *r_totisland) {
-  OptTriIsland *islands = *r_islands = MEM_callocN((tm->maxthread+1)*sizeof(*islands), "OptTriIsland");
+void TM_build_islands(TM_TriMesh *tm, TMFace **tris, int tottri, TMTriIsland** r_islands, int *r_totisland) {
+  TMTriIsland *islands = *r_islands = MEM_callocN((tm->maxthread+1)*sizeof(*islands), "OptTriIsland");
 
   *r_totisland = tm->maxthread+1;
 
@@ -537,7 +537,7 @@ void BLI_trimesh_build_islands(BLI_TriMesh *tm, TMFace **tris, int tottri, OptTr
       continue;
     }
 
-    OptTriIsland *island = islands + threadnr;
+    TMTriIsland *island = islands + threadnr;
 
     TMFace **list = island->tris;
     BLI_array_declare(list);
@@ -551,7 +551,7 @@ void BLI_trimesh_build_islands(BLI_TriMesh *tm, TMFace **tris, int tottri, OptTr
   r_totisland = tm->maxthread;
 }
 
-void BLI_trimesh_free_islands(OptTriIsland* islands, int totisland, bool free_islands) {
+void BLI_trimesh_free_islands(TMTriIsland* islands, int totisland, bool free_islands) {
   for (int i = 0; i < totisland; i++) {
     if (islands[i].tris) {
       MEM_freeN(islands[i].tris);
@@ -567,7 +567,7 @@ void BLI_trimesh_free_islands(OptTriIsland* islands, int totisland, bool free_is
   }
 }
 
-CustomData *get_customdata(BLI_TriMesh *tm, int type) {
+CustomData *get_customdata(TM_TriMesh *tm, int type) {
   switch (type) {
   case TM_VERTEX:
     return &tm->vdata;
@@ -581,7 +581,7 @@ CustomData *get_customdata(BLI_TriMesh *tm, int type) {
 }
 
 typedef struct threadjob {
-  BLI_TriMesh *tm;
+  TM_TriMesh *tm;
   OptTriMeshJob job;
   void **elems;
   int totelem;
@@ -603,15 +603,15 @@ static void thread_job(meshthread *thread) {
   }
 }
 
-void BLI_trimesh_foreach_tris(BLI_TriMesh *tm, TMFace **tris, int tottri, OptTriMeshJob job, int maxthread, void *userdata) {
+void TM_foreach_tris(TM_TriMesh *tm, TMFace **tris, int tottri, OptTriMeshJob job, int maxthread, void *userdata) {
   tm->maxthread = maxthread;
 
-  OptTriIsland *islands;
+  TMTriIsland *islands;
   int totisland;
 
-  BLI_trimesh_thread_tag(tm, tris, tottri);
-  BLI_trimesh_build_islands(tm, tris, tottri, &islands, &totisland);
-  BLI_trimesh_tag_thread_boundaries(tm, tris, tottri);
+  TM_thread_tag(tm, tris, tottri);
+  TM_build_islands(tm, tris, tottri, &islands, &totisland);
+  TM_tag_thread_boundaries(tm, tris, tottri);
 
   meshthread *threads = MEM_callocN(sizeof(meshthread)*maxthread, "meshthread");
   threadjob *jobs = MEM_callocN(sizeof(threadjob)*totisland, "threadjob");
@@ -656,7 +656,7 @@ void BLI_trimesh_foreach_tris(BLI_TriMesh *tm, TMFace **tris, int tottri, OptTri
 
   //do triangles on thread island boundaries last
   if (totisland > 0) {
-    OptTriIsland *island = islands + totisland - 1;
+    TMTriIsland *island = islands + totisland - 1;
 
     job(tm, island->tris, island->tottri, 0, userdata);
   }
@@ -674,7 +674,7 @@ typedef struct foreach_vert_data {
   void *userdata;
 } foreach_vert_data;
 
-static void for_vert_callback(BLI_TriMesh *tm, TMFace **tris, int tottri, int threadnr, foreach_vert_data *userdata) {
+static void for_vert_callback(TM_TriMesh *tm, TMFace **tris, int tottri, int threadnr, foreach_vert_data *userdata) {
   TMVert **verts = NULL;
   BLI_array_declare(verts);
 
@@ -704,19 +704,19 @@ static void for_vert_callback(BLI_TriMesh *tm, TMFace **tris, int tottri, int th
   }
 }
 
-void BLI_trimesh_foreach_verts(BLI_TriMesh *tm, TMFace **tris, int tottri, OptTriMeshJob job, int maxthread, void *userdata) {
+void TM_foreach_verts(TM_TriMesh *tm, TMFace **tris, int tottri, OptTriMeshJob job, int maxthread, void *userdata) {
   foreach_vert_data data;
 
   data.job = job;
   data.userdata = userdata;
 
   //void BLI_trimehs_foreach_tris(OptTriMesh *tm, OptTri **tris, int tottri, OptTriMeshJob job, int maxthread, void *userdata) {
-  BLI_trimesh_foreach_tris(tm, tris, tottri, for_vert_callback, maxthread, &data); 
+  TM_foreach_tris(tm, tris, tottri, for_vert_callback, maxthread, &data); 
 }
 
-void BLI_trimesh_kill_vert(BLI_TriMesh *tm, TMVert *v, int threadnr) {
+void TM_kill_vert(TM_TriMesh *tm, TMVert *v, int threadnr) {
   while (v->edges.length > 0) {
-    BLI_trimesh_kill_edge(tm, v->edges.items[0], threadnr, false);
+    TM_kill_edge(tm, v->edges.items[0], threadnr, false);
   }
 
 #ifdef WITH_TRIMESH_CUSTOMDATA
@@ -730,10 +730,10 @@ void BLI_trimesh_kill_vert(BLI_TriMesh *tm, TMVert *v, int threadnr) {
 }
 
 //if kill_verts is true verts with no edges will be deleted
-void BLI_trimesh_kill_edge(BLI_TriMesh *tm, TMEdge *e, int threadnr, bool kill_verts) {
+void TM_kill_edge(TM_TriMesh *tm, TMEdge *e, int threadnr, bool kill_verts) {
   while (e->tris.length > 0) {
     TMFace *tri = e->tris.items[0];
-    BLI_trimesh_kill_tri(tm, tri, threadnr, false, false);
+    TM_kill_tri(tm, tri, threadnr, false, false);
   }
 
   simplelist_remove(tm, &e->v1->edges, e, POOL_ELIST, threadnr);
@@ -741,11 +741,11 @@ void BLI_trimesh_kill_edge(BLI_TriMesh *tm, TMEdge *e, int threadnr, bool kill_v
 
   if (kill_verts) {
     if (e->v1->edges.length == 0) {
-      BLI_trimesh_kill_vert(tm, e->v1, threadnr);
+      TM_kill_vert(tm, e->v1, threadnr);
     }
 
     if (e->v2->edges.length == 0) {
-      BLI_trimesh_kill_vert(tm, e->v2, threadnr);
+      TM_kill_vert(tm, e->v2, threadnr);
     }
   }
 
@@ -761,7 +761,7 @@ void BLI_trimesh_kill_edge(BLI_TriMesh *tm, TMEdge *e, int threadnr, bool kill_v
 
 //kill_edges/verts is whether to automatically kill verts/edges that belong to no triangles
 //note that threadnr doesn't refer to whichever thread created tri, but the calling thread
-void BLI_trimesh_kill_tri(BLI_TriMesh *tm, TMFace *tri, int threadnr, bool kill_edges, bool kill_verts) {
+void TM_kill_tri(TM_TriMesh *tm, TMFace *tri, int threadnr, bool kill_edges, bool kill_verts) {
   //static void simplelist_remove(OptTriMesh *tm, optmesh_simplelist *list, void *item, int pool, int threadnr) {
 
   simplelist_remove(tm, &tri->e1->tris, tri, POOL_TLIST, threadnr);
@@ -775,13 +775,13 @@ void BLI_trimesh_kill_tri(BLI_TriMesh *tm, TMFace *tri, int threadnr, bool kill_
 #endif
 
   if (tri->e1->tris.length == 0) {
-    BLI_trimesh_kill_edge(tm, tri->e1, threadnr, kill_verts);
+    TM_kill_edge(tm, tri->e1, threadnr, kill_verts);
   }
   if (tri->e2->tris.length == 0) {
-    BLI_trimesh_kill_edge(tm, tri->e2, threadnr, kill_verts);
+    TM_kill_edge(tm, tri->e2, threadnr, kill_verts);
   }
   if (tri->e3->tris.length == 0) {
-    BLI_trimesh_kill_edge(tm, tri->e3, threadnr, kill_verts);
+    TM_kill_edge(tm, tri->e3, threadnr, kill_verts);
   }
 
 
@@ -794,7 +794,7 @@ void BLI_trimesh_kill_tri(BLI_TriMesh *tm, TMFace *tri, int threadnr, bool kill_
   BLI_safepool_free(tm->pools[POOL_TRI], tri);
 }
 
-static void weld_verts(BLI_TriMesh *tm, TMVert *v1, TMVert *v2, int threadnr) {
+static void weld_verts(TM_TriMesh *tm, TMVert *v1, TMVert *v2, int threadnr) {
   for (int i=0; i<v2->edges.length; i++) {
     TMEdge *e = v2->edges.items[i];
     TMVert *vb = OTHER_VERT(e, v1);
@@ -804,7 +804,7 @@ static void weld_verts(BLI_TriMesh *tm, TMVert *v1, TMVert *v2, int threadnr) {
       fprintf(stdout, "auto deleting edge in BLI_trimesh code\n");
       fflush(stdout);
 
-      BLI_trimesh_kill_edge(tm, e, threadnr, false);
+      TM_kill_edge(tm, e, threadnr, false);
 
       continue;
     }
@@ -831,7 +831,7 @@ static void weld_verts(BLI_TriMesh *tm, TMVert *v1, TMVert *v2, int threadnr) {
       }
 
       if (tot > 1) {
-        BLI_trimesh_kill_tri(tm, tri, threadnr, false, false);
+        TM_kill_tri(tm, tri, threadnr, false, false);
       }
     }
 
@@ -846,22 +846,22 @@ static void weld_verts(BLI_TriMesh *tm, TMVert *v1, TMVert *v2, int threadnr) {
   }
 
   v2->edges.length = 0;
-  BLI_trimesh_kill_vert(tm, v2, threadnr);
+  TM_kill_vert(tm, v2, threadnr);
 }
 
 void BLI_trimesh_elem_is_dead(void *elem) {
   return BLI_safepool_elem_is_dead(elem);
 }
 
-void BLI_trimesh_collapse_edge(BLI_TriMesh *tm, TMEdge *e, int threadnr) {
+void TM_collapse_edge(TM_TriMesh *tm, TMEdge *e, int threadnr) {
   TMVert *v1 = e->v1, *v2 = e->v2;
 
-  BLI_trimesh_kill_edge(tm, e, threadnr, false);
+  TM_kill_edge(tm, e, threadnr, false);
   weld_verts(tm, v1, v2, threadnr);
 }
 
 
-TMVert *BLI_trimesh_split_edge(BLI_TriMesh *tm, TMEdge *e, int threadnr, float fac, bool skipcd) {
+TMVert *TM_split_edge(TM_TriMesh *tm, TMEdge *e, int threadnr, float fac, bool skipcd) {
   float co[3];
   float no[3];
 
@@ -869,7 +869,7 @@ TMVert *BLI_trimesh_split_edge(BLI_TriMesh *tm, TMEdge *e, int threadnr, float f
   add_v3_v3v3(no, e->v1->no, e->v2->no);
   normalize_v3(no);
 
-  TMVert *vc = BLI_trimesh_make_vert(tm, co, no, threadnr, skipcd);
+  TMVert *vc = TM_make_vert(tm, co, no, threadnr, skipcd);
 
   TMEdge *e2 = ensure_edge(tm, e->v1, vc, threadnr, skipcd);
   TMEdge *e3 = ensure_edge(tm, vc, e->v2, threadnr, skipcd);
@@ -902,8 +902,8 @@ TMVert *BLI_trimesh_split_edge(BLI_TriMesh *tm, TMEdge *e, int threadnr, float f
     tv2 = TRIVERT(tri, (vi+1)%3);
     tv3 = TRIVERT(tri, (vi+2)%3);
 
-    TMFace *t1 = BLI_trimesh_make_tri(tm, tv1, vc, tv3, threadnr, skipcd);
-    TMFace *t2 = BLI_trimesh_make_tri(tm, vc, tv2, tv3, threadnr, skipcd);
+    TMFace *t1 = TM_make_tri(tm, tv1, vc, tv3, threadnr, skipcd);
+    TMFace *t2 = TM_make_tri(tm, vc, tv2, tv3, threadnr, skipcd);
 
 #ifdef WITH_TRIMESH_CUSTOMDATA
     if (!skipcd) {
@@ -926,16 +926,16 @@ TMVert *BLI_trimesh_split_edge(BLI_TriMesh *tm, TMEdge *e, int threadnr, float f
       CustomData_bmesh_copy_data(&tm->ldata, &tm->ldata, l3->customdata, t1->l3->customdata);
     }
 #endif
-    BLI_trimesh_kill_tri(tm, tri, threadnr, false, false);
+    TM_kill_tri(tm, tri, threadnr, false, false);
   }
 
-  BLI_trimesh_kill_edge(tm, e, threadnr, false);
-  BLI_trimesh_calc_vert_normal(vc, threadnr, true);
+  TM_kill_edge(tm, e, threadnr, false);
+  TM_calc_vert_normal(vc, threadnr, true);
 
   return vc;
 }
 
-void BLI_trimesh_index_update(BLI_TriMesh *tm) {
+void TM_index_update(TM_TriMesh *tm) {
   ThreadSafePoolIter iter;
 
   BLI_safepool_iternew(tm->pools[POOL_VERTEX], &iter);
@@ -981,7 +981,7 @@ typedef struct TriMeshLog {
   int totentries;
   int idgen;
 
-  BLI_TriMesh *tm;
+  TM_TriMesh *tm;
 
   int cd_vert_mask_index;
 
@@ -1003,7 +1003,7 @@ static void trimesh_add_group(TriMeshLog *log, bool set_curgroup) {
   }
 }
 
-TriMeshLog *BLI_trimesh_log_new(BLI_TriMesh *tm, int cd_vert_mask_index) {
+TriMeshLog *TM_log_new(TM_TriMesh *tm, int cd_vert_mask_index) {
   TriMeshLog *log = MEM_callocN(sizeof(*log), "TriMeshLog");
 
   log->elemhash_ptr = BLI_ghash_ptr_new("TriMeshLog ghash ptr");
@@ -1019,7 +1019,7 @@ TriMeshLog *BLI_trimesh_log_new(BLI_TriMesh *tm, int cd_vert_mask_index) {
   return log;
 }
 
-void BLI_trimesh_log_free(TriMeshLog *log) {
+void TM_log_free(TriMeshLog *log) {
   BLI_ghash_free(log->elemhash_ptr, NULL, NULL);
   BLI_ghash_free(log->elemhash_id, NULL, NULL);
   BLI_ghash_free(log->elemhash_entry, NULL, NULL);
@@ -1170,7 +1170,7 @@ static int elemhash_ensure_id(TriMeshLog *log, void *elem) {
   return (int)(*ret);
 }
 
-int BLI_trimesh_log_vert_add(TriMeshLog *log, TMVert *v, const int cd_mask_offset, bool skipcd) {
+int TM_log_vert_add(TriMeshLog *log, TMVert *v, const int cd_mask_offset, bool skipcd) {
   int id = log->idgen++;
 
   elemhash_add(log, v, id, log->totentries);
@@ -1196,7 +1196,7 @@ int elemhash_get_vert_id(TriMeshLog *log, TMVert *v, int cd_vert_mask_offset) {
   int ret = elemhash_get_id(log, v);
 
   if (!v) {
-    return BLI_trimesh_log_vert_add(log, v, cd_vert_mask_offset, false);
+    return TM_log_vert_add(log, v, cd_vert_mask_offset, false);
   }
 
   return ret;
@@ -1527,7 +1527,7 @@ static int meshlog_wind(TriMeshLog *tlog, int entry_i, int threadnr) {
     float mask = log[i++].value.f;
     int skipcd = log[i++].value.i;
 
-    TMVert *v = BLI_trimesh_make_vert(tlog->tm, co, no, threadnr, skipcd);
+    TMVert *v = TM_make_vert(tlog->tm, co, no, threadnr, skipcd);
 
     if (tlog->cd_vert_mask_index >= 0) {
       TRIMESH_ELEM_CD_SET_FLOAT(v, tlog->cd_vert_mask_index, mask);
@@ -1602,7 +1602,7 @@ static int meshlog_unwind(TriMeshLog *tlog, int entry_i, int threadnr) {
 
     TMVert *v = elemhash_lookup_id(tlog, id);
 
-    BLI_trimesh_kill_vert(tlog->tm, v, 0);
+    TM_kill_vert(tlog->tm, v, 0);
     break;
   }
   case LOG_VERT_STATE:{
@@ -1687,7 +1687,7 @@ static int meshlog_unwind(TriMeshLog *tlog, int entry_i, int threadnr) {
     }
 
     i -= 6;
-    TMFace *tri = BLI_trimesh_make_tri(tlog->tm, vs[0], vs[1], vs[2], threadnr, false);
+    TMFace *tri = TM_make_tri(tlog->tm, vs[0], vs[1], vs[2], threadnr, false);
 
 #ifdef WITH_TRIMESH_CUSTOMDATA
     i = trimesh_read_loop(tlog, tri->l1, i);
@@ -1732,7 +1732,7 @@ void BLI_log_unwind(TriMeshLog *tlog, int threadnr) {
   }
 }
 
-char BLI_trimesh_mesh_cd_flag_from_bmesh(BLI_TriMesh *tm)
+char BLI_trimesh_mesh_cd_flag_from_bmesh(TM_TriMesh *tm)
 {
   char cd_flag = 0;
   if (CustomData_has_layer(&tm->vdata, CD_BWEIGHT)) {
@@ -1770,23 +1770,23 @@ BLI_INLINE void tmesh_quick_edgedraw_flag(MEdge *med, TMEdge *e)
 /**
 * \brief BMesh -> Mesh
 */
-static TMVert **tm_to_mesh_vertex_map(BLI_TriMesh *bm, int ototvert)
+static TMVert **tm_to_mesh_vertex_map(TM_TriMesh *bm, int ototvert)
 {
   const int cd_shape_keyindex_offset = CustomData_get_offset(&bm->vdata, CD_SHAPE_KEYINDEX);
   TMVert **vertMap = NULL;
   TMVert *eve;
   int i = 0;
-  BLI_TriMeshIter iter;
+  TM_TriMeshIter iter;
 
   /* Caller needs to ensure this. */
   BLI_assert(ototvert > 0);
 
   vertMap = MEM_callocN(sizeof(*vertMap) * ototvert, "vertMap");
   if (cd_shape_keyindex_offset != -1) {
-    BLI_trimesh_vert_iternew(bm, &iter);
-    eve = BLI_trimesh_iterstep(&iter);
+    TM_vert_iternew(bm, &iter);
+    eve = TM_iterstep(&iter);
 
-    for (; eve; eve = BLI_trimesh_iterstep(&iter), i++) {
+    for (; eve; eve = TM_iterstep(&iter), i++) {
       const int keyi = TRIMESH_ELEM_CD_GET_INT(eve, cd_shape_keyindex_offset);
       if ((keyi != ORIGINDEX_NONE) && (keyi < ototvert) &&
         /* Not fool-proof, but chances are if we have many verts with the same index,
@@ -1798,10 +1798,10 @@ static TMVert **tm_to_mesh_vertex_map(BLI_TriMesh *bm, int ototvert)
     }
   }
   else {
-    BLI_trimesh_vert_iternew(bm, &iter);
-    eve = BLI_trimesh_iterstep(&iter);
+    TM_vert_iternew(bm, &iter);
+    eve = TM_iterstep(&iter);
 
-    for (; eve; eve = BLI_trimesh_iterstep(&iter), i++) {
+    for (; eve; eve = TM_iterstep(&iter), i++) {
       if (i < ototvert) {
         vertMap[i] = eve;
       }
@@ -1814,8 +1814,8 @@ static TMVert **tm_to_mesh_vertex_map(BLI_TriMesh *bm, int ototvert)
   return vertMap;
 }
 
-void BLI_trimesh_mesh_bm_to_me(struct Main *bmain,
-  BLI_TriMesh *tm,
+void TM_mesh_bm_to_me(struct Main *bmain,
+  TM_TriMesh *tm,
   struct Mesh *me,
   const struct TMeshToMeshParams *params)
 {
@@ -1885,12 +1885,12 @@ void BLI_trimesh_mesh_bm_to_me(struct Main *bmain,
   /* This is called again, 'dotess' arg is used there. */
   BKE_mesh_update_customdata_pointers(me, 0);
 
-  BLI_TriMeshIter iter;
-  BLI_trimesh_vert_iternew(tm, &iter);
-  v = BLI_trimesh_iterstep(&iter);
+  TM_TriMeshIter iter;
+  TM_vert_iternew(tm, &iter);
+  v = TM_iterstep(&iter);
   int i = 0;
 
-  for (; v; v = BLI_trimesh_iterstep(&iter), mvert++, i++) {
+  for (; v; v = TM_iterstep(&iter), mvert++, i++) {
     copy_v3_v3(mvert->co, v->co);
     normal_float_to_short_v3(mvert->no, v->no);
     mvert->flag = BLI_trimesh_vert_flag_to_mflag(v);
@@ -1904,12 +1904,12 @@ void BLI_trimesh_mesh_bm_to_me(struct Main *bmain,
     }
   }
 
-  BLI_trimesh_edge_iternew(tm, &iter);
-  e = BLI_trimesh_iterstep(&iter);
+  TM_edge_iternew(tm, &iter);
+  e = TM_iterstep(&iter);
   i = 0;
 
   MEdge *med = medge;
-  for (; e; e = BLI_trimesh_iterstep(&iter), i++, med++) {
+  for (; e; e = TM_iterstep(&iter), i++, med++) {
     med->v1 = e->v1->index;
     med->v2 = e->v2->index;
     e->index = i;
@@ -1929,12 +1929,12 @@ void BLI_trimesh_mesh_bm_to_me(struct Main *bmain,
     }
   }
 
-  BLI_trimesh_tri_iternew(tm, &iter);
-  f = BLI_trimesh_iterstep(&iter);
+  TM_tri_iternew(tm, &iter);
+  f = TM_iterstep(&iter);
   i = 0;
 
   int j = 0;
-  for (; f; f = BLI_trimesh_iterstep(&iter), i++, mpoly++) {
+  for (; f; f = TM_iterstep(&iter), i++, mpoly++) {
     mpoly->loopstart = j;
     mpoly->totloop = 3;
     mpoly->mat_nr = f->mat_nr;

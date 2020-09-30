@@ -1276,18 +1276,18 @@ static void sculptsession_tm_to_me_update_data_only(Object *ob, bool reorder)
 
   if (ss->bm) {
     if (ob->data) {
-      BLI_TriMeshIter iter;
+      TM_TriMeshIter iter;
       TMFace *f;
 
-      BLI_trimesh_tri_iternew(ss->tm, &iter);
-      f = BLI_trimesh_iterstep(&iter);
-      for (; f; f = BLI_trimesh_iterstep(&iter)) {
+      TM_tri_iternew(ss->tm, &iter);
+      f = TM_iterstep(&iter);
+      for (; f; f = TM_iterstep(&iter)) {
         TRIMESH_elem_flag_set(f, TRIMESH_SMOOTH, ss->bm_smooth_shading);
       }
       //if (reorder) {
       //  BM_log_mesh_elems_reorder(ss->bm, ss->bm_log);
       //}
-      BLI_trimesh_mesh_bm_to_me(NULL,
+      TM_mesh_bm_to_me(NULL,
         ss->tm,
         ob->data,
         (&(struct TMeshToMeshParams){

@@ -298,7 +298,7 @@ typedef struct SculptSession {
   /* Mesh Face Sets */
   int *face_sets;
 
-  struct BLI_TriMesh *tm;
+  struct TM_TriMesh *tm;
   struct TriMeshLog *tm_log;
 
   /* BMesh for dynamic topology sculpting */
