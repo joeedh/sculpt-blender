@@ -74,6 +74,7 @@
 
 #include "BKE_ccg.h"
 #include "bmesh.h"
+#include "trimesh.h"
 
 #include "paint_intern.h" /* own include */
 #include "sculpt_intern.h"

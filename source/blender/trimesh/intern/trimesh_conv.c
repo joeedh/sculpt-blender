@@ -66,19 +66,19 @@
 /* ME -> BM */
 char TM_vert_flag_from_mflag(const char meflag)
 {
-  return (((meflag & SELECT) ? SELECT : 0) | ((meflag & ME_HIDE) ? TRIMESH_HIDE : 0));
+  return (((meflag & SELECT) ? SELECT : 0) | ((meflag & ME_HIDE) ? TM_ELEM_HIDDEN : 0));
 }
 char TM_edge_flag_from_mflag(const short meflag)
 {
   return (((meflag & SELECT) ? SELECT : 0) | ((meflag & ME_SEAM) ? TRIMESH_SEAM : 0) |
     ((meflag & ME_EDGEDRAW) ? TRIMESH_EDGEDRAW : 0) |
     ((meflag & ME_SHARP) == 0 ? TRIMESH_SHARP : 0) | /* invert */
-    ((meflag & ME_HIDE) ? TRIMESH_HIDE : 0));
+    ((meflag & ME_HIDE) ? TM_ELEM_HIDDEN : 0));
 }
 char TM_face_flag_from_mflag(const char meflag)
 {
   return (((meflag & ME_FACE_SEL) ? SELECT : 0) |
-    ((meflag & ME_SMOOTH) ? TRIMESH_SMOOTH : 0) | ((meflag & ME_HIDE) ? TRIMESH_HIDE : 0));
+    ((meflag & ME_SMOOTH) ? TRIMESH_SMOOTH : 0) | ((meflag & ME_HIDE) ? TM_ELEM_HIDDEN : 0));
 }
 
 static void update_data_blocks(TM_TriMesh *tm, CustomData *olddata, CustomData *data)
@@ -172,6 +172,23 @@ void TM_data_layer_add(TM_TriMesh *tm, CustomData *data, int type)
   }
 }
 
+void TM_data_layer_add_named(TM_TriMesh *bm, CustomData *data, int type, const char *name)
+{
+  CustomData olddata;
+
+  olddata = *data;
+  olddata.layers = (olddata.layers) ? MEM_dupallocN(olddata.layers) : NULL;
+
+  /* the pool is now owned by olddata and must not be shared */
+  data->tpool = NULL;
+
+  CustomData_add_layer_named(data, type, CD_DEFAULT, NULL, 0, name);
+
+  update_data_blocks(bm, &olddata, data);
+  if (olddata.layers) {
+    MEM_freeN(olddata.layers);
+  }
+}
 
 void TM_data_layer_free(TM_TriMesh *tm, CustomData *data, int type)
 {
@@ -363,7 +380,7 @@ void TM_mesh_tm_from_me(TM_TriMesh *bm, const Mesh *me, const struct TriMeshFrom
     /* Transfer flag. */
     v->flag = mvert->flag & SELECT;
     if (mvert->flag & ME_HIDE) {
-      v->flag |= TRIMESH_HIDE;
+      v->flag |= TM_ELEM_HIDDEN;
     }
 
     normal_short_to_float_v3(v->no, mvert->no);

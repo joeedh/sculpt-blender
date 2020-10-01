@@ -87,7 +87,7 @@ static poolchunk *new_chunk(BLI_ThreadSafePool *pool, pool_thread_data* thread_d
     size += 8 - (size & 7);
   };*/
 
-  poolchunk* chunk = MEM_mallocN_aligned(size, getalign(size), "safepool chunk");
+  poolchunk* chunk = MEM_mallocN(size, "safepool chunk");
 
   chunk->magic = POOL_CHUNK_MAGIC;
   chunk->threadnr = thread_data - pool->threadchunks;

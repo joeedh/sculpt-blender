@@ -255,6 +255,7 @@ int BKE_pbvh_get_grid_num_vertices(const PBVH *pbvh);
 struct BMesh *BKE_pbvh_get_bmesh(PBVH *pbvh);
 struct TM_TriMesh *BKE_pbvh_get_trimesh(PBVH *pbvh);
 void BKE_pbvh_topology_detail_size_set(PBVH *pbvh, float detail_size);
+void BKE_pbvh_bmesh_detail_size_set(PBVH *pbvh, float detail_size);
 
 typedef enum {
   PBVH_Subdivide = 1,
@@ -472,6 +473,24 @@ void pbvh_vertex_iter_init(PBVH *pbvh, PBVHNode *node, PBVHVertexIter *vi, int m
             vi.col = vi.vcol[vi.index].color; \
           } \
         } \
+        else if (vi.tm_vdata) { \
+          if (!BLI_gsetIterator_done(&vi.tm_unique_verts)) { \
+            vi.tm_vert = BLI_gsetIterator_getKey(&vi.tm_unique_verts); \
+            BLI_gsetIterator_step(&vi.tm_unique_verts); \
+          } \
+          else { \
+            vi.tm_vert = BLI_gsetIterator_getKey(&vi.tm_other_verts); \
+            BLI_gsetIterator_step(&vi.tm_other_verts); \
+          } \
+          vi.visible = !TM_elem_flag_test_bool(vi.tm_vert, TM_ELEM_HIDDEN); \
+          if (mode == PBVH_ITER_UNIQUE && !vi.visible) { \
+            continue; \
+          } \
+          vi.co = vi.tm_vert->co; \
+          vi.fno = vi.tm_vert->no; \
+          vi.index = vi.tm_vert->index; \
+          vi.mask = TM_ELEM_CD_GET_VOID_P(vi.tm_vert, vi.cd_vert_mask_offset); \
+        }\
         else { \
           if (!BLI_gsetIterator_done(&vi.bm_unique_verts)) { \
             vi.bm_vert = BLI_gsetIterator_getKey(&vi.bm_unique_verts); \

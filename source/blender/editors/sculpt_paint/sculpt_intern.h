@@ -477,6 +477,9 @@ void SCULPT_do_smear_brush(Sculpt *sd, Object *ob, PBVHNode **nodes, int totnode
 /* Smooth Brush. */
 void SCULPT_bmesh_four_neighbor_average(float avg[3], float direction[3], struct BMVert *v);
 
+struct TMVert;
+void SCULPT_trimesh_four_neighbor_average(float avg[3], float direction[3], struct TMVert *v);
+
 void SCULPT_neighbor_coords_average(SculptSession *ss, float result[3], int index);
 float SCULPT_neighbor_mask_average(SculptSession *ss, int index);
 void SCULPT_neighbor_color_average(SculptSession *ss, float result[4], int index);

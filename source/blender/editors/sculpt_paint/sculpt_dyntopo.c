@@ -72,6 +72,7 @@
 
 #include "bmesh.h"
 #include "bmesh_tools.h"
+#include "trimesh.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -116,33 +117,33 @@ void SCULPT_dyntopo_node_layers_add(SculptSession *ss)
 
   char layer_id[] = "_dyntopo_node_id";
 
-  cd_node_layer_index = CustomData_get_named_layer_index(&ss->bm->vdata, CD_PROP_INT32, layer_id);
+  cd_node_layer_index = CustomData_get_named_layer_index(&ss->tm->vdata, CD_PROP_INT32, layer_id);
   if (cd_node_layer_index == -1) {
-    BM_data_layer_add_named(ss->bm, &ss->bm->vdata, CD_PROP_INT32, layer_id);
+    TM_data_layer_add_named(ss->tm, &ss->tm->vdata, CD_PROP_INT32, layer_id);
     cd_node_layer_index = CustomData_get_named_layer_index(
-        &ss->bm->vdata, CD_PROP_INT32, layer_id);
+        &ss->tm->vdata, CD_PROP_INT32, layer_id);
   }
 
   ss->cd_vert_node_offset = CustomData_get_n_offset(
-      &ss->bm->vdata,
+      &ss->tm->vdata,
       CD_PROP_INT32,
-      cd_node_layer_index - CustomData_get_layer_index(&ss->bm->vdata, CD_PROP_INT32));
+      cd_node_layer_index - CustomData_get_layer_index(&ss->tm->vdata, CD_PROP_INT32));
 
-  ss->bm->vdata.layers[cd_node_layer_index].flag |= CD_FLAG_TEMPORARY;
+  ss->tm->vdata.layers[cd_node_layer_index].flag |= CD_FLAG_TEMPORARY;
 
-  cd_node_layer_index = CustomData_get_named_layer_index(&ss->bm->pdata, CD_PROP_INT32, layer_id);
+  cd_node_layer_index = CustomData_get_named_layer_index(&ss->tm->tdata, CD_PROP_INT32, layer_id);
   if (cd_node_layer_index == -1) {
-    BM_data_layer_add_named(ss->bm, &ss->bm->pdata, CD_PROP_INT32, layer_id);
+    TM_data_layer_add_named(ss->tm, &ss->tm->tdata, CD_PROP_INT32, layer_id);
     cd_node_layer_index = CustomData_get_named_layer_index(
-        &ss->bm->pdata, CD_PROP_INT32, layer_id);
+        &ss->tm->tdata, CD_PROP_INT32, layer_id);
   }
 
   ss->cd_face_node_offset = CustomData_get_n_offset(
-      &ss->bm->pdata,
+      &ss->tm->tdata,
       CD_PROP_INT32,
-      cd_node_layer_index - CustomData_get_layer_index(&ss->bm->pdata, CD_PROP_INT32));
+      cd_node_layer_index - CustomData_get_layer_index(&ss->tm->tdata, CD_PROP_INT32));
 
-  ss->bm->pdata.layers[cd_node_layer_index].flag |= CD_FLAG_TEMPORARY;
+  ss->tm->tdata.layers[cd_node_layer_index].flag |= CD_FLAG_TEMPORARY;
 }
 
 void SCULPT_dynamic_topology_enable_ex(Main *bmain, Depsgraph *depsgraph, Scene *scene, Object *ob)
@@ -160,31 +161,30 @@ void SCULPT_dynamic_topology_enable_ex(Main *bmain, Depsgraph *depsgraph, Scene 
   BKE_mesh_mselect_clear(me);
 
   /* Create triangles-only BMesh. */
-  ss->bm = BM_mesh_create(&allocsize,
-                          &((struct BMeshCreateParams){
-                              .use_toolflags = false,
-                          }));
+  ss->tm = TMesh_new(6); //XXX set maxthread properly
 
-  BM_mesh_bm_from_me(ss->bm,
+  TM_mesh_tm_from_me(ss->tm,
                      me,
-                     (&(struct BMeshFromMeshParams){
+                     (&(struct TriMeshFromMeshParams){
                          .calc_face_normal = true,
                          .use_shapekey = true,
                          .active_shapekey = ob->shapenr,
                      }));
-  SCULPT_dynamic_topology_triangulate(ss->bm);
-  BM_data_layer_add(ss->bm, &ss->bm->vdata, CD_PAINT_MASK);
+
+  //SCULPT_dynamic_topology_triangulate(ss->bm);
+  TM_data_layer_add(ss->tm, &ss->tm->vdata, CD_PAINT_MASK);
   SCULPT_dyntopo_node_layers_add(ss);
+
   /* Make sure the data for existing faces are initialized. */
-  if (me->totpoly != ss->bm->totface) {
-    BM_mesh_normals_update(ss->bm);
+  if (me->totpoly != ss->tm->tottri) {
+    TM_mesh_normals_update(ss->tm);
   }
 
   /* Enable dynamic topology. */
   me->flag |= ME_SCULPT_DYNAMIC_TOPOLOGY;
 
   /* Enable logging for undo/redo. */
-  ss->bm_log = BM_log_create(ss->bm);
+  ss->tm_log = TM_log_new(ss->tm, CustomData_get_layer_index(&ss->tm->vdata, CD_PAINT_MASK));
 
   /* Update dependency graph, so modifiers that depend on dyntopo being enabled
    * are re-evaluated and the PBVH is re-created. */

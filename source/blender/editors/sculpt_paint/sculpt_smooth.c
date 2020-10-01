@@ -58,6 +58,7 @@
 #include "RNA_define.h"
 
 #include "bmesh.h"
+#include "trimesh.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -126,6 +127,53 @@ void SCULPT_bmesh_four_neighbor_average(float avg[3], float direction[3], BMVert
 
     /* fac is a measure of how orthogonal or parallel the edge is
      * relative to the direction. */
+    float fac = dot_v3v3(vec, direction);
+    fac = fac * fac - 0.5f;
+    fac *= fac;
+    madd_v3_v3fl(avg_co, v_other->co, fac);
+    tot_co += fac;
+  }
+
+  /* In case vert has no Edge s. */
+  if (tot_co > 0.0f) {
+    mul_v3_v3fl(avg, avg_co, 1.0f / tot_co);
+
+    /* Preserve volume. */
+    float vec[3];
+    sub_v3_v3(avg, v->co);
+    mul_v3_v3fl(vec, v->no, dot_v3v3(avg, v->no));
+    sub_v3_v3(avg, vec);
+    add_v3_v3(avg, v->co);
+  }
+  else {
+    zero_v3(avg);
+  }
+}
+
+/* For bmesh: Average surrounding verts based on an orthogonality measure.
+* Naturally converges to a quad-like structure. */
+void SCULPT_trimesh_four_neighbor_average(float avg[3], float direction[3], TMVert *v)
+{
+
+  float avg_co[3] = {0.0f, 0.0f, 0.0f};
+  float tot_co = 0.0f;
+
+  for (int i=0; i<v->edges.length; i++) {
+    TMEdge *e = v->edges.items[i];
+
+    if (TM_edge_is_boundary(e)) {
+      copy_v3_v3(avg, v->co);
+      return;
+    }
+
+    TMVert *v_other = (e->v1 == v) ? e->v2 : e->v1;
+    float vec[3];
+    sub_v3_v3v3(vec, v_other->co, v->co);
+    madd_v3_v3fl(vec, v->no, -dot_v3v3(vec, v->no));
+    normalize_v3(vec);
+
+    /* fac is a measure of how orthogonal or parallel the edge is
+    * relative to the direction. */
     float fac = dot_v3v3(vec, direction);
     fac = fac * fac - 0.5f;
     fac *= fac;

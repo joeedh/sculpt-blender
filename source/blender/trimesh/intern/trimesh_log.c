@@ -483,13 +483,13 @@ static int elemhash_get_tri_id(TriMeshLog *log, TMFace *tri) {
   int ret = elemhash_get_id(log, tri);
 
   if (!ret) {
-    return BLI_trimesh_log_tri(log, tri, log->cd_vert_mask_index, false);
+    return BLI_trimesh_log_tri(log, tri, false);
   }
 
   return ret;
 }
 
-int BLI_trimesh_log_vert_kill(TriMeshLog *log, TMVert *v, int cd_mask_offset) {
+int BLI_trimesh_log_vert_kill(TriMeshLog *log, TMVert *v) {
   int id = elemhash_get_id(log, v);
 
   if (!id) {
@@ -499,7 +499,7 @@ int BLI_trimesh_log_vert_kill(TriMeshLog *log, TMVert *v, int cd_mask_offset) {
   //make sure edge entries exist
   for (int i=0; i<v->edges.length; i++) {
     TMEdge *e = v->edges.items[i];
-    elemhash_get_edge_id(log, e, cd_mask_offset);
+    elemhash_get_edge_id(log, e, log->cd_vert_mask_index);
   }
 
   int start = tlog_start(log, LOG_VERT_KILL);
@@ -509,7 +509,7 @@ int BLI_trimesh_log_vert_kill(TriMeshLog *log, TMVert *v, int cd_mask_offset) {
   tlog_i(log, v->edges.length);
   for (int i=0; i<v->edges.length; i++) {
     TMEdge *e = v->edges.items[i];
-    tlog_i(log, elemhash_get_edge_id(log, e, cd_mask_offset));
+    tlog_i(log, elemhash_get_edge_id(log, e, log->cd_vert_mask_index));
   }
 
   tlog_end(log, start);
@@ -543,6 +543,7 @@ int BLI_trimesh_log_edge_kill(TriMeshLog *log, TMEdge *e, int kill_verts) {
   }
 
   tlog_end(log, start);
+  return id;
 }
 
 int BLI_trimesh_log_tri_kill(TriMeshLog *log, TMFace *tri, int kill_verts, int kill_edges) {

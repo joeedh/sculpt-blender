@@ -1293,6 +1293,10 @@ static void pbvh_update_draw_buffer_cb(void *__restrict userdata,
         node->draw_buffers = GPU_pbvh_bmesh_buffers_build(pbvh->flags &
                                                           PBVH_DYNTOPO_SMOOTH_SHADING);
         break;
+      case PBVH_TRIMESH:
+        node->draw_buffers = GPU_pbvh_trimesh_buffers_build(pbvh->flags &
+          PBVH_DYNTOPO_SMOOTH_SHADING);
+        break;
     }
   }
 
@@ -1331,13 +1335,21 @@ static void pbvh_update_draw_buffer_cb(void *__restrict userdata,
                                       node->bm_other_verts,
                                       update_flags);
         break;
+      case PBVH_TRIMESH:
+        GPU_pbvh_trimesh_buffers_update(node->draw_buffers,
+                                        pbvh->tm,
+                                        node->tm_faces,
+                                        node->tm_unique_verts,
+                                        node->tm_other_verts,
+                                        update_flags);
+        break;
     }
   }
 }
 
 static void pbvh_update_draw_buffers(PBVH *pbvh, PBVHNode **nodes, int totnode, int update_flag)
 {
-  if ((update_flag & PBVH_RebuildDrawBuffers) || ELEM(pbvh->type, PBVH_GRIDS, PBVH_BMESH)) {
+  if ((update_flag & PBVH_RebuildDrawBuffers) || ELEM(pbvh->type, PBVH_GRIDS, PBVH_TRIMESH, PBVH_BMESH)) {
     /* Free buffers uses OpenGL, so not in parallel. */
     for (int n = 0; n < totnode; n++) {
       PBVHNode *node = nodes[n];
@@ -1352,6 +1364,8 @@ static void pbvh_update_draw_buffers(PBVH *pbvh, PBVHNode **nodes, int totnode, 
         }
         else if (pbvh->type == PBVH_BMESH) {
           GPU_pbvh_bmesh_buffers_update_free(node->draw_buffers);
+        } else if (pbvh->type == PBVH_TRIMESH) {
+          GPU_pbvh_trimesh_buffers_update_free(node->draw_buffers);
         }
       }
     }
@@ -1528,6 +1542,34 @@ static void pbvh_bmesh_node_visibility_update(PBVHNode *node)
   BKE_pbvh_node_fully_hidden_set(node, true);
 }
 
+static void pbvh_trimesh_node_visibility_update(PBVHNode *node)
+{
+  GSet *unique, *other;
+
+  unique = BKE_pbvh_trimesh_node_unique_verts(node);
+  other = BKE_pbvh_trimesh_node_other_verts(node);
+
+  GSetIterator gs_iter;
+
+  GSET_ITER (gs_iter, unique) {
+    TMVert *v = BLI_gsetIterator_getKey(&gs_iter);
+    if (!TM_elem_flag_test(v, TM_ELEM_HIDDEN)) {
+      BKE_pbvh_node_fully_hidden_set(node, false);
+      return;
+    }
+  }
+
+  GSET_ITER (gs_iter, other) {
+    TMVert *v = BLI_gsetIterator_getKey(&gs_iter);
+    if (!TM_elem_flag_test(v, TM_ELEM_HIDDEN)) {
+      BKE_pbvh_node_fully_hidden_set(node, false);
+      return;
+    }
+  }
+
+  BKE_pbvh_node_fully_hidden_set(node, true);
+}
+
 static void pbvh_update_visibility_task_cb(void *__restrict userdata,
                                            const int n,
                                            const TaskParallelTLS *__restrict UNUSED(tls))
@@ -1546,6 +1588,9 @@ static void pbvh_update_visibility_task_cb(void *__restrict userdata,
         break;
       case PBVH_BMESH:
         pbvh_bmesh_node_visibility_update(node);
+        break;
+      case PBVH_TRIMESH:
+        pbvh_trimesh_node_visibility_update(node);
         break;
     }
     node->flag &= ~PBVH_UpdateVisibility;
@@ -1660,6 +1705,8 @@ bool BKE_pbvh_has_faces(const PBVH *pbvh)
 {
   if (pbvh->type == PBVH_BMESH) {
     return (pbvh->bm->totface != 0);
+  } else if (pbvh->type == PBVH_TRIMESH) {
+    return pbvh->tm->tottri > 0;
   }
 
   return (pbvh->totprim != 0);
@@ -1855,6 +1902,15 @@ void BKE_pbvh_node_num_verts(PBVH *pbvh, PBVHNode *node, int *r_uniquevert, int 
         *r_uniquevert = tot;
       }
       break;
+    case PBVH_TRIMESH:
+      tot = BLI_gset_len(node->tm_unique_verts);
+      if (r_totvert) {
+        *r_totvert = tot + BLI_gset_len(node->tm_other_verts);
+      }
+      if (r_uniquevert) {
+        *r_uniquevert = tot;
+      }
+      break;
   }
 }
 
@@ -1886,6 +1942,23 @@ void BKE_pbvh_node_get_grids(PBVH *pbvh,
       break;
     case PBVH_FACES:
     case PBVH_BMESH:
+      if (r_grid_indices) {
+        *r_grid_indices = NULL;
+      }
+      if (r_totgrid) {
+        *r_totgrid = 0;
+      }
+      if (r_maxgrid) {
+        *r_maxgrid = 0;
+      }
+      if (r_gridsize) {
+        *r_gridsize = 0;
+      }
+      if (r_griddata) {
+        *r_griddata = NULL;
+      }
+      break;
+    case PBVH_TRIMESH:
       if (r_grid_indices) {
         *r_grid_indices = NULL;
       }
@@ -2338,6 +2411,17 @@ bool BKE_pbvh_node_raycast(PBVH *pbvh,
                                     active_vertex_index,
                                     face_normal);
       break;
+    case PBVH_TRIMESH:
+      TM_mesh_elem_index_ensure(pbvh->tm, TM_VERTEX);
+      hit = pbvh_trimesh_node_raycast(node,
+        ray_start,
+        ray_normal,
+        isect_precalc,
+        depth,
+        use_origco,
+        active_vertex_index,
+        face_normal);
+      break;
   }
 
   return hit;
@@ -2572,6 +2656,10 @@ bool BKE_pbvh_node_find_nearest_to_ray(PBVH *pbvh,
       hit = pbvh_bmesh_node_nearest_to_ray(
           node, ray_start, ray_normal, depth, dist_sq, use_origco);
       break;
+    case PBVH_TRIMESH:
+      hit = pbvh_trimesh_node_nearest_to_ray(
+        node, ray_start, ray_normal, depth, dist_sq, use_origco);
+      break;
   }
 
   return hit;
@@ -2652,6 +2740,9 @@ void BKE_pbvh_update_normals(PBVH *pbvh, struct SubdivCCG *subdiv_ccg)
   if (totnode > 0) {
     if (pbvh->type == PBVH_BMESH) {
       pbvh_bmesh_normals_update(nodes, totnode);
+    }
+    else if (pbvh->type == PBVH_TRIMESH) {
+      pbvh_trimesh_normals_update(nodes, totnode);
     }
     else if (pbvh->type == PBVH_FACES) {
       pbvh_faces_update_normals(pbvh, nodes, totnode);
@@ -2980,10 +3071,10 @@ void pbvh_vertex_iter_init(PBVH *pbvh, PBVHNode *node, PBVHVertexIter *vi, int m
     vi->cd_vert_mask_offset = CustomData_get_offset(vi->bm_vdata, CD_PAINT_MASK);
   }
 
-  if (bvh->type == PBVH_TRIMESH) {
+  if (pbvh->type == PBVH_TRIMESH) {
     BLI_gsetIterator_init(&vi->tm_unique_verts, node->tm_unique_verts);
     BLI_gsetIterator_init(&vi->tm_other_verts, node->tm_other_verts);
-    vi->tm_vdata = &bvh->tm->vdata;
+    vi->tm_vdata = &pbvh->tm->vdata;
     vi->cd_vert_mask_offset = CustomData_get_offset(vi->tm_vdata, CD_PAINT_MASK);
   }
 

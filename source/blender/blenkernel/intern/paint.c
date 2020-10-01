@@ -1098,7 +1098,9 @@ bool BKE_paint_ensure(ToolSettings *ts, struct Paint **r_paint)
     paint = &ts->imapaint.paint;
   }
 
-  paint->flags |= PAINT_SHOW_BRUSH;
+  if (paint) {
+    paint->flags |= PAINT_SHOW_BRUSH;
+  }
 
   *r_paint = paint;
 
@@ -1218,9 +1220,9 @@ bool paint_is_bmesh_face_hidden(BMFace *f)
 /* Return true if all vertices in the face are visible, false otherwise */
 bool paint_is_trimesh_face_hidden(TMFace *f)
 {
-  bool ret = f->v1->flag & TRIMESH_HIDE;
-  ret = ret || (f->v2->flag & TRIMESH_HIDE);
-  ret = ret || (f->v3->flag & TRIMESH_HIDE);
+  bool ret = f->v1->flag & TM_ELEM_HIDDEN;
+  ret = ret || (f->v2->flag & TM_ELEM_HIDDEN);
+  ret = ret || (f->v3->flag & TM_ELEM_HIDDEN);
 
   return ret;
 }

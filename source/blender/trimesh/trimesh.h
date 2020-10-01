@@ -31,7 +31,7 @@ enum {
 
 enum {
   TRIMESH_SELECT = 1<<1,
-  TRIMESH_HIDE = 1<<1,
+  TM_ELEM_HIDDEN = 1<<1,
   TRIMESH_SMOOTH = 1<<3,
   TRIMESH_SEAM = 1<<4,
   TRIMESH_SHARP = 1<<5,
@@ -44,7 +44,7 @@ BLI_INLINE uint8_t BLI_trimesh_vert_flag_to_mflag(int16_t f)  {
   uint8_t r = 0;
 
   r = f & TRIMESH_SELECT;
-  if (f & TRIMESH_HIDE) {
+  if (f & TM_ELEM_HIDDEN) {
     r |= ME_HIDE;
   }
 
@@ -71,7 +71,7 @@ BLI_INLINE uint8_t BLI_trimesh_tri_flag_to_mflag(int16_t f)  {
   if (f & TRIMESH_SMOOTH) {
     r |= ME_SMOOTH;
   }
-  if (f & TRIMESH_HIDE) {
+  if (f & TM_ELEM_HIDDEN) {
     r |= ME_HIDE;
   }
 
@@ -294,17 +294,18 @@ TMVert *TM_split_edge(TM_TriMesh *tm, TMEdge *e, int threadnr, float fac, bool s
 void TM_collapse_edge(TM_TriMesh *tm, TMEdge *e, int threadnr);
 
 typedef struct TriMeshLog TriMeshLog;
-TriMeshLog *TM_log_new();
+TriMeshLog *TM_log_new(TM_TriMesh *tm, int cd_vert_mask_index);
 void TM_log_free(TriMeshLog *log);
 int TM_log_vert_add(TriMeshLog *log, TMVert *v, const int cd_mask_offset, bool skipcd);
 int BLI_trimesh_log_tri(TriMeshLog *log, TMFace *tri, bool skipcd);
 int BLI_trimesh_log_vert_kill(TriMeshLog *log, TMVert *v);
-int BLI_trimesh_log_tri_kill(TriMeshLog *log, TMFace *tri);
+int BLI_trimesh_log_tri_kill(TriMeshLog *log, TMFace *tri, int kill_verts, int kill_edges);
 int BLI_trimesh_log_vert_state(TriMeshLog *log, TMVert *v);
 void TM_log_original_vert_data(TriMeshLog *tlog, TMVert *v, const float **r_co, const short **r_no);
 float TM_log_original_mask(TriMeshLog *tlog, TMVert *v);
 void TM_data_layer_add(TM_TriMesh *tm, struct CustomData *data, int type);
 void TM_mesh_cd_flag_apply(TM_TriMesh *bm, const char cd_flag);
+void TM_data_layer_add_named(TM_TriMesh *bm, CustomData *data, int type, const char *name);
 
 #define TM_elem_flag_enable(elem, f) ((elem)->flag |= (f))
 #define TM_elem_flag_disable(elem, f) ((elem)->flag &= ~(f))
@@ -633,5 +634,18 @@ struct TriMeshFromMeshParams {
 
 struct Mesh;
 void TM_mesh_tm_from_me(TM_TriMesh *bm, const struct Mesh *me, const struct TriMeshFromMeshParams *params);
+
+BLI_INLINE int TM_mesh_elem_count(TM_TriMesh *tm, int type) {
+  switch(type) {
+  case TM_VERTEX:
+    return tm->totvert;
+  case TM_EDGE:
+    return tm->totedge;
+  case TM_TRI:
+    return tm->tottri;
+  }
+
+  return 0;
+}
 
 #endif /* _TRIMESH_H */

@@ -54,6 +54,7 @@
 #include "GPU_state.h"
 
 #include "bmesh.h"
+#include "trimesh.h"
 
 #include <math.h>
 #include <stdlib.h>

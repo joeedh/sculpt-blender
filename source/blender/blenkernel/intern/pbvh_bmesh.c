@@ -656,6 +656,12 @@ static void pbvh_bmesh_vert_remove(PBVH *pbvh, BMVert *v)
   BM_FACES_OF_VERT_ITER_END;
 }
 
+void BKE_pbvh_bmesh_detail_size_set(PBVH *pbvh, float detail_size)
+{
+  pbvh->bm_max_edge_len = detail_size;
+  pbvh->bm_min_edge_len = pbvh->bm_max_edge_len * 0.4f;
+}
+
 static void pbvh_bmesh_face_remove(PBVH *pbvh, BMFace *f)
 {
   PBVHNode *f_node = pbvh_bmesh_node_from_face(pbvh, f);
@@ -2106,12 +2112,6 @@ void BKE_pbvh_bmesh_after_stroke(PBVH *pbvh)
       pbvh_bmesh_node_limit_ensure(pbvh, i);
     }
   }
-}
-
-void BKE_pbvh_bmesh_detail_size_set(PBVH *pbvh, float detail_size)
-{
-  pbvh->bm_max_edge_len = detail_size;
-  pbvh->bm_min_edge_len = pbvh->bm_max_edge_len * 0.4f;
 }
 
 void BKE_pbvh_node_mark_topology_update(PBVHNode *node)

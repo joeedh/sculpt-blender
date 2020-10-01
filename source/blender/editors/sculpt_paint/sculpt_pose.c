@@ -48,6 +48,7 @@
 #include "sculpt_intern.h"
 
 #include "bmesh.h"
+#include "trimesh.h"
 
 #include <math.h>
 #include <stdlib.h>

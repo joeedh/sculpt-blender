@@ -65,7 +65,7 @@ static void trilist_simplelist_append(TM_TriMesh* tm, optmesh_simplelist* list, 
       void **items = MEM_mallocN(sizeof(void*)*list->_size*2, "simplelist_append");
       memcpy(items, list->items, sizeof(void*)*list->_size);
 
-      BLI_safepool_threaded_free(tm->pools[pool], list->items, threadnr);
+      BLI_safepool_free(tm->pools[pool], list->items);
       list->items = items;
     } else {
       list->items = MEM_reallocN(list->items, sizeof(void*)*list->_size*2);

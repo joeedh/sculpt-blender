@@ -74,6 +74,12 @@ static void pbvh_trimesh_verify(PBVH *bvh);
 
 #define _TRITEST(a, b, c) tri->v1 == a && tri->v2 == b && tri->v3 == c
 
+void BKE_pbvh_trimesh_detail_size_set(PBVH *pbvh, float detail_size)
+{
+  pbvh->bm_max_edge_len = detail_size;
+  pbvh->bm_min_edge_len = pbvh->bm_max_edge_len * 0.4f;
+}
+
 TMFace *trimesh_tri_exists(TMEdge *e, TMVert *opposite) {
   for (int i=0; i<e->tris.length; i++) {
     TMFace *tri = e->tris.items[i];
@@ -605,7 +611,7 @@ static void pbvh_trimesh_face_remove(PBVH *bvh, TMFace *f)
   TM_ELEM_CD_SET_INT(f, bvh->cd_face_node_offset, DYNTOPO_NODE_NONE);
 
   /* Log removed face */
-  BLI_trimesh_log_tri_kill(bvh->tm_log, f);
+  BLI_trimesh_log_tri_kill(bvh->tm_log, f, false, false);
 
   /* mark node for update */
   f_node->flag |= PBVH_UpdateDrawBuffers | PBVH_UpdateNormals;
@@ -739,8 +745,8 @@ static void edge_queue_insert(EdgeQueueContext *eq_ctx, TMEdge *e, float priorit
   * enough. */
   if (((eq_ctx->cd_vert_mask_offset == -1) ||
     (check_mask(eq_ctx, e->v1) || check_mask(eq_ctx, e->v2))) &&
-    !(TM_elem_flag_test_bool(e->v1, TRIMESH_HIDE) ||
-      TM_elem_flag_test_bool(e->v2, TRIMESH_HIDE))) {
+    !(TM_elem_flag_test_bool(e->v1, TM_ELEM_HIDDEN) ||
+      TM_elem_flag_test_bool(e->v2, TM_ELEM_HIDDEN))) {
     TMVert **pair = BLI_mempool_alloc(eq_ctx->pool);
     pair[0] = e->v1;
     pair[1] = e->v2;
@@ -1466,7 +1472,7 @@ bool pbvh_trimesh_node_raycast(PBVHNode *node,
       TMFace *f = BLI_gsetIterator_getKey(&gs_iter);
 
       BLI_assert(f->len == 3);
-      if (!TM_elem_flag_test(f, TRIMESH_HIDE)) {
+      if (!TM_elem_flag_test(f, TM_ELEM_HIDDEN)) {
         TMVert **v_tri = &f->v1;
 
         if (ray_face_intersection_tri(
@@ -1514,7 +1520,7 @@ bool BKE_pbvh_trimesh_node_raycast_detail(PBVHNode *node,
     TMFace *f = BLI_gsetIterator_getKey(&gs_iter);
 
     BLI_assert(f->len == 3);
-    if (!TM_elem_flag_test(f, TRIMESH_HIDE)) {
+    if (!TM_elem_flag_test(f, TM_ELEM_HIDDEN)) {
       TMVert **v_tri = &f->v1;
       bool hit_local;
       hit_local = ray_face_intersection_tri(
@@ -1568,7 +1574,7 @@ bool pbvh_trimesh_node_nearest_to_ray(PBVHNode *node,
     GSET_ITER (gs_iter, node->tm_faces) {
       TMFace *f = BLI_gsetIterator_getKey(&gs_iter);
 
-      if (!TM_elem_flag_test(f, TRIMESH_HIDE)) {
+      if (!TM_elem_flag_test(f, TM_ELEM_HIDDEN)) {
         hit |= ray_face_nearest_tri(
           ray_start, ray_normal, f->v1->co, f->v2->co, f->v3->co, depth, dist_sq);
       }
@@ -1775,7 +1781,7 @@ static void pbvh_trimesh_create_nodes_fast_recursive(
         /* Update node bounding box */
       }
 
-      if (!TM_elem_flag_test(f, TRIMESH_HIDE)) {
+      if (!TM_elem_flag_test(f, TM_ELEM_HIDDEN)) {
         has_visible = true;
       }
 
@@ -2001,7 +2007,7 @@ void BKE_pbvh_trimesh_node_save_orig(TM_TriMesh *tm, PBVHNode *node)
   GSET_ITER (gs_iter, node->tm_faces) {
     TMFace *f = BLI_gsetIterator_getKey(&gs_iter);
 
-    if (TM_elem_flag_test(f, TRIMESH_HIDE)) {
+    if (TM_elem_flag_test(f, TM_ELEM_HIDDEN)) {
       continue;
     }
 

@@ -98,6 +98,7 @@
 
 #include "bmesh.h"
 #include "bmesh_tools.h"
+#include "trimesh.h"
 
 #include <math.h>
 #include <stdlib.h>
