@@ -72,7 +72,9 @@ static int poolsizes[] = {
 void trimesh_element_init(void *elem, CustomData *customdata) {
 
   TMElement *e = elem;
-
+  e->customdata = NULL;
+  e->flag = e->index = e->threadtag = 0;
+  
   CustomData_bmesh_set_default(customdata, &e->customdata);
 }
 
@@ -84,6 +86,7 @@ void trimesh_element_destroy(void *elem, int threadnr, CustomData *customdata) {
 
 static TMLoopData *trimesh_make_loop(TM_TriMesh *tm, int threadnr, bool skipcd) {
   TMLoopData *loop = BLI_safepool_alloc(tm->pools[POOL_LOOP]);
+
   trimesh_element_init(loop, &tm->ldata);
 
   return loop;
@@ -132,8 +135,11 @@ TM_TriMesh* TMesh_new(int maxthread) {
   TM_TriMesh* tm = MEM_callocN(sizeof(*tm), "OptTriMesh");
   int i;
 
+  maxthread = MAX2(maxthread, 1);
+  tm->maxthread = maxthread;
+
   for (i = 0; i < MAX_TRIMESH_POOLS; i++) {
-    tm->pools[i] = BLI_safepool_create(poolsizes[i], 0, maxthread);
+    tm->pools[i] = BLI_safepool_create(poolsizes[i], 512, maxthread);
   }
 
   return tm;
@@ -156,9 +162,12 @@ static TMEdge *ensure_edge(TM_TriMesh* tm, TMVert* v1, TMVert* v2, int threadnr,
   e->v1 = v1;
   e->v2 = v2;
 
+  trilist_simplelist_init(tm, &e->tris, E_TLIST_ESIZE, POOL_TLIST);
+
   trilist_simplelist_append(tm, &e->v1->edges, e, POOL_ELIST, threadnr);
   trilist_simplelist_append(tm, &e->v2->edges, e, POOL_ELIST, threadnr);
 
+  memset(&e->tris, 0, sizeof(e->tris));
   trimesh_element_init(e, &tm->edata);
   tm->totedge++;
 
@@ -209,11 +218,19 @@ TMVert *TM_make_vert(TM_TriMesh *tm, float co[3], float no[3], int threadnr, boo
 
   trimesh_element_init(v, &tm->vdata);
 
-  memset(v, 0, sizeof(*v));
+  trilist_simplelist_init(tm, &v->edges, V_ELIST_ESIZE, POOL_ELIST);
 
-  copy_v3_v3(v->co, co);
-  copy_v3_v3(v->no, no);
+  if (co) {
+    copy_v3_v3(v->co, co);
+  } else {
+    zero_v3(v->co);
+  }
 
+  if (no) {
+    copy_v3_v3(v->no, no);
+  } else {
+      zero_v3(v->no);
+  }
   tm->totvert++;
 
   return v;

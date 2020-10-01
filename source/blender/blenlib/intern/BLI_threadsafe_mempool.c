@@ -65,7 +65,9 @@ void BLI_safepool_threadnr_set(int threadnr) {
 }
 
 static size_t get_chunk_size(BLI_ThreadSafePool* pool) {
-  return getalign(sizeof(pool_thread_data) + pool->esize*pool->csize);
+  return getalign(sizeof(pool_thread_data)) + pool->esize*pool->csize;
+
+  //return getalign(sizeof(pool_thread_data) + pool->esize*pool->csize);
 }
 
 #define getelem(elem) ((poolelem*) ((char*) (elem) - sizeof(void*)))
@@ -91,18 +93,19 @@ static poolchunk *new_chunk(BLI_ThreadSafePool *pool, pool_thread_data* thread_d
 
   chunk->magic = POOL_CHUNK_MAGIC;
   chunk->threadnr = thread_data - pool->threadchunks;
-
+  
   BLI_addtail(&thread_data->chunks, chunk);
   poolelem *first = NULL;
 
   for (size_t i = 0; i < pool->csize-1; i++) {
     poolelem *de = (poolelem*)(((char*)chunk) + sizeof(poolchunk) + esize*i);
+    poolelem *next = (poolelem*)(((char*)chunk) + sizeof(poolchunk) + esize*(i+1));
 
     if (i ==  0) {
       first = de;
     }
 
-    de->next = de + 1;
+    de->next = next;
     de->dead_magic = DEAD_MAGIC;
   }
 
@@ -118,11 +121,18 @@ static poolchunk *new_chunk(BLI_ThreadSafePool *pool, pool_thread_data* thread_d
 BLI_ThreadSafePool* BLI_safepool_create(int elemsize, int chunksize, int maxthread) {
   BLI_ThreadSafePool* pool = MEM_callocN(sizeof(*pool), "BLI_ThreadSafePool");
 
-  elemsize = MAX2(elemsize, sizeof(void*)*2);
+  //align to pointer size
+  if (elemsize & 7) {
+    elemsize += 8 - (elemsize & 7);
+  }
+
+  //add header pointer to owning chunk
+  elemsize = MAX2(elemsize + sizeof(void*), sizeof(void*)*2);
+  maxthread = MAX2(maxthread, 1);
 
   pool->maxthread = maxthread;
   pool->threadchunks = MEM_callocN(sizeof(pool_thread_data) * maxthread, "pool->threadchunks");
-  pool->esize = elemsize + sizeof(void*); //add header pointer to owning chunk
+  pool->esize = elemsize; 
   pool->csize = chunksize;
 
 #ifdef BLI_SAFEPOOL_HAVE_LENGTH
@@ -132,6 +142,7 @@ BLI_ThreadSafePool* BLI_safepool_create(int elemsize, int chunksize, int maxthre
   for (int i = 0; i < maxthread; i++) {
     BLI_rw_mutex_init(&pool->threadchunks[i].lock);
     pool->threadchunks[i].threadnr = i;
+    memset(pool->threadchunks + i, 0, sizeof(pool_thread_data));
     new_chunk(pool, pool->threadchunks + i);
   }
 
@@ -292,7 +303,7 @@ void* BLI_safepool_iterstep(ThreadSafePoolIter* iter) {
     iter->i = -1; //flag end of iteration
   }
 
-  poolelem *de = getelem(ptr);
+  poolelem *de = (poolelem*) ptr;
 
   if (!ptr || de->dead_magic == DEAD_MAGIC) {
     return BLI_safepool_iterstep(iter);

@@ -83,14 +83,12 @@ BLI_INLINE uint8_t BLI_trimesh_tri_flag_to_mflag(int16_t f)  {
 
 #ifdef WITH_TRIMESH_CUSTOMDATA
 #define OPTELEM_HEAD(type) \
-struct type *next, *prev; \
 int16_t threadtag; \
 int16_t flag; \
 int index; \
 void *customdata;
 #else
 #define OPTELEM_HEAD(type) \
-struct type *next, *prev; \
 int16_t threadtag; flag;\
 int index;
 #endif

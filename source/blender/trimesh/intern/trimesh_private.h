@@ -55,6 +55,13 @@ static void trimesh_simplelist_free(TM_TriMesh *tm, optmesh_simplelist *list, in
   }
 }
 
+static void trilist_simplelist_init(TM_TriMesh *tm, optmesh_simplelist *list, int size, int pool) {
+  list->_size = size;
+  list->items = BLI_safepool_alloc(tm->pools[pool]);
+  list->length = 0;
+  list->is_pool_allocd = true;
+}
+
 static void trilist_simplelist_append(TM_TriMesh* tm, optmesh_simplelist* list, void *item, int pool, int threadnr) {
   list->length++;
 
