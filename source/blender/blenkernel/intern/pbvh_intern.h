@@ -1,3 +1,6 @@
+#ifndef _PBVH_INTERN_H
+#define _PBVH_INTERN_H
+
 /*
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -270,4 +273,4 @@ bool pbvh_trimesh_node_nearest_to_ray(PBVHNode *node,
 
 void pbvh_trimesh_normals_update(PBVHNode **nodes, int totnode);
 
-#endif
+#endif /* _PBVH_INTERN_H */

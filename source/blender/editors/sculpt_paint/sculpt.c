@@ -7414,6 +7414,7 @@ float SCULPT_raycast_init(ViewContext *vc,
   Object *ob = vc->obact;
   RegionView3D *rv3d = vc->region->regiondata;
   View3D *v3d = vc->v3d;
+  SculptSession *ss = ob->sculpt;
 
   /* TODO: what if the segment is totally clipped? (return == 0). */
   ED_view3d_win_to_segment_clipped(
@@ -7432,7 +7433,7 @@ float SCULPT_raycast_init(ViewContext *vc,
 
   if ((rv3d->is_persp == false) &&
       /* If the ray is clipped, don't adjust its start/end. */
-      RV3D_CLIPPING_ENABLED(v3d, rv3d)) {
+      RV3D_CLIPPING_ENABLED(v3d, cdrv3d)) {
     BKE_pbvh_raycast_project_ray_root(ob->sculpt->pbvh, original, ray_start, ray_end, ray_normal);
 
     /* rRecalculate the normal. */
