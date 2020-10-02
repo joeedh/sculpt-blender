@@ -150,8 +150,7 @@ def create(engine, data, region=None, v3d=None, rv3d=None, preview_osl=False):
         screen = screen or rv3d.id_data.as_pointer()
         rv3d = rv3d.as_pointer()
 
-    engine.session = _cycles.create(
-            engine.as_pointer(), prefs, data, screen, region, v3d, rv3d, preview_osl)
+    engine.session = _cycles.create(engine.as_pointer(), prefs, data, screen, region, v3d, rv3d, preview_osl)
 
 
 def free(engine):
@@ -223,6 +222,7 @@ def with_network():
 def system_info():
     import _cycles
     return _cycles.system_info()
+
 
 def list_render_passes(scene, srl):
     # Builtin Blender passes.
@@ -298,6 +298,7 @@ def list_render_passes(scene, srl):
         else:
             yield (aov.name, "RGBA", 'COLOR')
 
+
 def register_passes(engine, scene, view_layer):
     # Detect duplicate render pass names, first one wins.
     listed = set()
@@ -305,6 +306,7 @@ def register_passes(engine, scene, view_layer):
         if name not in listed:
             engine.register_pass(scene, view_layer, name, len(channelids), channelids, channeltype)
             listed.add(name)
+
 
 def detect_conflicting_passes(scene, view_layer):
     # Detect conflicting render pass names for UI.
