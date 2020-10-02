@@ -436,7 +436,7 @@ void TM_mesh_tm_from_me(TM_TriMesh *bm, const Mesh *me, const struct TriMeshFrom
 
   mp = me->mpoly;
   mloop = me->mloop;
-  for (i=0; i<me->totface; i++, mp++) {
+  for (i=0; i<me->totpoly; i++, mp++) {
     MLoop *ml = mloop + mp->loopstart;
 
     for (int j=1; j<mp->totloop-1; j++) {
@@ -457,7 +457,7 @@ void TM_mesh_tm_from_me(TM_TriMesh *bm, const Mesh *me, const struct TriMeshFrom
       }
 
       /* Copy Custom Data */
-      CustomData_to_bmesh_block(&me->pdata, &bm->tdata, i, &f->customdata, true);
+      CustomData_to_bmesh_block(&me->pdata, &bm->tdata, i, &tri->customdata, true);
 
       CustomData_to_bmesh_block(&me->ldata, &bm->ldata, i1, &tri->l1->customdata, true);
       CustomData_to_bmesh_block(&me->ldata, &bm->ldata, i2, &tri->l2->customdata, true);

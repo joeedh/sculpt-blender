@@ -70,7 +70,7 @@ static size_t get_chunk_size(BLI_ThreadSafePool* pool) {
   //return getalign(sizeof(pool_thread_data) + pool->esize*pool->csize);
 }
 
-#define getelem(elem) ((poolelem*) ((char*) (elem) - sizeof(void*)))
+#define getelem(elem) ((poolelem*) (((char*)(elem)) - sizeof(void*)))
 
 static pool_thread_data* get_poolthread_from_elem(BLI_ThreadSafePool *pool, void* elem) {
   //version of code for if elements are allowed to link themselves to other thread pools
@@ -225,6 +225,11 @@ void BLI_safepool_free(BLI_ThreadSafePool* pool, void* elem) {
    */
 
   int thread = BLI_thread_local_get(curthread);
+
+  if (!pool) {
+    printf("error!\n");
+    return;
+  }
 
   pool_thread_data *tdata = pool->threadchunks + thread;
   BLI_rw_mutex_lock(&tdata->lock, THREAD_LOCK_WRITE);

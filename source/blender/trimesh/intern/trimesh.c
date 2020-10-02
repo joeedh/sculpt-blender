@@ -69,13 +69,20 @@ static int poolsizes[] = {
   sizeof(TMLoopData)
 };
 
-void trimesh_element_init(void *elem, CustomData *customdata) {
+void trimesh_element_init(void *elem, CustomData *customdata, bool skipcd) {
 
   TMElement *e = elem;
   e->customdata = NULL;
   e->flag = e->index = e->threadtag = 0;
-  
-  CustomData_bmesh_set_default(customdata, &e->customdata);
+
+  if (skipcd) {
+    if (customdata->totsize) {
+      e->customdata = BLI_safepool_alloc(customdata->tpool);
+      memset(e->customdata, 0, customdata->totsize);
+    }
+  } else {
+    CustomData_bmesh_set_default(customdata, &e->customdata);
+  }
 }
 
 void trimesh_element_destroy(void *elem, int threadnr, CustomData *customdata) {
@@ -87,7 +94,7 @@ void trimesh_element_destroy(void *elem, int threadnr, CustomData *customdata) {
 static TMLoopData *trimesh_make_loop(TM_TriMesh *tm, int threadnr, bool skipcd) {
   TMLoopData *loop = BLI_safepool_alloc(tm->pools[POOL_LOOP]);
 
-  trimesh_element_init(loop, &tm->ldata);
+  trimesh_element_init(loop, &tm->ldata, skipcd);
 
   return loop;
 }
@@ -167,8 +174,7 @@ static TMEdge *ensure_edge(TM_TriMesh* tm, TMVert* v1, TMVert* v2, int threadnr,
   trilist_simplelist_append(tm, &e->v1->edges, e, POOL_ELIST, threadnr);
   trilist_simplelist_append(tm, &e->v2->edges, e, POOL_ELIST, threadnr);
 
-  memset(&e->tris, 0, sizeof(e->tris));
-  trimesh_element_init(e, &tm->edata);
+  trimesh_element_init(e, &tm->edata, skipcd);
   tm->totedge++;
 
   return e;
@@ -216,7 +222,7 @@ static TMEdge *edge_add_tri(TM_TriMesh* tm, TMVert* v1, TMVert* v2, TMFace* tri,
 TMVert *TM_make_vert(TM_TriMesh *tm, float co[3], float no[3], int threadnr, bool skipcd) {
   TMVert *v = BLI_safepool_alloc(tm->pools[POOL_VERTEX]);
 
-  trimesh_element_init(v, &tm->vdata);
+  trimesh_element_init(v, &tm->vdata, skipcd);
 
   trilist_simplelist_init(tm, &v->edges, V_ELIST_ESIZE, POOL_ELIST);
 
@@ -245,7 +251,7 @@ TMFace *TM_make_tri(TM_TriMesh *tm, TMVert *v1, TMVert *v2, TMVert *v3, int thre
 
   memset(tri, 0, sizeof(*tri));
 
-  trimesh_element_init(tri, &tm->tdata);
+  trimesh_element_init(tri, &tm->tdata, skipcd);
 
   tri->l1 = trimesh_make_loop(tm, threadnr, skipcd);
   tri->l2 = trimesh_make_loop(tm, threadnr, skipcd);
@@ -259,6 +265,9 @@ TMFace *TM_make_tri(TM_TriMesh *tm, TMVert *v1, TMVert *v2, TMVert *v3, int thre
   tri->e2 = edge_add_tri(tm, v2, v3, tri, threadnr, skipcd);
   tri->e3 = edge_add_tri(tm, v3, v1, tri, threadnr, skipcd);
 
+  if (!tri->e3) {
+    printf("evil! %p\n", tri->e3);
+  }
   tm->tottri++;
 
   return tri;
@@ -315,6 +324,9 @@ CustomData *trimesh_get_customdata(TM_TriMesh *tm, int type) {
 void TM_kill_tri(TM_TriMesh *tm, TMFace *tri, int threadnr, bool kill_edges, bool kill_verts) {
   //static void simplelist_remove(OptTriMesh *tm, optmesh_simplelist *list, void *item, int pool, int threadnr) {
 
+  tm->elem_index_dirty |= TM_TRI;
+  tm->elem_table_dirty |= TM_TRI;
+
   trimesh_simplelist_remove(tm, &tri->e1->tris, tri, POOL_TLIST, threadnr);
   trimesh_simplelist_remove(tm, &tri->e2->tris, tri, POOL_TLIST, threadnr);
   trimesh_simplelist_remove(tm, &tri->e3->tris, tri, POOL_TLIST, threadnr);
@@ -323,16 +335,17 @@ void TM_kill_tri(TM_TriMesh *tm, TMFace *tri, int threadnr, bool kill_edges, boo
   trimesh_kill_loop(tm, tri->l2, threadnr);
   trimesh_kill_loop(tm, tri->l3, threadnr);
 
-  if (tri->e1->tris.length == 0) {
-    TM_kill_edge(tm, tri->e1, threadnr, kill_verts);
+  if (kill_edges) {
+    if (tri->e1->tris.length == 0) {
+      TM_kill_edge(tm, tri->e1, threadnr, kill_verts);
+    }
+    if (tri->e2->tris.length == 0) {
+      TM_kill_edge(tm, tri->e2, threadnr, kill_verts);
+    }
+    if (tri->e3->tris.length == 0) {
+      TM_kill_edge(tm, tri->e3, threadnr, kill_verts);
+    }
   }
-  if (tri->e2->tris.length == 0) {
-    TM_kill_edge(tm, tri->e2, threadnr, kill_verts);
-  }
-  if (tri->e3->tris.length == 0) {
-    TM_kill_edge(tm, tri->e3, threadnr, kill_verts);
-  }
-
 
   tm->tottri--;
   trimesh_element_destroy(tri, threadnr, &tm->tdata);
@@ -429,7 +442,7 @@ TMVert *TM_split_edge(TM_TriMesh *tm, TMEdge *e, int threadnr, float fac, bool s
     CustomData_bmesh_copy_data(&tm->edata, &tm->edata, &e->customdata, &e3->customdata);
   }
 
-  for (int i=0; i<e->tris.length; i++) {
+  while (e->tris.length) {
     TMFace *tri = e->tris.items[0];
 
     TMVert *tv1, *tv2, *tv3;
@@ -711,7 +724,7 @@ void TM_mesh_bm_to_me(struct Main *bmain,
       TMLoopData *ld = TM_GET_TRI_LOOP(f, k);
 
       mloop->e = TM_GET_TRI_EDGE(f, k)->index;
-      mloop->e = TM_GET_TRI_VERT(f, k)->index;
+      mloop->v = TM_GET_TRI_VERT(f, k)->index;
 
       /* Copy over custom-data. */
       CustomData_from_bmesh_block(&tm->ldata, &me->ldata, ld->customdata, j);
@@ -917,6 +930,7 @@ void TM_mesh_normals_update(TM_TriMesh *tm) {
   TM_TriMeshIter iter;
   TMVert *v;
   TMFace *f;
+  return;
 
   TM_ITER_MESH(f, &iter, tm, TM_TRIS_OF_MESH) {
     TM_calc_tri_normal(f);

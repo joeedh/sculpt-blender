@@ -34,6 +34,7 @@
  * values would be though */
 
 #  include "bmesh.h"
+#include "BLI_ghash.h"
 
 #  include "intern/bmesh_operators_private.h" /* own include */
 

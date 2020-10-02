@@ -841,6 +841,14 @@ void BLI_log_unwind(TriMeshLog *tlog, int threadnr) {
   }
 }
 
+float *TM_log_original_vert_co(TriMeshLog *tlog, TMVert *v)
+{
+  float *co = NULL, *no = NULL;
+
+  TM_log_original_vert_data(tlog, v, &co, NULL);
+  return co;
+}
+
 void TM_log_original_vert_data(TriMeshLog *tlog, TMVert *v, const float **r_co, const short **r_no)
 {
   int id = elemhash_get_vert_id(tlog, v, tlog->cd_vert_mask_index);
@@ -855,8 +863,10 @@ void TM_log_original_vert_data(TriMeshLog *tlog, TMVert *v, const float **r_co, 
 
   copy_v3_v3(no, log[entry++].value.vec3);
   normal_float_to_short_v3(log[entry++].value.hvec3, no);
-  
-  *r_no = log[entry++].value.hvec3;
+
+  if (r_no) {
+    *r_no = log[entry++].value.hvec3;
+  }
 }
 
 

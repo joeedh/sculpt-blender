@@ -300,10 +300,12 @@ int BLI_trimesh_log_vert_kill(TriMeshLog *log, TMVert *v);
 int BLI_trimesh_log_tri_kill(TriMeshLog *log, TMFace *tri, int kill_verts, int kill_edges);
 int BLI_trimesh_log_vert_state(TriMeshLog *log, TMVert *v);
 void TM_log_original_vert_data(TriMeshLog *tlog, TMVert *v, const float **r_co, const short **r_no);
+float *TM_log_original_vert_co(TriMeshLog *tlog, TMVert *v);
 float TM_log_original_mask(TriMeshLog *tlog, TMVert *v);
 void TM_data_layer_add(TM_TriMesh *tm, struct CustomData *data, int type);
 void TM_mesh_cd_flag_apply(TM_TriMesh *bm, const char cd_flag);
 void TM_data_layer_add_named(TM_TriMesh *bm, CustomData *data, int type, const char *name);
+
 
 #define TM_elem_flag_enable(elem, f) ((elem)->flag |= (f))
 #define TM_elem_flag_disable(elem, f) ((elem)->flag &= ~(f))
@@ -385,6 +387,9 @@ BLI_INLINE TMVert *TM_prevVertInTri(TMFace *t, TMVert *v) {
 }
 
 BLI_INLINE int TM_edgeTriIndex(TMEdge *e, TMFace *t) {
+  if (!e || !t)
+    return -1;
+
   for (int i=0; i<e->tris.length; i++) {
     TMFace *t2 = e->tris.items[i];
 
@@ -423,6 +428,26 @@ BLI_INLINE TMFace *TM_prevTriInEdge(TMEdge *e, TMFace *t) {
 
   return e->tris.items[i];
 }
+
+BLI_INLINE void TM_orderEdgeInTri(TMFace *t, TMEdge *e, TMVert **r_v1, TMVert **r_v2) {
+  bool swap = false;
+
+  if (e->v1 == t->v1) {
+    swap = e->v2 == t->v3;
+  } else if (e->v1 == t->v2) {
+    swap = e->v2 == t->v1;
+  } else if (e->v1 == t->v3) {
+    swap = e->v2 == t->v2;
+  }
+
+  if (swap) {
+    *r_v1 = e->v2;
+    *r_v2 = e->v1;
+  } else {
+    *r_v1 = e->v1;
+    *r_v2 = e->v2;
+  }
+}  
 
 BLI_INLINE TMVert *TM_getAdjVert(TMEdge *e, TMFace *t) {
   if (e == t->e1) {
@@ -478,7 +503,7 @@ BLI_INLINE TMFace *TM_tri_exists(TMVert *v1, TMVert *v2, TMVert *v3) {
 #define TM_ITER_VERT_TRIS(v, tname)\
 for (int _i=0; _i<v->edges.length; _i++) {\
   TMEdge *e = v->edges.items[_i];\
-  for (int _j=0; _j<v->edges.length; _j++) {\
+  for (int _j=0; _j<e->tris.length; _j++) {\
     TMFace *t = e->tris.items[_j];\
     t->flag &= ~TRIMESH_VT_ITERFLAG;\
   }\
@@ -497,7 +522,7 @@ for (int _i=0; _i<v->edges.length; _i++) {\
 #define TM_ITER_VERT_TRIEDGES(v, tname, ename)\
 for (int _i=0; _i<v->edges.length; _i++) {\
   TMEdge *e = v->edges.items[_i];\
-  for (int _j=0; _j<v->edges.length; _j++) {\
+  for (int _j=0; _j<e->tris.length; _j++) {\
     TMFace *t = e->tris.items[_j];\
     t->flag &= ~TRIMESH_VT_ITERFLAG;\
   }\

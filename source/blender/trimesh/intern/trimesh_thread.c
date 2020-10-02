@@ -428,15 +428,14 @@ void TM_foreach_verts(TM_TriMesh *tm, TMFace **tris, int tottri, OptTriMeshJob j
 }
 
 void TM_kill_vert(TM_TriMesh *tm, TMVert *v, int threadnr) {
+  tm->elem_index_dirty |= TM_VERTEX;
+  tm->elem_table_dirty |= TM_VERTEX;
+
   while (v->edges.length > 0) {
     TM_kill_edge(tm, v->edges.items[0], threadnr, false);
   }
 
-#ifdef WITH_TRIMESH_CUSTOMDATA
-  trimesh_element_destroy(tm, v, &tm->vdata);
-#else
-  trimesh_element_destroy(tm, v);
-#endif
+  trimesh_element_destroy(v, threadnr, &tm->vdata);
 
   tm->totvert--;
   trimesh_simplelist_free(tm, &v->edges, POOL_ELIST, threadnr);
@@ -445,6 +444,9 @@ void TM_kill_vert(TM_TriMesh *tm, TMVert *v, int threadnr) {
 
 //if kill_verts is true verts with no edges will be deleted
 void TM_kill_edge(TM_TriMesh *tm, TMEdge *e, int threadnr, bool kill_verts) {
+  tm->elem_index_dirty |= TM_EDGE;
+  tm->elem_table_dirty |= TM_EDGE;
+
   while (e->tris.length > 0) {
     TMFace *tri = e->tris.items[0];
     TM_kill_tri(tm, tri, threadnr, false, false);
@@ -464,7 +466,7 @@ void TM_kill_edge(TM_TriMesh *tm, TMEdge *e, int threadnr, bool kill_verts) {
   }
 
   tm->totedge--;
-  trimesh_element_destroy(tm, e, &tm->edata);
+  trimesh_element_destroy(e, threadnr, &tm->edata);
 
   trimesh_simplelist_free(tm, &e->tris, POOL_TLIST, threadnr);
   BLI_safepool_free(tm->pools[POOL_EDGE], e);

@@ -45,7 +45,7 @@
 /** \name Structs & Constants
  * \{ */
 
-#define GHASH_USE_MODULO_BUCKETS
+
 
 /**
  * Next prime after `2^n` (skipping 2 & 3).
@@ -79,40 +79,6 @@ BLI_STATIC_ASSERT(ARRAY_SIZE(hashsizes) == GHASH_MAX_SIZE, "Invalid 'hashsizes' 
 #define GHASH_LIMIT_GROW(_nbkt) (((_nbkt)*3) / 4)
 #define GHASH_LIMIT_SHRINK(_nbkt) (((_nbkt)*3) / 16)
 
-/* WARNING! Keep in sync with ugly _gh_Entry in header!!! */
-typedef struct Entry {
-  struct Entry *next;
-
-  void *key;
-} Entry;
-
-typedef struct GHashEntry {
-  Entry e;
-
-  void *val;
-} GHashEntry;
-
-typedef Entry GSetEntry;
-
-#define GHASH_ENTRY_SIZE(_is_gset) ((_is_gset) ? sizeof(GSetEntry) : sizeof(GHashEntry))
-
-struct GHash {
-  GHashHashFP hashfp;
-  GHashCmpFP cmpfp;
-
-  Entry **buckets;
-  struct BLI_mempool *entrypool;
-  uint nbuckets;
-  uint limit_grow, limit_shrink;
-#ifdef GHASH_USE_MODULO_BUCKETS
-  uint cursize, size_min;
-#else
-  uint bucket_mask, bucket_bit, bucket_bit_min;
-#endif
-
-  uint nentries;
-  uint flag;
-};
 
 /** \} */
 
@@ -1083,6 +1049,7 @@ void BLI_ghashIterator_init(GHashIterator *ghi, GHash *gh)
  *
  * \param ghi: The iterator.
  */
+#if 0
 void BLI_ghashIterator_step(GHashIterator *ghi)
 {
   if (ghi->curEntry) {
@@ -1096,6 +1063,7 @@ void BLI_ghashIterator_step(GHashIterator *ghi)
     }
   }
 }
+#endif
 
 /**
  * Free a GHashIterator.

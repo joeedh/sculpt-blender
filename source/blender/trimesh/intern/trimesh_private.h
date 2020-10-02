@@ -17,7 +17,7 @@ enum {
 #endif
 };
 
-#define V_ELIST_ESIZE 5
+#define V_ELIST_ESIZE 7
 #define E_TLIST_ESIZE 2
 
 struct CustomData;
@@ -37,6 +37,7 @@ static void trimesh_simplelist_remove(struct TM_TriMesh *tm, struct optmesh_simp
     if (list->items[i] == item) {
       while (i < list->length-1) {
         list->items[i] = list->items[i+1];
+        i++;
       }
 
       list->items[list->length-1] = NULL;

@@ -5676,6 +5676,7 @@ static void sculpt_topology_update(Sculpt *sd,
   Brush *brush,
   UnifiedPaintSettings *UNUSED(ups))
 {
+  return;
   SculptSession *ss = ob->sculpt;
 
   int n, totnode;
@@ -6122,6 +6123,8 @@ static void sculpt_combine_proxies_task_cb(void *__restrict userdata,
     if (use_orco) {
       if (ss->bm) {
         copy_v3_v3(val, BM_log_original_vert_co(ss->bm_log, vd.bm_vert));
+      } else if (ss->tm) {
+        copy_v3_v3(val, TM_log_original_vert_co(ss->tm_log, vd.tm_vert));
       }
       else {
         copy_v3_v3(val, orco[vd.i]);
@@ -7461,8 +7464,8 @@ bool SCULPT_stroke_get_location(bContext *C, float out[3], const float mouse[2])
   depth = SCULPT_raycast_init(&vc, mouse, ray_start, ray_end, ray_normal, original);
 
   if (BKE_pbvh_type(ss->pbvh) == PBVH_TRIMESH) {
-    BM_mesh_elem_table_ensure(ss->bm, TM_VERTEX);
-    BM_mesh_elem_index_ensure(ss->bm, TM_VERTEX);
+    TM_mesh_elem_table_ensure(ss->tm, TM_VERTEX);
+    TM_mesh_elem_index_ensure(ss->tm, TM_VERTEX);
   }
 
   bool hit = false;
