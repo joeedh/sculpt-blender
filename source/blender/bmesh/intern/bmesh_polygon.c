@@ -1448,6 +1448,7 @@ void BM_face_splits_check_optimal(BMFace *f, BMLoop *(*loops)[2], int len)
   }
 }
 
+#if 0
 /**
  * Small utility functions for fast access
  *
@@ -1466,6 +1467,8 @@ void BM_face_as_array_vert_tri(BMFace *f, BMVert *r_verts[3])
   l = l->next;
   r_verts[2] = l->v;
 }
+
+#endif
 
 /**
  * faster alternative to:
