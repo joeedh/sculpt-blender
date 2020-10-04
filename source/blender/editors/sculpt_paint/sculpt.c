@@ -1963,7 +1963,7 @@ static void calc_area_normal_and_center_task_cb(void *__restrict userdata,
       };
       float co[3];
 
-      closest_on_tri_to_point_v3_inline(co, normal_test.location, UNPACK3(co_tri));
+      closest_on_tri_to_point_v3(co, normal_test.location, UNPACK3(co_tri));
 
       normal_test_r = sculpt_brush_normal_test_sq_fn(&normal_test, co);
       area_test_r = sculpt_brush_area_test_sq_fn(&area_test, co);

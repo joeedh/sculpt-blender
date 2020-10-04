@@ -709,12 +709,6 @@ static void layerInterp_paint_mask(
   *(float *)dest = mask;
 }
 
-static void layerInterp_bm_log(
-  const void **sources, const float *weights, const float *sub_weights, int count, void *dest)
-{
-  
-}
-
 static void layerCopy_grid_paint_mask(const void *source, void *dest, int count)
 {
   const GridPaintMask *s = source;
@@ -731,7 +725,6 @@ static void layerCopy_grid_paint_mask(const void *source, void *dest, int count)
     }
   }
 }
-
 
 static void layerFree_grid_paint_mask(void *data, int count, int UNUSED(size))
 {
@@ -1909,8 +1902,6 @@ static const LayerTypeInfo LAYERTYPEINFO[CD_NUMTYPES] = {
      layerMultiply_propfloat2,
      NULL,
      layerAdd_propfloat2},
-    /*50 CD_PROP_BM_LOG */
-     {sizeof(void*), "BMLog", 1, NULL, NULL, NULL, NULL, NULL, NULL} 
 };
 
 static const char *LAYERTYPENAMES[CD_NUMTYPES] = {
