@@ -23,6 +23,7 @@
 struct Heap;
 
 #include "BLI_compiler_attrs.h"
+#include "BLI_compiler_compat.h"
 
 void BM_mesh_calc_tessellation(BMesh *bm, BMLoop *(*looptris)[3], int *r_looptris_tot);
 void BM_mesh_calc_tessellation_beauty(BMesh *bm, BMLoop *(*looptris)[3], int *r_looptris_tot);
@@ -105,7 +106,26 @@ void BM_face_triangulate(BMesh *bm,
 void BM_face_splits_check_legal(BMesh *bm, BMFace *f, BMLoop *(*loops)[2], int len) ATTR_NONNULL();
 void BM_face_splits_check_optimal(BMFace *f, BMLoop *(*loops)[2], int len) ATTR_NONNULL();
 
-void BM_face_as_array_vert_tri(BMFace *f, BMVert *r_verts[3]) ATTR_NONNULL();
+/**
+* Small utility functions for fast access
+*
+* faster alternative to:
+* BM_iter_as_array(bm, BM_VERTS_OF_FACE, f, (void **)v, 3);
+*/
+BLI_INLINE void BM_face_as_array_vert_tri(BMFace *f, BMVert *r_verts[3])
+{
+  BMLoop *l = BM_FACE_FIRST_LOOP(f);
+
+  BLI_assert(f->len == 3);
+
+  r_verts[0] = l->v;
+  l = l->next;
+  r_verts[1] = l->v;
+  l = l->next;
+  r_verts[2] = l->v;
+}
+
+//void BM_face_as_array_vert_tri(BMFace *f, BMVert *r_verts[3]) ATTR_NONNULL();
 void BM_face_as_array_vert_quad(BMFace *f, BMVert *r_verts[4]) ATTR_NONNULL();
 
 void BM_face_as_array_loop_tri(BMFace *f, BMLoop *r_loops[3]) ATTR_NONNULL();

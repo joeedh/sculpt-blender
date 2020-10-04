@@ -803,7 +803,7 @@ static bool edge_queue_tri_in_sphere(const EdgeQueue *q, BMFace *f)
   /* Get closest point in triangle to sphere center */
   BM_face_as_array_vert_tri(f, v_tri);
 
-  closest_on_tri_to_point_v3(c, q->center, v_tri[0]->co, v_tri[1]->co, v_tri[2]->co);
+  closest_on_tri_to_point_v3_inline(c, q->center, v_tri[0]->co, v_tri[1]->co, v_tri[2]->co);
 
   /* Check if triangle intersects the sphere */
   return len_squared_v3v3(q->center, c) <= q->radius_squared;
@@ -822,7 +822,7 @@ static bool edge_queue_tri_in_circle(const EdgeQueue *q, BMFace *f)
   project_plane_normalized_v3_v3v3(tri_proj[1], v_tri[1]->co, q->view_normal);
   project_plane_normalized_v3_v3v3(tri_proj[2], v_tri[2]->co, q->view_normal);
 
-  closest_on_tri_to_point_v3(c, q->center_proj, tri_proj[0], tri_proj[1], tri_proj[2]);
+  closest_on_tri_to_point_v3_inline(c, q->center_proj, tri_proj[0], tri_proj[1], tri_proj[2]);
 
   /* Check if triangle intersects the sphere */
   return len_squared_v3v3(q->center_proj, c) <= q->radius_squared;
@@ -1894,7 +1894,7 @@ void BKE_pbvh_build_bmesh(PBVH *pbvh,
   pbvh->bm_log = log;
 
   /* TODO: choose leaf limit better */
-  pbvh->leaf_limit = 100;
+  pbvh->leaf_limit = 10000;
 
   if (smooth_shading) {
     pbvh->flags |= PBVH_DYNTOPO_SMOOTH_SHADING;
@@ -1963,6 +1963,8 @@ bool BKE_pbvh_bmesh_update_topology(PBVH *pbvh,
                                     const bool use_frontface,
                                     const bool use_projected)
 {
+  //return false;
+
   /* 2 is enough for edge faces - manifold edge */
   BLI_buffer_declare_static(BMLoop *, edge_loops, BLI_BUFFER_NOP, 2);
   BLI_buffer_declare_static(BMFace *, deleted_faces, BLI_BUFFER_NOP, 32);
