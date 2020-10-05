@@ -2611,8 +2611,7 @@ static void ed_panel_draw(const bContext *C,
                           int w,
                           int em,
                           char *unique_panel_str,
-                          const char *search_filter,
-                          bool search_only)
+                          const char *search_filter)
 {
   const uiStyle *style = UI_style_get_dpi();
 
@@ -2625,7 +2624,6 @@ static void ed_panel_draw(const bContext *C,
     strncat(block_name, unique_panel_str, INSTANCED_PANEL_UNIQUE_STR_LEN);
   }
   uiBlock *block = UI_block_begin(C, region, block_name, UI_EMBOSS);
-  UI_block_set_search_only(block, search_only);
 
   bool open;
   panel = UI_panel_begin(region, lb, block, pt, panel, &open);
@@ -2636,6 +2634,7 @@ static void ed_panel_draw(const bContext *C,
   int xco, yco, h = 0;
   int headerend = w - UI_UNIT_X;
 
+  UI_panel_header_buttons_begin(panel);
   if (pt->draw_header_preset && !(pt->flag & PNL_NO_HEADER)) {
     /* for preset menu */
     panel->layout = UI_block_layout(block,
@@ -2647,7 +2646,6 @@ static void ed_panel_draw(const bContext *C,
                                     1,
                                     0,
                                     style);
-    uiLayoutRootSetSearchOnly(panel->layout, search_only);
 
     pt->draw_header_preset(C, panel);
 
@@ -2679,7 +2677,6 @@ static void ed_panel_draw(const bContext *C,
       panel->layout = UI_block_layout(
           block, UI_LAYOUT_HORIZONTAL, UI_LAYOUT_HEADER, labelx, labely, UI_UNIT_Y, 1, 0, style);
     }
-    uiLayoutRootSetSearchOnly(panel->layout, search_only);
 
     pt->draw_header(C, panel);
 
@@ -2691,6 +2688,7 @@ static void ed_panel_draw(const bContext *C,
   else {
     panel->labelofs = 0;
   }
+  UI_panel_header_buttons_end(panel);
 
   if (open || search_filter_active) {
     short panelContext;
@@ -2716,7 +2714,6 @@ static void ed_panel_draw(const bContext *C,
                                     em,
                                     0,
                                     style);
-    uiLayoutRootSetSearchOnly(panel->layout, search_only || !open);
 
     pt->draw(C, panel);
 
@@ -2746,13 +2743,12 @@ static void ed_panel_draw(const bContext *C,
                       w,
                       em,
                       unique_panel_str,
-                      search_filter,
-                      !open);
+                      search_filter);
       }
     }
   }
 
-  UI_panel_end(region, block, w, h, open);
+  UI_panel_end(panel, w, h);
 }
 
 /**
@@ -2922,8 +2918,7 @@ void ED_region_panels_layout_ex(const bContext *C,
                   (pt->flag & PNL_DRAW_BOX) ? w_box_panel : w,
                   em,
                   NULL,
-                  search_filter,
-                  false);
+                  search_filter);
   }
 
   /* Draw "polyinstantaited" panels that don't have a 1 to 1 correspondence with their types. */
@@ -2957,8 +2952,7 @@ void ED_region_panels_layout_ex(const bContext *C,
                     (panel->type->flag & PNL_DRAW_BOX) ? w_box_panel : w,
                     em,
                     unique_panel_str,
-                    search_filter,
-                    false);
+                    search_filter);
     }
   }
 

@@ -41,6 +41,7 @@
 #include "DNA_rigidbody_types.h"
 #include "DNA_screen_types.h"
 #include "DNA_shader_fx_types.h"
+#include "DNA_workspace_types.h"
 
 #include "BKE_collection.h"
 #include "BKE_colortools.h"
@@ -233,7 +234,7 @@ void do_versions_after_linking_290(Main *bmain, ReportList *UNUSED(reports))
    *
    * \note Be sure to check when bumping the version:
    * - #blo_do_versions_290 in this file.
-   * - "versioning_userdef.c", #BLO_version_defaults_userpref_blend
+   * - "versioning_userdef.c", #blo_do_versions_userdef
    * - "versioning_userdef.c", #do_versions_theme
    *
    * \note Keep this message at the bottom of the function.
@@ -762,16 +763,48 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
     }
   }
 
+  if (!MAIN_VERSION_ATLEAST(bmain, 291, 7)) {
+    LISTBASE_FOREACH (Scene *, scene, &bmain->scenes) {
+      scene->r.simplify_volumes = 1.0f;
+    }
+  }
+
   /**
    * Versioning code until next subversion bump goes here.
    *
    * \note Be sure to check when bumping the version:
-   * - "versioning_userdef.c", #BLO_version_defaults_userpref_blend
+   * - "versioning_userdef.c", #blo_do_versions_userdef
    * - "versioning_userdef.c", #do_versions_theme
    *
    * \note Keep this message at the bottom of the function.
    */
   {
     /* Keep this block, even when empty. */
+    if (!DNA_struct_elem_find(fd->filesdna, "WorkSpaceDataRelation", "int", "parentid")) {
+      LISTBASE_FOREACH (WorkSpace *, workspace, &bmain->workspaces) {
+        LISTBASE_FOREACH_MUTABLE (
+            WorkSpaceDataRelation *, relation, &workspace->hook_layout_relations) {
+          relation->parent = blo_read_get_new_globaldata_address(fd, relation->parent);
+          BLI_assert(relation->parentid == 0);
+          if (relation->parent != NULL) {
+            LISTBASE_FOREACH (wmWindowManager *, wm, &bmain->wm) {
+              wmWindow *win = BLI_findptr(
+                  &wm->windows, relation->parent, offsetof(wmWindow, workspace_hook));
+              if (win != NULL) {
+                relation->parentid = win->winid;
+                break;
+              }
+            }
+            if (relation->parentid == 0) {
+              BLI_assert(
+                  !"Found a valid parent for workspace data relation, but no valid parent id.");
+            }
+          }
+          if (relation->parentid == 0) {
+            BLI_freelinkN(&workspace->hook_layout_relations, relation);
+          }
+        }
+      }
+    }
   }
 }
