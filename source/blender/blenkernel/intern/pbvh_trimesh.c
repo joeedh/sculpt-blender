@@ -1944,6 +1944,9 @@ bool BKE_pbvh_trimesh_update_topology(PBVH *bvh,
   pbvh_trimesh_verify(bvh);
 #endif
 
+  TM_mesh_elem_table_ensure(bvh->tm, TM_VERTEX|TM_TRI);
+  TM_mesh_elem_index_ensure(bvh->tm, TM_VERTEX|TM_TRI);
+
   return modified;
 }
 

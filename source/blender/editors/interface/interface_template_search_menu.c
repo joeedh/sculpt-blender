@@ -33,6 +33,7 @@
 #include "DNA_shader_fx_types.h"
 #include "DNA_texture_types.h"
 
+#include "BLI_ghash.h"
 #include "BLI_alloca.h"
 #include "BLI_dynstr.h"
 #include "BLI_ghash.h"

@@ -33,6 +33,7 @@
 #include "trimesh.h"
 #include "BLI_threadsafe_mempool.h"
 #include "BLI_array.h"
+#include "BLI_threads.h"
 
 #include "DNA_customdata_types.h"
 #include "DNA_mesh_types.h"
@@ -87,6 +88,8 @@ typedef struct TriMeshLog {
 
   int cd_vert_mask_index;
 
+  SpinLock lock;
+
   int curgroup;
 } TriMeshLog;
 
@@ -108,6 +111,8 @@ static void trimesh_add_group(TriMeshLog *log, bool set_curgroup) {
 TriMeshLog *TM_log_new(TM_TriMesh *tm, int cd_vert_mask_index) {
   TriMeshLog *log = MEM_callocN(sizeof(*log), "TriMeshLog");
 
+  BLI_spin_init(&log->lock);
+
   log->elemhash_ptr = BLI_ghash_ptr_new("TriMeshLog ghash ptr");
   log->elemhash_id = BLI_ghash_int_new("TriMeshLog ghash int");
   log->elemhash_entry = BLI_ghash_int_new("TriMeshLog ghash entry");
@@ -122,6 +127,8 @@ TriMeshLog *TM_log_new(TM_TriMesh *tm, int cd_vert_mask_index) {
 }
 
 void TM_log_free(TriMeshLog *log) {
+  BLI_spin_end(&log->lock);
+
   BLI_ghash_free(log->elemhash_ptr, NULL, NULL);
   BLI_ghash_free(log->elemhash_id, NULL, NULL);
   BLI_ghash_free(log->elemhash_entry, NULL, NULL);
@@ -193,13 +200,17 @@ static void tlog_ptr(TriMeshLog *log, void *f) {
 static int tlog_start(TriMeshLog *log, int code) {
   int i = log->totentries;
 
+  BLI_spin_lock(&log->lock);
   tlog_i(log, code);
+  BLI_spin_unlock(&log->lock);
 
   return i;
 }
 
 static void tlog_end(TriMeshLog *log, int entry_i) {
+  BLI_spin_lock(&log->lock);
   tlog_i(log, entry_i);
+  BLI_spin_unlock(&log->lock);
 }
 
 enum {
@@ -236,9 +247,11 @@ static float vert_mask_get(TMVert *v, const int cd_vert_mask_offset)
 }
 
 static void elemhash_add(TriMeshLog *log, void *elem, int id, int entryidx) {
+  BLI_spin_lock(&log->lock);
   BLI_ghash_insert(log->elemhash_id, (void*)id, elem);
   BLI_ghash_insert(log->elemhash_ptr, elem, (void*)id);
   BLI_ghash_insert(log->elemhash_entry, (void*)id, (void*)entryidx);
+  BLI_spin_unlock(&log->lock);
 }
 
 static void *elemhash_lookup_id(TriMeshLog *log, int id) {
@@ -248,9 +261,12 @@ static void *elemhash_lookup_id(TriMeshLog *log, int id) {
 static int elemhash_get_id(TriMeshLog *log, void *elem) {
   void **ret = NULL;
 
+  //XXX lock contention issue?
+  BLI_spin_lock(&log->lock);
   ret = BLI_ghash_lookup_p(log->elemhash_ptr, elem);
+  BLI_spin_unlock(&log->lock);
 
-  if (!ret || !*ret) {
+  if (!ret) {
     return -1;
   }
 
@@ -260,36 +276,39 @@ static int elemhash_get_id(TriMeshLog *log, void *elem) {
 static int elemhash_ensure_id(TriMeshLog *log, void *elem) {
   void **ret = NULL;
 
+  BLI_spin_lock(&log->lock);
   ret = BLI_ghash_lookup_p(log->elemhash_ptr, elem);
 
-  if (!ret || !*ret) {
+  if (!ret) {
     int id = log->idgen++;
+    BLI_spin_unlock(&log->lock);
+
     elemhash_add(log, elem, id, -1);
 
     return id;
+  } else {
+    int ret2 = (int)(*ret);
+    BLI_spin_unlock(&log->lock);
+    return ret2;
   }
-
-  return (int)(*ret);
 }
 
 static int elemhash_get_entry(TriMeshLog *log, int id) {
   void **ret = NULL;
 
+  BLI_spin_lock(&log->lock);
   ret = BLI_ghash_lookup_p(log->elemhash_ptr, (void*)id);
+  int ret2 = ret ? (int)(*ret) : -1;
+  BLI_spin_unlock(&log->lock);
 
-  if (!ret) {
-    return -1;
-  }
-
-  return (int)(*ret);
+  return ret2;
 }
 
 int TM_log_vert_add(TriMeshLog *log, TMVert *v, const int cd_mask_offset, bool skipcd) {
-  int id = log->idgen++;
-
-  elemhash_add(log, v, id, log->totentries);
-
   int start = tlog_start(log, LOG_VERT_ADD);
+
+  int id = log->idgen++;
+  elemhash_add(log, v, id, log->totentries);
 
   tlog_i(log, id);
   tlog_v3(log, v->co);
@@ -309,7 +328,7 @@ int elemhash_has_id(TriMeshLog *log, void *elem) {
 int elemhash_get_vert_id(TriMeshLog *log, TMVert *v, int cd_vert_mask_offset) {
   int ret = elemhash_get_id(log, v);
 
-  if (!v) {
+  if (ret < 0) {
     return TM_log_vert_add(log, v, cd_vert_mask_offset, false);
   }
 
@@ -317,14 +336,13 @@ int elemhash_get_vert_id(TriMeshLog *log, TMVert *v, int cd_vert_mask_offset) {
 }
 
 int BLI_trimesh_log_edge_add(TriMeshLog *log, TMEdge *e, const int cd_mask_offset, int skipcd) {
-  int id = log->idgen++;
-
-  elemhash_add(log, e, id, log->totentries);
-
   int v1id = elemhash_get_vert_id(log, e->v1, cd_mask_offset);
   int v2id = elemhash_get_vert_id(log, e->v2, cd_mask_offset);
 
   int start = tlog_start(log, LOG_EDGE_ADD);
+  int id = log->idgen++;
+  elemhash_add(log, e, id, log->totentries);
+
   tlog_i(log, id);
   tlog_i(log, v1id);
   tlog_i(log, v2id);
@@ -444,11 +462,8 @@ static int trimesh_read_loop(TriMeshLog *tlog, TMLoopData *l, int entry_i) {
 }
 
 int BLI_trimesh_log_tri(TriMeshLog *log, TMFace *tri, bool skipcd) {
-  int id = log->idgen++;
 
   int cd_vert_mask_offset = log->cd_vert_mask_index;
-
-  elemhash_add(log, tri, id, log->totentries);
 
   int e1 = elemhash_get_edge_id(log, tri->e1, cd_vert_mask_offset);
   int e2 = elemhash_get_edge_id(log, tri->e2, cd_vert_mask_offset);
@@ -457,7 +472,10 @@ int BLI_trimesh_log_tri(TriMeshLog *log, TMFace *tri, bool skipcd) {
   int v1 = elemhash_get_vert_id(log, tri->v1, cd_vert_mask_offset);
   int v2 = elemhash_get_vert_id(log, tri->v1, cd_vert_mask_offset);
   int v3 = elemhash_get_vert_id(log, tri->v1, cd_vert_mask_offset);
+
   int start = tlog_start(log, LOG_TRI_ADD);
+  int id = log->idgen++;
+  elemhash_add(log, tri, id, log->totentries);
 
   tlog_i(log, id);
   tlog_i(log, skipcd);
@@ -475,6 +493,8 @@ int BLI_trimesh_log_tri(TriMeshLog *log, TMFace *tri, bool skipcd) {
     trimesh_log_loop(log, tri, tri->l2);
     trimesh_log_loop(log, tri, tri->l3);
   }
+
+  tlog_end(log, start);
 
   return id;
 }
@@ -612,6 +632,7 @@ int BLI_trimesh_log_vert_state(TriMeshLog *log, TMVert *v) {
   tlog_v3(log, v->no);
   tlog_i3(log, ivec);
   tlog_f(log, TM_ELEM_CD_GET_FLOAT(v, log->cd_vert_mask_index));
+  tlog_end(log, start);
 }
 
 void BLI_log_add_setpoint(TriMeshLog *log, int setgroup) {
@@ -851,7 +872,15 @@ float *TM_log_original_vert_co(TriMeshLog *tlog, TMVert *v)
 
 void TM_log_original_vert_data(TriMeshLog *tlog, TMVert *v, const float **r_co, const short **r_no)
 {
+  normal_float_to_short_v3(v->ono, v->no);
+  copy_v3_v3(v->oco, v->co);
+
+  *r_co = v->oco;
+  *r_no = v->ono;
+
   int id = elemhash_get_vert_id(tlog, v, tlog->cd_vert_mask_index);
+  return;
+
   int entry = elemhash_get_entry(tlog, id);
 
   entry += 2;

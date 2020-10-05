@@ -6,6 +6,7 @@
 //XXX get from user settings as appropriate
 #define TRIMESH_THREADS 4
 
+#include "BLI_threads.h"
 #include "BLI_assert.h"
 #include "BLI_threads.h"
 #include "BLI_threadsafe_mempool.h"
@@ -107,6 +108,8 @@ typedef struct TMVert {
   OPTELEM_HEAD(TMVert)
   float co[3];
   float no[3];
+  float oco[3];
+  short ono[3], pad;
 
   optmesh_simplelist edges;
 } TMVert;

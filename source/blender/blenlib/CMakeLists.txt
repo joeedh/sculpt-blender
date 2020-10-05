@@ -27,6 +27,7 @@ set(INC
   ../../../intern/guardedalloc
   ../../../intern/numaapi/include
   ../../../extern/wcwidth
+  ../../../extern/parallel-hashmap
 )
 
 set(INC_SYS

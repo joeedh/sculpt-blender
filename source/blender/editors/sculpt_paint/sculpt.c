@@ -1348,7 +1348,9 @@ void SCULPT_orig_vert_data_init(SculptOrigVertData *data, Object *ob, PBVHNode *
 void SCULPT_orig_vert_data_update(SculptOrigVertData *orig_data, PBVHVertexIter *iter)
 {
   if (orig_data->unode->type == SCULPT_UNDO_COORDS) {
-    if (orig_data->bm_log) {
+    if (orig_data->tm_log) {
+      TM_log_original_vert_data(orig_data->tm_log, iter->tm_vert,  &orig_data->co, &orig_data->no);
+    } else if (orig_data->bm_log) {
       BM_log_original_vert_data(orig_data->bm_log, iter->bm_vert, &orig_data->co, &orig_data->no);
     }
     else {
@@ -1574,7 +1576,7 @@ static void paint_mesh_restore_co(Sculpt *sd, Object *ob)
   };
 
   TaskParallelSettings settings;
-  BKE_pbvh_parallel_range_settings(&settings, true && !ss->bm, totnode);
+  BKE_pbvh_parallel_range_settings(&settings, true && !ss->tm, totnode);
   BLI_task_parallel_range(0, totnode, &data, paint_mesh_restore_co_task_cb, &settings);
 
   BKE_pbvh_node_color_buffer_free(ss->pbvh);
@@ -1707,6 +1709,9 @@ bool SCULPT_brush_test_sphere(SculptBrushTest *test, const float co[3])
 
 bool SCULPT_brush_test_sphere_sq(SculptBrushTest *test, const float co[3])
 {
+  if (!co) {
+    return false;
+  }
   float distsq = len_squared_v3v3(co, test->location);
 
   if (distsq <= test->radius_squared) {
@@ -5676,7 +5681,7 @@ static void sculpt_topology_update(Sculpt *sd,
   Brush *brush,
   UnifiedPaintSettings *UNUSED(ups))
 {
-  return;
+  //return;
   SculptSession *ss = ob->sculpt;
 
   int n, totnode;

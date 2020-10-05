@@ -27,6 +27,7 @@
 #include "BLI_kdtree.h"
 #include "BLI_listbase.h"
 #include "BLI_math.h"
+#include "BLI_ghash.h"
 
 #include "BKE_context.h"
 #include "BKE_editmesh.h"
