@@ -174,9 +174,10 @@ class CYCLES_RENDER_PT_sampling(CyclesButtonsPanel, Panel):
         layout.use_property_split = True
         layout.use_property_decorate = False
 
-        layout.prop(cscene, "progressive")
-        
-        if cscene.progressive == 'PATH' or use_branched_path(context) is False:
+        if not use_optix(context):
+            layout.prop(cscene, "progressive")
+
+        if not use_branched_path(context):
             col = layout.column(align=True)
             col.prop(cscene, "samples", text="Render")
             col.prop(cscene, "preview_samples", text="Viewport")
@@ -296,7 +297,7 @@ class CYCLES_RENDER_PT_sampling_advanced(CyclesButtonsPanel, Panel):
 
         scene = context.scene
         cscene = scene.cycles
-        
+
         row = layout.row(align=True)
         row.prop(cscene, "seed")
         row.prop(cscene, "use_animated_seed", text="", icon='TIME')

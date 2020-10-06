@@ -313,11 +313,6 @@ class CyclesRenderSettings(bpy.types.PropertyGroup):
         min=0, max=(1 << 24),
         default=32,
     )
-    preview_pause: BoolProperty(
-        name="Pause Preview",
-        description="Pause all viewport preview renders",
-        default=False,
-    )
     aa_samples: IntProperty(
         name="AA Samples",
         description="Number of antialiasing samples to render for each pixel",
