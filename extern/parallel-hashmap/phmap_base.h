@@ -56,12 +56,12 @@
 
 #ifdef _MSC_VER
     #pragma warning(push)
-    #pragma warning(disable : 4514) // unreferenced inline function has been removed
+    #pragma warning(disable : 4514) // unreferenced FORCEINLINE function has been removed
     #pragma warning(disable : 4582) // constructor is not implicitly called
     #pragma warning(disable : 4625) // copy constructor was implicitly defined as deleted
     #pragma warning(disable : 4626) // assignment operator was implicitly defined as deleted
     #pragma warning(disable : 4710) // function not inlined
-    #pragma warning(disable : 4711) //  selected for automatic inline expansion
+    #pragma warning(disable : 4711) //  selected for automatic FORCEINLINE expansion
     #pragma warning(disable : 4820) // '6' bytes padding added after data member
 #endif  // _MSC_VER
 
@@ -74,7 +74,7 @@ template<class T1, class T2> using Pair = typename std::pair<T1, T2>;
 template <class T>
 struct EqualTo
 {
-    inline bool operator()(const T& a, const T& b) const
+    FORCEINLINE bool operator()(const T& a, const T& b) const
     {
         return std::equal_to<T>()(a, b);
     }
@@ -83,7 +83,7 @@ struct EqualTo
 template <class T>
 struct Less
 {
-    inline bool operator()(const T& a, const T& b) const
+    FORCEINLINE bool operator()(const T& a, const T& b) const
     {
         return std::less<T>()(a, b);
     }
@@ -618,7 +618,7 @@ using identity_t = typename identity<T>::type;
 // See above comment at top of file for details.
 #define PHMAP_INTERNAL_INLINE_CONSTEXPR(type, name, init) \
   PHMAP_INTERNAL_EXTERN_DECL(type, name)                  \
-  inline constexpr ::phmap::internal::identity_t<type> name = init
+  FORCEINLINE constexpr ::phmap::internal::identity_t<type> name = init
 
 #else
 
@@ -664,71 +664,71 @@ template <typename T>
 #endif
 }  // namespace
 
-static inline void ThrowStdLogicError(const std::string& what_arg) {
+static FORCEINLINE void ThrowStdLogicError(const std::string& what_arg) {
   Throw(std::logic_error(what_arg));
 }
-static inline void ThrowStdLogicError(const char* what_arg) {
+static FORCEINLINE void ThrowStdLogicError(const char* what_arg) {
   Throw(std::logic_error(what_arg));
 }
-static inline void ThrowStdInvalidArgument(const std::string& what_arg) {
+static FORCEINLINE void ThrowStdInvalidArgument(const std::string& what_arg) {
   Throw(std::invalid_argument(what_arg));
 }
-static inline void ThrowStdInvalidArgument(const char* what_arg) {
+static FORCEINLINE void ThrowStdInvalidArgument(const char* what_arg) {
   Throw(std::invalid_argument(what_arg));
 }
 
-static inline void ThrowStdDomainError(const std::string& what_arg) {
+static FORCEINLINE void ThrowStdDomainError(const std::string& what_arg) {
   Throw(std::domain_error(what_arg));
 }
-static inline void ThrowStdDomainError(const char* what_arg) {
+static FORCEINLINE void ThrowStdDomainError(const char* what_arg) {
   Throw(std::domain_error(what_arg));
 }
 
-static inline void ThrowStdLengthError(const std::string& what_arg) {
+static FORCEINLINE void ThrowStdLengthError(const std::string& what_arg) {
   Throw(std::length_error(what_arg));
 }
-static inline void ThrowStdLengthError(const char* what_arg) {
+static FORCEINLINE void ThrowStdLengthError(const char* what_arg) {
   Throw(std::length_error(what_arg));
 }
 
-static inline void ThrowStdOutOfRange(const std::string& what_arg) {
+static FORCEINLINE void ThrowStdOutOfRange(const std::string& what_arg) {
   Throw(std::out_of_range(what_arg));
 }
-static inline void ThrowStdOutOfRange(const char* what_arg) {
+static FORCEINLINE void ThrowStdOutOfRange(const char* what_arg) {
   Throw(std::out_of_range(what_arg));
 }
 
-static inline void ThrowStdRuntimeError(const std::string& what_arg) {
+static FORCEINLINE void ThrowStdRuntimeError(const std::string& what_arg) {
   Throw(std::runtime_error(what_arg));
 }
-static inline void ThrowStdRuntimeError(const char* what_arg) {
+static FORCEINLINE void ThrowStdRuntimeError(const char* what_arg) {
   Throw(std::runtime_error(what_arg));
 }
 
-static inline void ThrowStdRangeError(const std::string& what_arg) {
+static FORCEINLINE void ThrowStdRangeError(const std::string& what_arg) {
   Throw(std::range_error(what_arg));
 }
-static inline void ThrowStdRangeError(const char* what_arg) {
+static FORCEINLINE void ThrowStdRangeError(const char* what_arg) {
   Throw(std::range_error(what_arg));
 }
 
-static inline void ThrowStdOverflowError(const std::string& what_arg) {
+static FORCEINLINE void ThrowStdOverflowError(const std::string& what_arg) {
   Throw(std::overflow_error(what_arg));
 }
-static inline void ThrowStdOverflowError(const char* what_arg) {
+static FORCEINLINE void ThrowStdOverflowError(const char* what_arg) {
   Throw(std::overflow_error(what_arg));
 }
 
-static inline void ThrowStdUnderflowError(const std::string& what_arg) {
+static FORCEINLINE void ThrowStdUnderflowError(const std::string& what_arg) {
   Throw(std::underflow_error(what_arg));
 }
-static inline void ThrowStdUnderflowError(const char* what_arg) {
+static FORCEINLINE void ThrowStdUnderflowError(const char* what_arg) {
   Throw(std::underflow_error(what_arg));
 }
 
-static inline void ThrowStdBadFunctionCall() { Throw(std::bad_function_call()); }
+static FORCEINLINE void ThrowStdBadFunctionCall() { Throw(std::bad_function_call()); }
 
-static inline void ThrowStdBadAlloc() { Throw(std::bad_alloc()); }
+static FORCEINLINE void ThrowStdBadAlloc() { Throw(std::bad_alloc()); }
 
 }  // namespace base_internal
 }  // namespace phmap
@@ -3230,7 +3230,7 @@ public:
     // Span::operator[]
     //
     // Returns a reference to the i'th element of this span.
-    inline constexpr reference operator[](size_type i) const noexcept {
+    FORCEINLINE constexpr reference operator[](size_type i) const noexcept {
         // MSVC 2015 accepts this as constexpr, but not ptr_[i]
         return *(data() + i);
     }
@@ -3249,60 +3249,60 @@ public:
     // Span::front()
     //
     // Returns a reference to the first element of this span.
-    inline constexpr reference front() const noexcept {
+    FORCEINLINE constexpr reference front() const noexcept {
         return PHMAP_ASSERT(size() > 0), *data();
     }
 
     // Span::back()
     //
     // Returns a reference to the last element of this span.
-    inline constexpr reference back() const noexcept {
+    FORCEINLINE constexpr reference back() const noexcept {
         return PHMAP_ASSERT(size() > 0), *(data() + size() - 1);
     }
 
     // Span::begin()
     //
     // Returns an iterator to the first element of this span.
-    inline constexpr iterator begin() const noexcept { return data(); }
+    FORCEINLINE constexpr iterator begin() const noexcept { return data(); }
 
     // Span::cbegin()
     //
     // Returns a const iterator to the first element of this span.
-    inline constexpr const_iterator cbegin() const noexcept { return begin(); }
+    FORCEINLINE constexpr const_iterator cbegin() const noexcept { return begin(); }
 
     // Span::end()
     //
     // Returns an iterator to the last element of this span.
-    inline constexpr iterator end() const noexcept { return data() + size(); }
+    FORCEINLINE constexpr iterator end() const noexcept { return data() + size(); }
 
     // Span::cend()
     //
     // Returns a const iterator to the last element of this span.
-    inline constexpr const_iterator cend() const noexcept { return end(); }
+    FORCEINLINE constexpr const_iterator cend() const noexcept { return end(); }
 
     // Span::rbegin()
     //
     // Returns a reverse iterator starting at the last element of this span.
-    inline constexpr reverse_iterator rbegin() const noexcept {
+    FORCEINLINE constexpr reverse_iterator rbegin() const noexcept {
         return reverse_iterator(end());
     }
 
     // Span::crbegin()
     //
     // Returns a reverse const iterator starting at the last element of this span.
-    inline constexpr const_reverse_iterator crbegin() const noexcept { return rbegin(); }
+    FORCEINLINE constexpr const_reverse_iterator crbegin() const noexcept { return rbegin(); }
 
     // Span::rend()
     //
     // Returns a reverse iterator starting at the first element of this span.
-    inline constexpr reverse_iterator rend() const noexcept {
+    FORCEINLINE constexpr reverse_iterator rend() const noexcept {
         return reverse_iterator(begin());
     }
 
     // Span::crend()
     //
     // Returns a reverse iterator starting at the first element of this span.
-    inline constexpr const_reverse_iterator crend() const noexcept { return rend(); }
+    FORCEINLINE constexpr const_reverse_iterator crend() const noexcept { return rend(); }
 
     // Span mutations
 
@@ -4772,14 +4772,14 @@ namespace phmap {
 // -----------------------------------------------------------------------------
 class NullMutex {
 public:
-    inline NullMutex() {}
-    inline ~NullMutex() {}
-    inline void lock() {}
-    inline void unlock() {}
-    inline bool try_lock() { return true; }
-    inline void lock_shared() {}
-    inline void unlock_shared() {}
-    inline bool try_lock_shared() { return true; }
+    FORCEINLINE NullMutex() {}
+    FORCEINLINE ~NullMutex() {}
+    FORCEINLINE void lock() {}
+    FORCEINLINE void unlock() {}
+    FORCEINLINE bool try_lock() { return true; }
+    FORCEINLINE void lock_shared() {}
+    FORCEINLINE void unlock_shared() {}
+    FORCEINLINE bool try_lock_shared() { return true; }
 };
 
 // ------------------------ lockable object used internally -------------------------
@@ -4794,14 +4794,14 @@ public:
         DoNothing() noexcept {}
         explicit DoNothing(mutex_type& ) noexcept {}
         explicit DoNothing(mutex_type& , mutex_type&) noexcept {}
-        inline DoNothing(mutex_type&, phmap::adopt_lock_t) noexcept {}
-        inline DoNothing(mutex_type&, phmap::defer_lock_t) noexcept {}
-        inline DoNothing(mutex_type&, phmap::try_to_lock_t) {}
+        FORCEINLINE DoNothing(mutex_type&, phmap::adopt_lock_t) noexcept {}
+        FORCEINLINE DoNothing(mutex_type&, phmap::defer_lock_t) noexcept {}
+        FORCEINLINE DoNothing(mutex_type&, phmap::try_to_lock_t) {}
         template<class T> explicit DoNothing(T&&) {}
-        inline DoNothing& operator=(const DoNothing&) { return *this; }
-        inline DoNothing& operator=(DoNothing&&) { return *this; }
-        inline void swap(DoNothing &) {}
-        inline bool owns_lock() const noexcept { return true; }
+        FORCEINLINE DoNothing& operator=(const DoNothing&) { return *this; }
+        FORCEINLINE DoNothing& operator=(DoNothing&&) { return *this; }
+        FORCEINLINE void swap(DoNothing &) {}
+        FORCEINLINE bool owns_lock() const noexcept { return true; }
     };
 
     // ----------------------------------------------------
@@ -4836,7 +4836,7 @@ public:
             o.m_      = nullptr;
         }
 
-        inline WriteLock& operator=(WriteLock&& other) {
+        FORCEINLINE WriteLock& operator=(WriteLock&& other) {
             WriteLock temp(std::move(other));
             swap(temp);
             return *this;
@@ -4847,30 +4847,30 @@ public:
                 m_->unlock(); 
         }
 
-        inline void lock() {
+        FORCEINLINE void lock() {
             if (!locked_) { 
                 m_->lock(); 
                 locked_ = true; 
             }
         }
 
-        inline void unlock() {
+        FORCEINLINE void unlock() {
             if (locked_) {
                 m_->unlock(); 
                 locked_ = false;
             }
         } 
 
-        inline bool try_lock() {
+        FORCEINLINE bool try_lock() {
             if (locked_)
                 return true;
             locked_ = m_->try_lock(); 
             return locked_;
         }
         
-        inline bool owns_lock() const noexcept { return locked_; }
+        FORCEINLINE bool owns_lock() const noexcept { return locked_; }
 
-        inline void swap(WriteLock &o) noexcept {
+        FORCEINLINE void swap(WriteLock &o) noexcept {
             std::swap(m_, o.m_);
             std::swap(locked_, o.locked_);
         }
@@ -4914,7 +4914,7 @@ public:
             o.m_      = nullptr;
         }
 
-        inline ReadLock& operator=(ReadLock&& other) {
+        FORCEINLINE ReadLock& operator=(ReadLock&& other) {
             ReadLock temp(std::move(other));
             swap(temp);
             return *this;
@@ -4984,7 +4984,7 @@ public:
         }
 
         WriteLocks(WriteLocks const&) = delete;
-        inline WriteLocks& operator=(WriteLocks const&) = delete;
+        FORCEINLINE WriteLocks& operator=(WriteLocks const&) = delete;
     private:
         mutex_type& _m1;
         mutex_type& _m2;
@@ -5015,7 +5015,7 @@ public:
         }
 
         ReadLocks(ReadLocks const&) = delete;
-        inline ReadLocks& operator=(ReadLocks const&) = delete;
+        FORCEINLINE ReadLocks& operator=(ReadLocks const&) = delete;
     private:
         mutex_type& _m1;
         mutex_type& _m2;

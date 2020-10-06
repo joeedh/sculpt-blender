@@ -136,6 +136,7 @@ set(SRC
   intern/task_pool.cc
   intern/task_range.cc
   intern/task_scheduler.cc
+  intern/hashmap_gen.h
   intern/threads.cc
   intern/time.c
   intern/timecode.c
@@ -298,6 +299,7 @@ set(SRC
   BLI_winstuff.h
   PIL_time.h
   PIL_time_utildefines.h
+  BLI_hashmap.h
 )
 
 set(LIB
@@ -375,6 +377,15 @@ set_source_files_properties(
   PROPERTIES HEADER_FILE_ONLY TRUE
 )
 
+#hashmap needs /Ob2 which is only used in Release, not RelWithDebInfo
+#if(MSVC)
+  set(_findtemp "")
+  string(REPLACE "/Ob1" "/Ob3" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
+  string(REPLACE "/Ob1" "/Ob3" CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO}")
+  set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}) /GS- ")
+  set(CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO}) /GS- ")
+#endif()
+
 blender_add_lib(bf_blenlib "${SRC}" "${INC}" "${INC_SYS}" "${LIB}")
 
 if(WITH_GTESTS)
@@ -428,6 +439,7 @@ if(WITH_GTESTS)
 
     tests/BLI_exception_safety_test_utils.hh
   )
+
   set(TEST_INC
     ../imbuf
   )

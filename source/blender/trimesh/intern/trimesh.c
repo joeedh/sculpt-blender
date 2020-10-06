@@ -33,6 +33,7 @@
 #include "trimesh.h"
 #include "BLI_threadsafe_mempool.h"
 #include "BLI_array.h"
+#include "BLI_hashmap.h"
 
 #include "DNA_customdata_types.h"
 #include "DNA_mesh_types.h"

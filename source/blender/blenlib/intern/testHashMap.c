@@ -12,12 +12,12 @@ int main() {
 
     BLI_hashmap_insert(HashP,HashP)(map, a, b);
 
-    printf("has test: %s\n", BLI_hashmap_has(HashP,HashP)(map, a) ? "success" : "failure");
+    printf("test: %s\n", BLI_hashmap_has(HashP,HashP)(map, a) ? "success" : "failure");
     fflush(stdout);
 
     BLI_hashmap_remove(HashP,HashP)(map, a);
 
-    printf("has test: %s\n", !BLI_hashmap_has(HashP,HashP)(map, a) ? "success" : "failure");
+    printf("test: %s\n", !BLI_hashmap_has(HashP,HashP)(map, a) ? "success" : "failure");
     fflush(stdout);
 
     for (int i=0; i<500; i++) {
@@ -34,11 +34,15 @@ int main() {
         tot++;
         //printf(" %Li:%Li", (long long)BLI_hashiter_key(iter), (long long)BLI_hashiter_value(iter));
         //fflush(stdout);
-    } BLI_HASH_END;
+    } BLI_HASH_ITER_END;
 
     bad = bad || tot != 500;
 
-    printf("%s\n", bad ? "failure" : "success");
+    if (bad) {
+      printf("tot: %d\n", tot);
+    }
+
+    printf("test: %s\n", bad ? "failure" : "success");
 
     return 0;
 }

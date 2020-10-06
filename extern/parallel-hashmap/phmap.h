@@ -1,6 +1,10 @@
 #if !defined(phmap_h_guard_)
 #define phmap_h_guard_
 
+#ifdef _MSC_VER
+#define FORCEINLINE __forceinline
+#endif
+
 // ---------------------------------------------------------------------------
 // Copyright (c) 2019, Gregory Popovitch - greg7mdp@gmail.com
 //
@@ -39,12 +43,12 @@
 
     #pragma warning(disable : 4127) // conditional expression is constant
     #pragma warning(disable : 4324) // structure was padded due to alignment specifier
-    #pragma warning(disable : 4514) // unreferenced inline function has been removed
+    #pragma warning(disable : 4514) // unreferenced FORCEINLINE function has been removed
     #pragma warning(disable : 4623) // default constructor was implicitly defined as deleted
     #pragma warning(disable : 4625) // copy constructor was implicitly defined as deleted
     #pragma warning(disable : 4626) // assignment operator was implicitly defined as deleted
     #pragma warning(disable : 4710) // function not inlined
-    #pragma warning(disable : 4711) // selected for automatic inline expansion
+    #pragma warning(disable : 4711) // selected for automatic FORCEINLINE expansion
     #pragma warning(disable : 4820) // '6' bytes padding added after data member
     #pragma warning(disable : 4868) // compiler may not enforce left-to-right evaluation order in braced initializer list
     #pragma warning(disable : 5027) // move assignment operator was implicitly defined as deleted
@@ -254,7 +258,7 @@ static_assert(kDeleted == -2,
 // A single block of empty control bytes for tables without any slots allocated.
 // This enables removing a branch in the hot path of find().
 // --------------------------------------------------------------------------
-inline ctrl_t* EmptyGroup() {
+FORCEINLINE ctrl_t* EmptyGroup() {
   alignas(16) static constexpr ctrl_t empty_group[] = {
       kSentinel, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty,
       kEmpty,    kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty};
@@ -262,7 +266,7 @@ inline ctrl_t* EmptyGroup() {
 }
 
 // --------------------------------------------------------------------------
-inline size_t HashSeed(const ctrl_t* ctrl) {
+FORCEINLINE size_t HashSeed(const ctrl_t* ctrl) {
   // The low bits of the pointer have little or no entropy because of
   // alignment. We shift the pointer to try to use higher entropy bits. A
   // good number seems to be 12 bits, because that aligns with page size.
@@ -271,7 +275,7 @@ inline size_t HashSeed(const ctrl_t* ctrl) {
 
 #ifdef PHMAP_NON_DETERMINISTIC
 
-inline size_t H1(size_t hash, const ctrl_t* ctrl) {
+FORCEINLINE size_t H1(size_t hash, const ctrl_t* ctrl) {
     // use ctrl_ pointer to add entropy to ensure
     // non-deterministic iteration order.
     return (hash >> 7) ^ HashSeed(ctrl);
@@ -279,7 +283,7 @@ inline size_t H1(size_t hash, const ctrl_t* ctrl) {
 
 #else
 
-inline size_t H1(size_t hash, const ctrl_t* ) {
+FORCEINLINE size_t H1(size_t hash, const ctrl_t* ) {
     return (hash >> 7);
 }
 
@@ -579,25 +583,25 @@ struct HashtablezInfo
 
 inline void RecordRehashSlow(HashtablezInfo*, size_t ) {}
 
-static inline void RecordInsertSlow(HashtablezInfo* , size_t, size_t ) {}
+static FORCEINLINE void RecordInsertSlow(HashtablezInfo* , size_t, size_t ) {}
 
-static inline void RecordEraseSlow(HashtablezInfo*) {}
+static FORCEINLINE void RecordEraseSlow(HashtablezInfo*) {}
 
-static inline HashtablezInfo* SampleSlow(int64_t*) { return nullptr; }
-static inline void UnsampleSlow(HashtablezInfo* ) {}
+static FORCEINLINE HashtablezInfo* SampleSlow(int64_t*) { return nullptr; }
+static FORCEINLINE void UnsampleSlow(HashtablezInfo* ) {}
 
 class HashtablezInfoHandle 
 {
 public:
-    inline void RecordStorageChanged(size_t , size_t ) {}
-    inline void RecordRehash(size_t ) {}
-    inline void RecordInsert(size_t , size_t ) {}
-    inline void RecordErase() {}
-    friend inline void swap(HashtablezInfoHandle& ,
+    FORCEINLINE void RecordStorageChanged(size_t , size_t ) {}
+    FORCEINLINE void RecordRehash(size_t ) {}
+    FORCEINLINE void RecordInsert(size_t , size_t ) {}
+    FORCEINLINE void RecordErase() {}
+    friend FORCEINLINE void swap(HashtablezInfoHandle& ,
                             HashtablezInfoHandle& ) noexcept {}
 };
 
-static inline HashtablezInfoHandle Sample() { return HashtablezInfoHandle(); }
+static FORCEINLINE HashtablezInfoHandle Sample() { return HashtablezInfoHandle(); }
 
 class HashtablezSampler 
 {
@@ -612,9 +616,9 @@ public:
     int64_t Iterate(const std::function<void(const HashtablezInfo& stack)>& ) { return 0; }
 };
 
-static inline void SetHashtablezEnabled(bool ) {}
-static inline void SetHashtablezSampleParameter(int32_t ) {}
-static inline void SetHashtablezMaxSamples(int32_t ) {}
+static FORCEINLINE void SetHashtablezEnabled(bool ) {}
+static FORCEINLINE void SetHashtablezSampleParameter(int32_t ) {}
+static FORCEINLINE void SetHashtablezMaxSamples(int32_t ) {}
 
 
 namespace memory_internal {
@@ -722,7 +726,7 @@ DecomposePairImpl(F&& f, std::pair<std::tuple<K>, V> p) {
 //
 // IMPLEMENTATION DETAILS
 //
-// The table stores elements inline in a slot array. In addition to the slot
+// The table stores elements FORCEINLINE in a slot array. In addition to the slot
 // array the table maintains some control state per slot. The extra state is one
 // byte per slot and stores empty or deleted marks, or alternatively 7 bits from
 // the hash of an occupied slot. The table is split into logical groups of
@@ -867,14 +871,14 @@ public:
         pointer operator->() const { return &operator*(); }
 
         // PRECONDITION: not an end() iterator.
-        inline iterator& operator++() {
+        FORCEINLINE iterator& operator++() {
             ++ctrl_;
             ++slot_;
             skip_empty_or_deleted();
             return *this;
         }
         // PRECONDITION: not an end() iterator.
-        inline iterator operator++(int) {
+        FORCEINLINE iterator operator++(int) {
             auto tmp = *this;
             ++*this;
             return tmp;
@@ -899,10 +903,10 @@ public:
         }
 #endif
 
-        inline friend bool operator==(const iterator& a, const iterator& b) {
+        FORCEINLINE friend bool operator==(const iterator& a, const iterator& b) {
             return a.ctrl_ == b.ctrl_;
         }
-        inline friend bool operator!=(const iterator& a, const iterator& b) {
+        FORCEINLINE friend bool operator!=(const iterator& a, const iterator& b) {
             return !(a == b);
         }
 
@@ -948,21 +952,21 @@ public:
         reference operator*() const { return *inner_; }
         pointer operator->() const { return inner_.operator->(); }
 
-        inline const_iterator& operator++() {
+        FORCEINLINE const_iterator& operator++() {
             ++inner_;
             return *this;
         }
-        inline const_iterator operator++(int) { return inner_++; }
+        FORCEINLINE const_iterator operator++(int) { return inner_++; }
 
-        inline friend bool operator==(const const_iterator& a, const const_iterator& b) {
+        FORCEINLINE friend bool operator==(const const_iterator& a, const const_iterator& b) {
             return a.inner_ == b.inner_;
         }
-        inline friend bool operator!=(const const_iterator& a, const const_iterator& b) {
+        FORCEINLINE friend bool operator!=(const const_iterator& a, const const_iterator& b) {
             return !(a == b);
         }
 
     private:
-        inline const_iterator(const ctrl_t* ctrl, const slot_type* slot)
+        FORCEINLINE const_iterator(const ctrl_t* ctrl, const slot_type* slot)
             : inner_(const_cast<ctrl_t*>(ctrl), const_cast<slot_type*>(slot)) {}
 
         iterator inner_;
@@ -1077,11 +1081,11 @@ public:
                  const allocator_type& alloc)
         : raw_hash_set(init, 0, hasher(), key_equal(), alloc) {}
 
-    inline raw_hash_set(const raw_hash_set& that)
+    FORCEINLINE raw_hash_set(const raw_hash_set& that)
         : raw_hash_set(that, AllocTraits::select_on_container_copy_construction(
                            that.alloc_ref())) {}
 
-    inline raw_hash_set(const raw_hash_set& that, const allocator_type& a)
+    FORCEINLINE raw_hash_set(const raw_hash_set& that, const allocator_type& a)
         : raw_hash_set(0, that.hash_ref(), that.eq_ref(), a) {
         reserve(that.size());
         // Because the table is guaranteed to be empty, we can do something faster
@@ -1097,7 +1101,7 @@ public:
         growth_left() -= that.size();
     }
 
-    inline raw_hash_set(raw_hash_set&& that) noexcept(
+    FORCEINLINE raw_hash_set(raw_hash_set&& that) noexcept(
         std::is_nothrow_copy_constructible<hasher>::value&&
         std::is_nothrow_copy_constructible<key_equal>::value&&
         std::is_nothrow_copy_constructible<allocator_type>::value)
@@ -1135,7 +1139,7 @@ public:
         }
     }
 
-    inline raw_hash_set& operator=(const raw_hash_set& that) {
+    FORCEINLINE raw_hash_set& operator=(const raw_hash_set& that) {
         raw_hash_set tmp(that,
                          AllocTraits::propagate_on_container_copy_assignment::value
                          ? that.alloc_ref()
@@ -1144,7 +1148,7 @@ public:
         return *this;
     }
 
-    inline raw_hash_set& operator=(raw_hash_set&& that) noexcept(
+    FORCEINLINE raw_hash_set& operator=(raw_hash_set&& that) noexcept(
         phmap::allocator_traits<allocator_type>::is_always_equal::value&&
         std::is_nothrow_move_assignable<hasher>::value&&
         std::is_nothrow_move_assignable<key_equal>::value) {
@@ -1157,12 +1161,12 @@ public:
 
     ~raw_hash_set() { destroy_slots(); }
 
-    inline iterator begin() {
+    FORCEINLINE iterator begin() {
         auto it = iterator_at(0);
         it.skip_empty_or_deleted();
         return it;
     }
-    inline iterator end()
+    FORCEINLINE iterator end()
     {
 #if PHMAP_BIDIRECTIONAL
         return iterator_at(capacity_); 
@@ -1171,17 +1175,17 @@ public:
 #endif
     }
 
-    inline const_iterator begin() const {
+    FORCEINLINE const_iterator begin() const {
         return const_cast<raw_hash_set*>(this)->begin();
     }
-    inline const_iterator end() const { return const_cast<raw_hash_set*>(this)->end(); }
-    inline const_iterator cbegin() const { return begin(); }
-    inline const_iterator cend() const { return end(); }
+    FORCEINLINE const_iterator end() const { return const_cast<raw_hash_set*>(this)->end(); }
+    FORCEINLINE const_iterator cbegin() const { return begin(); }
+    FORCEINLINE const_iterator cend() const { return end(); }
 
-    inline bool empty() const { return !size(); }
-    inline size_t size() const { return size_; }
-    inline size_t capacity() const { return capacity_; }
-    inline size_t max_size() const { return (std::numeric_limits<size_t>::max)(); }
+    FORCEINLINE bool empty() const { return !size(); }
+    FORCEINLINE size_t size() const { return size_; }
+    FORCEINLINE size_t capacity() const { return capacity_; }
+    FORCEINLINE size_t max_size() const { return (std::numeric_limits<size_t>::max)(); }
 
     PHMAP_ATTRIBUTE_REINITIALIZES void clear() {
         // Iterating over this container is O(bucket_count()). When bucket_count()
@@ -2457,41 +2461,41 @@ public:
         using EmbeddedSet       = typename parallel_hash_set::EmbeddedSet;
         using EmbeddedIterator  = typename EmbeddedSet::iterator;
 
-        iterator() {}
+        FORCEINLINE iterator() {}
 
-        reference operator*()  const { return *it_; }
-        pointer   operator->() const { return &operator*(); }
+        FORCEINLINE reference operator*()  const { return *it_; }
+        FORCEINLINE pointer   operator->() const { return &operator*(); }
 
-        iterator& operator++() {
+        FORCEINLINE iterator& operator++() {
             assert(inner_); // null inner means we are already at the end
             ++it_;
             skip_empty();
             return *this;
         }
     
-        iterator operator++(int) {
+        FORCEINLINE iterator operator++(int) {
             assert(inner_);  // null inner means we are already at the end
             auto tmp = *this;
             ++*this;
             return tmp;
         }
 
-        friend bool operator==(const iterator& a, const iterator& b) {
+        FORCEINLINE friend bool operator==(const iterator& a, const iterator& b) {
             return a.inner_ == b.inner_ && (!a.inner_ || a.it_ == b.it_);
         }
 
-        friend bool operator!=(const iterator& a, const iterator& b) {
+        FORCEINLINE friend bool operator!=(const iterator& a, const iterator& b) {
             return !(a == b);
         }
 
     private:
-        iterator(Inner *inner, Inner *inner_end, const EmbeddedIterator& it) : 
+      FORCEINLINE iterator(Inner *inner, Inner *inner_end, const EmbeddedIterator& it) : 
             inner_(inner), inner_end_(inner_end), it_(it)  {  // for begin() and end()
             if (inner)
                 it_end_ = inner->set_.end();
         }
 
-        void skip_empty() {
+      FORCEINLINE void skip_empty() {
             while (it_ == it_end_) {
                 ++inner_;
                 if (inner_ == inner_end_) {
@@ -2523,28 +2527,28 @@ public:
         using difference_type   = typename parallel_hash_set::difference_type;
         using Inner             = typename parallel_hash_set::Inner;
 
-        const_iterator() {}
+        FORCEINLINE const_iterator() {}
         // Implicit construction from iterator.
-        const_iterator(iterator i) : iter_(std::move(i)) {}
+        FORCEINLINE const_iterator(iterator i) : iter_(std::move(i)) {}
 
-        reference operator*()  const { return *(iter_); }
-        pointer   operator->() const { return iter_.operator->(); }
+        FORCEINLINE reference operator*()  const { return *(iter_); }
+        FORCEINLINE pointer   operator->() const { return iter_.operator->(); }
 
-        const_iterator& operator++() {
+        FORCEINLINE const_iterator& operator++() {
             ++iter_;
             return *this;
         }
-        const_iterator operator++(int) { return iter_++; }
+        FORCEINLINE const_iterator operator++(int) { return iter_++; }
 
-        friend bool operator==(const const_iterator& a, const const_iterator& b) {
+        FORCEINLINE friend bool operator==(const const_iterator& a, const const_iterator& b) {
             return a.iter_ == b.iter_;
         }
-        friend bool operator!=(const const_iterator& a, const const_iterator& b) {
+        FORCEINLINE friend bool operator!=(const const_iterator& a, const const_iterator& b) {
             return !(a == b);
         }
 
     private:
-        const_iterator(const Inner *inner, const Inner *inner_end, const EmbeddedIterator& it)
+      FORCEINLINE const_iterator(const Inner *inner, const Inner *inner_end, const EmbeddedIterator& it)
             : iter_(const_cast<Inner**>(inner), 
                     const_cast<Inner**>(inner_end),
                     const_cast<EmbeddedIterator*>(it)) {}
@@ -2702,21 +2706,21 @@ public:
 
     ~parallel_hash_set() {}
 
-    inline iterator begin() {
+    FORCEINLINE iterator begin() {
         auto it = iterator(&sets_[0], &sets_[0] + num_tables, sets_[0].set_.begin());
         it.skip_empty();
         return it;
     }
 
-    inline iterator       end()          { return iterator(); }
-    inline const_iterator begin()  const { return const_cast<parallel_hash_set *>(this)->begin(); }
-    inline const_iterator end()    const { return const_cast<parallel_hash_set *>(this)->end(); }
-    inline const_iterator cbegin() const { return begin(); }
-    inline const_iterator cend()   const { return end(); }
+    FORCEINLINE iterator       end()          { return iterator(); }
+    FORCEINLINE const_iterator begin()  const { return const_cast<parallel_hash_set *>(this)->begin(); }
+    FORCEINLINE const_iterator end()    const { return const_cast<parallel_hash_set *>(this)->end(); }
+    FORCEINLINE const_iterator cbegin() const { return begin(); }
+    FORCEINLINE const_iterator cend()   const { return end(); }
 
-    inline bool empty() const { return !size(); }
+    FORCEINLINE bool empty() const { return !size(); }
 
-    inline size_t size() const {
+    FORCEINLINE size_t size() const {
         size_t sz = 0;
         for (const auto& inner : sets_)
             sz += inner.set_.size();
@@ -2746,7 +2750,7 @@ public:
     template <class T, RequiresInsertable<T> = 0,
               typename std::enable_if<IsDecomposable<T>::value, int>::type = 0,
               T* = nullptr>
-    std::pair<iterator, bool> insert(T&& value) {
+    FORCEINLINE std::pair<iterator, bool> insert(T&& value) {
         return emplace(std::forward<T>(value));
     }
 
@@ -2768,7 +2772,7 @@ public:
     template <
         class T, RequiresInsertable<T> = 0,
         typename std::enable_if<IsDecomposable<const T&>::value, int>::type = 0>
-    std::pair<iterator, bool> insert(const T& value) {
+    FORCEINLINE std::pair<iterator, bool> insert(const T& value) {
         return emplace(value);
     }
 
@@ -2778,14 +2782,14 @@ public:
     //   flat_hash_set<std::pair<std::string, int>> s;
     //   s.insert({"abc", 42});
     // --------------------------------------------------------------------
-    std::pair<iterator, bool> insert(init_type&& value) {
+    FORCEINLINE std::pair<iterator, bool> insert(init_type&& value) {
         return emplace(std::move(value));
     }
 
     template <class T, RequiresInsertable<T> = 0,
               typename std::enable_if<IsDecomposable<T>::value, int>::type = 0,
               T* = nullptr>
-    iterator insert(const_iterator, T&& value) {
+    FORCEINLINE iterator insert(const_iterator, T&& value) {
         return insert(std::forward<T>(value)).first;
     }
 
@@ -2796,21 +2800,21 @@ public:
     template <
         class T, RequiresInsertable<T> = 0,
         typename std::enable_if<IsDecomposable<const T&>::value, int>::type = 0>
-    iterator insert(const_iterator, const T& value) {
+    FORCEINLINE iterator insert(const_iterator, const T& value) {
         return insert(value).first;
     }
 
-    iterator insert(const_iterator, init_type&& value) {
+    FORCEINLINE iterator insert(const_iterator, init_type&& value) {
         return insert(std::move(value)).first;
     }
 
     template <class InputIt>
-    void insert(InputIt first, InputIt last) {
+    FORCEINLINE void insert(InputIt first, InputIt last) {
         for (; first != last; ++first) insert(*first);
     }
 
     template <class T, RequiresNotInit<T> = 0, RequiresInsertable<const T&> = 0>
-    void insert(std::initializer_list<T> ilist) {
+    FORCEINLINE void insert(std::initializer_list<T> ilist) {
         insert(ilist.begin(), ilist.end());
     }
 
@@ -2833,7 +2837,7 @@ public:
                 res.inserted ? node_type() : std::move(res.node) };
     }
 
-    iterator insert(const_iterator, node_type&& node) {
+    FORCEINLINE iterator insert(const_iterator, node_type&& node) {
         return insert(std::move(node)).first;
     }
 
@@ -2846,7 +2850,7 @@ public:
     };
 
     template <class K, class... Args>
-    std::pair<iterator, bool> emplace_decomposable(const K& key, Args&&... args)
+    FORCEINLINE std::pair<iterator, bool> emplace_decomposable(const K& key, Args&&... args)
     {
         size_t hashval = HashElement{hash_ref()}(key);
         Inner& inner   = sets_[subidx(hashval)];
@@ -2858,7 +2862,7 @@ public:
     struct EmplaceDecomposable 
     {
         template <class K, class... Args>
-        std::pair<iterator, bool> operator()(const K& key, Args&&... args) const {
+        FORCEINLINE std::pair<iterator, bool> operator()(const K& key, Args&&... args) const {
             return s.emplace_decomposable(key, std::forward<Args>(args)...);
         }
         parallel_hash_set& s;
@@ -2876,7 +2880,7 @@ public:
     // --------------------------------------------------------------------
     template <class... Args, typename std::enable_if<
                                  IsDecomposable<Args...>::value, int>::type = 0>
-    std::pair<iterator, bool> emplace(Args&&... args) {
+    FORCEINLINE std::pair<iterator, bool> emplace(Args&&... args) {
         return PolicyTraits::apply(EmplaceDecomposable{*this},
                                    std::forward<Args>(args)...);
     }
@@ -2887,7 +2891,7 @@ public:
     // --------------------------------------------------------------------
     template <class... Args, typename std::enable_if<
                                  !IsDecomposable<Args...>::value, int>::type = 0>
-    std::pair<iterator, bool> emplace(Args&&... args) {
+    FORCEINLINE std::pair<iterator, bool> emplace(Args&&... args) {
         typename std::aligned_storage<sizeof(slot_type), alignof(slot_type)>::type
             raw;
         slot_type* slot = reinterpret_cast<slot_type*>(&raw);
@@ -3111,7 +3115,7 @@ public:
     }
 
     template <class K = key_type>
-    inline bool contains(const key_arg<K>& key) const {
+    FORCEINLINE bool contains(const key_arg<K>& key) const {
         return find(key) != end();
     }
 
@@ -3700,35 +3704,35 @@ struct FlatHashMapPolicy
     using init_type = std::pair</*non const*/ key_type, mapped_type>;
 
     template <class Allocator, class... Args>
-    inline static void construct(Allocator* alloc, slot_type* slot, Args&&... args) {
+    FORCEINLINE static void construct(Allocator* alloc, slot_type* slot, Args&&... args) {
         slot_policy::construct(alloc, slot, std::forward<Args>(args)...);
     }
 
     template <class Allocator>
-    inline static void destroy(Allocator* alloc, slot_type* slot) {
+    FORCEINLINE static void destroy(Allocator* alloc, slot_type* slot) {
         slot_policy::destroy(alloc, slot);
     }
 
     template <class Allocator>
-    inline static void transfer(Allocator* alloc, slot_type* new_slot,
+    FORCEINLINE static void transfer(Allocator* alloc, slot_type* new_slot,
                          slot_type* old_slot) {
         slot_policy::transfer(alloc, new_slot, old_slot);
     }
 
     template <class F, class... Args>
-    inline static decltype(phmap::priv::DecomposePair(
+    FORCEINLINE static decltype(phmap::priv::DecomposePair(
                         std::declval<F>(), std::declval<Args>()...))
     apply(F&& f, Args&&... args) {
         return phmap::priv::DecomposePair(std::forward<F>(f),
                                                         std::forward<Args>(args)...);
     }
 
-    inline static size_t space_used(const slot_type*) { return 0; }
+    FORCEINLINE static size_t space_used(const slot_type*) { return 0; }
 
-    inline static std::pair<const K, V>& element(slot_type* slot) { return slot->value; }
+    FORCEINLINE static std::pair<const K, V>& element(slot_type* slot) { return slot->value; }
 
-    inline static V& value(std::pair<const K, V>* kv) { return kv->second; }
-    inline static const V& value(const std::pair<const K, V>* kv) { return kv->second; }
+    FORCEINLINE static V& value(std::pair<const K, V>* kv) { return kv->second; }
+    FORCEINLINE static const V& value(const std::pair<const K, V>* kv) { return kv->second; }
 };
 
 template <class Reference, class Policy>
@@ -4436,7 +4440,7 @@ public:
     using Base::get_allocator;
     using Base::hash_function;
     using Base::key_eq;
-    inline typename Base::hasher hash_funct() { return this->hash_function(); }
+    FORCEINLINE typename Base::hasher hash_funct() { return this->hash_function(); }
     void resize(typename Base::size_type hint) { this->rehash(hint); }
 };
 
@@ -4494,8 +4498,8 @@ public:
     using Base::get_allocator;
     using Base::hash_function;
     using Base::key_eq;
-    inline typename Base::hasher hash_funct() { return this->hash_function(); }
-    inline void resize(typename Base::size_type hint) { this->rehash(hint); }
+    FORCEINLINE typename Base::hasher hash_funct() { return this->hash_function(); }
+    FORCEINLINE void resize(typename Base::size_type hint) { this->rehash(hint); }
 };
 
 }  // namespace phmap

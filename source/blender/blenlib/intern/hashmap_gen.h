@@ -1,6 +1,3 @@
-#ifndef HASHMAP_GEN_H
-#define HASHMAP_GEN_H
-
 //so, apparently there's no way to make C++ templates generate cdecl functions?
 //*
 //so autocomplete works
@@ -14,7 +11,7 @@
 //*/
 
 #include <cstdint>
-
+#include <cstdio>
 
 #ifdef APIDECL
 #undef APIDECL
@@ -37,12 +34,14 @@ typedef parallel_flat_hash_map<MYKEYTYPE, MYVALTYPE> MYHASHNAME;
 
 typedef struct MYITERNAME {
     MYHASHNAME *map;
-    int totitem, isdead, i; //i is used by BLI_HASH_ITER macro
+    int32_t totitem, isdead, i, pad[3]; //i is used by BLI_HASH_ITER macro
+
+    //somewhat worried about alignment issues, so I'm putting the c++ iterator before keys/values
+    parallel_flat_hash_map<MYKEYTYPE, MYVALTYPE>::iterator it;
+    char cpad[ITER_RESERVE_SIZE - sizeof(parallel_flat_hash_map<MYKEYTYPE, MYVALTYPE>::iterator)];
 
     MYKEYTYPE keys[ITEMS_PER_ITER];
     MYVALTYPE values[ITEMS_PER_ITER];
-
-    parallel_flat_hash_map<MYKEYTYPE, MYVALTYPE>::iterator it;
 } MYITERNAME;
 
 using namespace phmap;
@@ -113,7 +112,6 @@ extern "C" bool APIDECL(lookup_p, MYAPIPREFIX)(MYHASHNAME *map, MYKEYTYPE key, M
 }
 
 extern "C" bool APIDECL(has, MYAPIPREFIX)(MYHASHNAME *map, MYKEYTYPE key) {
-    //auto it = map->find(key)->iterator;
     auto it = map->find(key);
 
     return it != map->end();
@@ -122,6 +120,3 @@ extern "C" bool APIDECL(has, MYAPIPREFIX)(MYHASHNAME *map, MYKEYTYPE key) {
 extern "C" int APIDECL(len, MYAPIPREFIX)(MYHASHNAME *map) {
     return (int) map->size();
 }
-
-
-#endif // HASHMAP_GEN_H

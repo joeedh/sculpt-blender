@@ -6,7 +6,6 @@ if only we didn't need fast hash maps. . .
 */
 
 #include <stdint.h>
-
 #include <stdbool.h>
 
 typedef void* HashP;
@@ -27,12 +26,16 @@ typedef char* HashString;
 
 #define BLI_HashMapIter(keytype, valtype) keytype##valtype##Iter
 
+/*
+since there's no way to inline code across the c/c++ barrier, iterators instead
+pass data in chunks to amortize function calls and hopefully be more cache efficient
+*/
 #define BLI_HASH_ITER(map, iter, keytype, valtype) BLI_hashmap_iternew(keytype, valtype)(map, &iter);\
 do {\
     BLI_hashmap_iterstep(keytype, valtype)(map, &iter);\
     for (iter.i=0; iter.i<iter.totitem; iter.i++) {
 
-#define BLI_HASH_END } } while (!iter.isdead);
+#define BLI_HASH_ITER_END } } while (!iter.isdead);
 
 #define BLI_hashiter_key(iter) iter.keys[iter.i]
 #define BLI_hashiter_value(iter) iter.values[iter.i]
@@ -56,14 +59,17 @@ do {\
     bool BLI_map_##key##val##_has(BLI_Map##key##val *map, key k);\
     typedef struct key##val##Iter {\
         BLI_Map##key##val *map;\
-        int totitem, isdead, i;\
+        int32_t totitem, isdead, i, pad[3];\
+        char reserved[ITER_RESERVE_SIZE];\
         key *keys[_ITEMS_PER_ITER];\
         val *values[_ITEMS_PER_ITER];\
-        char reserved[ITER_RESERVE_SIZE];\
     } key##val##Iter;\
     void BLI_map_##key##val##_iternew(BLI_Map##key##val *map, key##val##Iter *iter);\
     void BLI_map_##key##val##_iterstep(BLI_Map##key##val *map, key##val##Iter *iter);\
 
 GEN_API(HashP, HashP)
+GEN_API(HashInt, HashP)
+GEN_API(HashP, HashInt)
+GEN_API(HashInt, HashInt)
 
 #endif // BLI_HASHMAP_H

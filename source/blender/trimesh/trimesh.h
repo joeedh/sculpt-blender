@@ -10,10 +10,12 @@
 #include "BLI_assert.h"
 #include "BLI_threads.h"
 #include "BLI_threadsafe_mempool.h"
+
 #include "DNA_customdata_types.h"
 #include "DNA_meshdata_types.h"
 
 #include "BLI_compiler_compat.h"
+#include "BLI_hashmap.h"
 
 #include <stdint.h>
 

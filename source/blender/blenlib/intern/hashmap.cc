@@ -3,9 +3,9 @@
 
 using namespace phmap;
 
-typedef unsigned long long HashP;
+typedef uintptr_t HashP;
 typedef int HashInt;
-typedef uint HashUint;
+typedef unsigned int HashUint;
 typedef char* HashString;
 
 #include <cstdio>
@@ -31,12 +31,52 @@ int main() {
     return 0;
 }*/
 
-#define BLI_fastmap_new(ktype, vtype) BLI_map_##keytype##valtype##_new
-
 #define MYKEYTYPE HashP
 #define MYVALTYPE HashP
 #define MYHASHNAME BLI_MapHashPHashP
 #define MYAPIPREFIX BLI_map_HashPHashP_
 #define MYITERNAME HashPHashPIter
+
+#include "hashmap_gen.h"
+
+#undef MYKEYTYPE
+#undef MYVALTYPE
+#undef MYHASHNAME
+#undef MYAPIPREFIX
+#undef MYITERNAME
+
+#define MYKEYTYPE HashInt
+#define MYVALTYPE HashP
+#define MYHASHNAME BLI_MapHashIntHashP
+#define MYAPIPREFIX BLI_map_HashIntHashP_
+#define MYITERNAME HashIntHashPIter
+
+#include "hashmap_gen.h"
+
+#undef MYKEYTYPE
+#undef MYVALTYPE
+#undef MYHASHNAME
+#undef MYAPIPREFIX
+#undef MYITERNAME
+
+#define MYKEYTYPE HashP
+#define MYVALTYPE HashInt
+#define MYHASHNAME BLI_MapHashPHashInt
+#define MYAPIPREFIX BLI_map_HashPHashInt_
+#define MYITERNAME HashPHashIntIter
+
+#include "hashmap_gen.h"
+
+#undef MYKEYTYPE
+#undef MYVALTYPE
+#undef MYHASHNAME
+#undef MYAPIPREFIX
+#undef MYITERNAME
+
+#define MYKEYTYPE HashInt
+#define MYVALTYPE HashInt
+#define MYHASHNAME BLI_MapHashIntHashInt
+#define MYAPIPREFIX BLI_map_HashIntHashInt_
+#define MYITERNAME HashIntHashIntIter
 
 #include "hashmap_gen.h"

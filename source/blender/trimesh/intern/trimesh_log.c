@@ -34,6 +34,7 @@
 #include "BLI_threadsafe_mempool.h"
 #include "BLI_array.h"
 #include "BLI_threads.h"
+#include "BLI_hashmap.h"
 
 #include "DNA_customdata_types.h"
 #include "DNA_mesh_types.h"
@@ -44,7 +45,6 @@
 #include "atomic_ops.h"
 
 #include "BLI_utildefines.h"
-#include "BLI_ghash.h"
 
 #include "BKE_customdata.h"
 #include "BKE_mesh.h"
@@ -74,9 +74,9 @@ typedef struct LogEntry {
 } LogEntry;
 
 typedef struct TriMeshLog {
-  GHash *elemhash_ptr; //maps ids to pointers
-  GHash *elemhash_id; //maps pointers to ids
-  GHash *elemhash_entry; //maps ids to entries indices
+  BLI_HashMap(HashInt, HashP) *elemhash_ptr; //maps ids to pointers
+  BLI_HashMap(HashP, HashInt)  *elemhash_id; //maps pointers to ids
+  BLI_HashMap(HashInt, HashInt)  *elemhash_entry; //maps ids to entries indices
 
   LogEntry *entries;
   int *groups;
@@ -113,9 +113,9 @@ TriMeshLog *TM_log_new(TM_TriMesh *tm, int cd_vert_mask_index) {
 
   BLI_spin_init(&log->lock);
 
-  log->elemhash_ptr = BLI_ghash_ptr_new("TriMeshLog ghash ptr");
-  log->elemhash_id = BLI_ghash_int_new("TriMeshLog ghash int");
-  log->elemhash_entry = BLI_ghash_int_new("TriMeshLog ghash entry");
+  log->elemhash_ptr = BLI_hashmap_new(HashInt,HashP)();
+  log->elemhash_id = BLI_hashmap_new(HashP,HashInt)();
+  log->elemhash_entry = BLI_hashmap_new(HashInt,HashInt)();
   log->cd_vert_mask_index = cd_vert_mask_index;
   log->idgen = 1;
 
@@ -129,9 +129,9 @@ TriMeshLog *TM_log_new(TM_TriMesh *tm, int cd_vert_mask_index) {
 void TM_log_free(TriMeshLog *log) {
   BLI_spin_end(&log->lock);
 
-  BLI_ghash_free(log->elemhash_ptr, NULL, NULL);
-  BLI_ghash_free(log->elemhash_id, NULL, NULL);
-  BLI_ghash_free(log->elemhash_entry, NULL, NULL);
+  BLI_hashmap_free(HashP, HashInt)(log->elemhash_id);
+  BLI_hashmap_free(HashInt, HashP)(log->elemhash_ptr);
+  BLI_hashmap_free(HashInt, HashInt)(log->elemhash_entry);
 }
 
 static void tlog_truncate(TriMeshLog *log) {
@@ -250,38 +250,45 @@ static float vert_mask_get(TMVert *v, const int cd_vert_mask_offset)
 
 static void elemhash_add(TriMeshLog *log, void *elem, int id, int entryidx) {
   BLI_spin_lock(&log->lock);
-  BLI_ghash_insert(log->elemhash_id, (void*)id, elem);
-  BLI_ghash_insert(log->elemhash_ptr, elem, (void*)id);
-  BLI_ghash_insert(log->elemhash_entry, (void*)id, (void*)entryidx);
+  BLI_HashMapIter(HashInt, HashP) iter;
+
+  BLI_HASH_ITER(log->elemhash_ptr, iter, HashInt, HashP) {
+    printf("%d %p\n", BLI_hashiter_key(iter), BLI_hashiter_value(iter));
+
+  } BLI_HASH_ITER_END
+
+  BLI_hashmap_insert(HashP, HashInt)(log->elemhash_id, (void*)id, elem);
+  BLI_hashmap_insert(HashInt, HashP)(log->elemhash_ptr, elem, (void*)id);
+  BLI_hashmap_insert(HashInt, HashInt)(log->elemhash_entry, (void*)id, (void*)entryidx);
   BLI_spin_unlock(&log->lock);
 }
 
 static void *elemhash_lookup_id(TriMeshLog *log, int id) {
-  return BLI_ghash_lookup(log->elemhash_id, (void*)id);
+  return BLI_hashmap_lookup(HashP, HashInt)(log->elemhash_id, (void*)id);
 }
 
 static int elemhash_get_id(TriMeshLog *log, void *elem) {
-  void **ret = NULL;
+  void *ret = NULL;
 
   //XXX lock contention issue?
   BLI_spin_lock(&log->lock);
-  ret = BLI_ghash_lookup_p(log->elemhash_ptr, elem);
+  bool exists = BLI_hashmap_lookup_p(HashInt, HashP)(log->elemhash_ptr, elem, &ret);
   BLI_spin_unlock(&log->lock);
 
-  if (!ret) {
+  if (!exists) {
     return -1;
   }
 
-  return (int)(*ret);
+  return (int)ret;
 }
 
 static int elemhash_ensure_id(TriMeshLog *log, void *elem) {
-  void **ret = NULL;
+  void *ret = NULL;
 
   BLI_spin_lock(&log->lock);
-  ret = BLI_ghash_lookup_p(log->elemhash_ptr, elem);
+  bool exists = BLI_hashmap_lookup_p(HashInt, HashP)(log->elemhash_ptr, elem, &ret);
 
-  if (!ret) {
+  if (!exists) {
     int id = log->idgen++;
     BLI_spin_unlock(&log->lock);
 
@@ -289,18 +296,19 @@ static int elemhash_ensure_id(TriMeshLog *log, void *elem) {
 
     return id;
   } else {
-    int ret2 = (int)(*ret);
+    int ret2 = (int)ret;
     BLI_spin_unlock(&log->lock);
     return ret2;
   }
 }
 
 static int elemhash_get_entry(TriMeshLog *log, int id) {
-  void **ret = NULL;
+  void *ret = NULL;
 
   BLI_spin_lock(&log->lock);
-  ret = BLI_ghash_lookup_p(log->elemhash_ptr, (void*)id);
-  int ret2 = ret ? (int)(*ret) : -1;
+  bool exists = BLI_hashmap_lookup_p(HashInt, HashP)(log->elemhash_ptr, (void*)id, &ret);
+
+  int ret2 = exists ? (int)ret : -1;
   BLI_spin_unlock(&log->lock);
 
   return ret2;
@@ -690,13 +698,14 @@ static int mesh_wind_list(TriMeshLog *tlog, int entry_i, int threadnr) {
 
   for (int j=0; j<tot; j++) {
     int tid = log[i++].value.i;
-    int **ret = (int**) BLI_ghash_lookup_p(tlog->elemhash_entry, tid);
+    int *ret = NULL;
+    bool exists = BLI_hashmap_lookup_p(HashInt, HashInt)(tlog->elemhash_entry, tid, &ret);
 
-    if (!ret) {
+    if (!exists) {
       continue; //error!
     }
 
-    int ti = (int)*ret;
+    int ti = (int)ret;
     meshlog_wind(tlog, ti, threadnr);
   }
 
@@ -713,13 +722,14 @@ static int mesh_unwind_list(TriMeshLog *tlog, int entry_i, int threadnr) {
 
   for (int j=0; j<tot; j++) {
     int tid = log[i++].value.i;
-    int **ret = (int**) BLI_ghash_lookup_p(tlog->elemhash_entry, tid);
+    int *ret = NULL;
+    bool exists = BLI_hashmap_lookup_p(HashInt, HashInt)(tlog->elemhash_entry, tid, &ret);
 
-    if (!ret) {
+    if (!exists) {
       continue; //error!
     }
 
-    int ti = (int)*ret;
+    int ti = (int)ret;
     meshlog_unwind(tlog, ti, threadnr);
   }
 
@@ -791,13 +801,14 @@ static int meshlog_unwind(TriMeshLog *tlog, int entry_i, int threadnr) {
 
     for (int j=0; j<totedge; j++) {
       int eid = log[i++].value.i;
-      int **ret = (int**) BLI_ghash_lookup_p(tlog->elemhash_entry, eid);
+      int *ret = NULL;
+      bool exists = BLI_hashmap_lookup_p(HashInt, HashInt)(tlog->elemhash_entry, eid, &ret);
 
-      if (!ret) {
+      if (!exists) {
         continue; //error!
       }
 
-      int ei = (int)*ret;
+      int ei = (int)ret;
       meshlog_wind(tlog, ei, threadnr);
     }
     break;
@@ -823,7 +834,7 @@ static int meshlog_unwind(TriMeshLog *tlog, int entry_i, int threadnr) {
     for (int j=0; j<3; j++) {
       int id = log[i++].value.i;
 
-      vs[j] = BLI_ghash_lookup(tlog->elemhash_ptr, (void*)id);
+      vs[j] = BLI_hashmap_lookup(HashInt, HashP)(tlog->elemhash_ptr, id);
     }
 
     i -= 6;
