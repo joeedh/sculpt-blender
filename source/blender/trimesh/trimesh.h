@@ -285,7 +285,7 @@ void TM_free_islands(TMTriIsland* islands, int totisland, bool free_islands);
 #define TM_ELEM_CD_GET_FLOAT(ele, offset) (*((float *)((char *)(ele)->customdata + (offset))))
 
 #define TM_ELEM_CD_GET_FLOAT_AS_UCHAR(ele, offset) \
-  (assert(offset != -1), (uchar)(TM_ELEM_CD_GET_FLOAT(ele, offset) * 255.0f))
+  (BLI_assert(offset != -1), (uchar)(TM_ELEM_CD_GET_FLOAT(ele, offset) * 255.0f))
 
 #define TM_GET_TRI_VERT(tri, n) ((&(tri)->v1)[n])
 #define TM_GET_TRI_EDGE(tri, n) ((&(tri)->e1)[n])
@@ -588,17 +588,17 @@ BLI_INLINE TMVert *TM_vert_at_index(TM_TriMesh *bm, const int index)
   return bm->vtable[index];
 }
 
-#if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
+#if 0 //defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
 #  define TM_ELEM_CD_GET_VOID_P(ele, offset) \
-    (assert(offset != -1), \
+    (BLI_assert(offset != -1), \
      _Generic(ele, \
-              GENERIC_TYPE_ANY(POINTER_OFFSET((ele)->head.data, offset), \
+              GENERIC_TYPE_ANY(POINTER_OFFSET((ele)->customdata, offset), \
                                _BM_GENERIC_TYPE_ELEM_NONCONST), \
               GENERIC_TYPE_ANY((const void *)POINTER_OFFSET((ele)->customdata, offset), \
                                _BM_GENERIC_TYPE_ELEM_CONST)))
 #else
 #  define TM_ELEM_CD_GET_VOID_P(ele, offset) \
-    (assert(offset != -1), (void *)((char *)(ele)->customdata + (offset)))
+    (BLI_assert(offset != -1), (void *)((char *)(ele)->customdata + (offset)))
 #endif
 
 BLI_INLINE int TM_vert_is_boundary(TMVert *v) {

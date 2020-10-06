@@ -21,7 +21,7 @@ enum {
 #define E_TLIST_ESIZE 2
 
 struct CustomData;
-void trimesh_element_init(void *elem, struct CustomData *customdata);
+void trimesh_element_init(void *elem, struct CustomData *customdata, bool skipcd);
 void trimesh_element_destroy(void *elem, int threadnr, struct CustomData *customdata);
 
 struct TM_TriMesh;

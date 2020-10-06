@@ -27,7 +27,7 @@ set(INC
   ../../../intern/guardedalloc
   ../../../intern/numaapi/include
   ../../../extern/wcwidth
-  ../../../extern/parallel-hashmap
+  ../../../extern
 )
 
 set(INC_SYS
@@ -43,6 +43,7 @@ set(SRC
   intern/BLI_dial_2d.c
   intern/BLI_dynstr.c
   intern/BLI_filelist.c
+  intern/hashmap.cc
   intern/BLI_ghash.c
   intern/BLI_ghash_utils.c
   intern/BLI_heap.c

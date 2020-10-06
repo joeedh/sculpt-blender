@@ -95,7 +95,7 @@ static PyObject *bpygpu_offscreen_new(PyTypeObject *UNUSED(self), PyObject *args
     return NULL;
   }
 
-  ofs = GPU_offscreen_create(width, height, samples, true, high_bitdepth, err_out);
+  ofs = GPU_offscreen_create(width, height, true, high_bitdepth, err_out);
 
   if (ofs == NULL) {
     PyErr_Format(PyExc_RuntimeError,

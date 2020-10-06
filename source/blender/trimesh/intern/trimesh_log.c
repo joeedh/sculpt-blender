@@ -157,6 +157,8 @@ static LogEntry *tlog_push(TriMeshLog *log) {
 
   log->entries = entries;
   log->totentries = BLI_array_len(entries);
+
+  return log->entries + log->totentries - 1;
 }
 
 static void tlog_f(TriMeshLog *log, float f) {
@@ -372,7 +374,7 @@ static int trimesh_log_cdata(TriMeshLog *log, void *velem, int type) {
   if (!size) {
     tlog_i(log, 0);
     tlog_i(log, 0);
-    return;
+    return -1;
   }
 
   tlog_i(log, size);
@@ -402,6 +404,8 @@ static int trimesh_log_cdata(TriMeshLog *log, void *velem, int type) {
       tlog_i4(log, iv);
     }
   }
+
+  return 0;
 }
 
 static int trimesh_log_read_cdata(TriMeshLog *tlog, int entry_i, void *velem, int type) {
@@ -450,6 +454,7 @@ static int trimesh_skip_loop(TriMeshLog *log, int entry_i) {
 
 static int trimesh_log_loop(TriMeshLog *log, TMFace *tri, TMLoopData *loop) {
   trimesh_log_cdata(log, loop, TM_LOOP);
+  return 0;
 }
 
 static int trimesh_read_loop(TriMeshLog *tlog, TMLoopData *l, int entry_i) {
@@ -513,7 +518,7 @@ int BLI_trimesh_log_vert_kill(TriMeshLog *log, TMVert *v) {
   int id = elemhash_get_id(log, v);
 
   if (!id) {
-    return; //invalid element
+    return -1; //invalid element
   }
 
   //make sure edge entries exist
@@ -541,7 +546,7 @@ int BLI_trimesh_log_edge_kill(TriMeshLog *log, TMEdge *e, int kill_verts) {
   int id = elemhash_get_id(log, e);
 
   if (!id) {
-    return; //invalid element
+    return -1; //invalid element
   }
 
   //make sure tri entries exist
@@ -570,7 +575,7 @@ int BLI_trimesh_log_tri_kill(TriMeshLog *log, TMFace *tri, int kill_verts, int k
   int id = elemhash_get_id(log, tri);
 
   if (!id) {
-    return; //invalid element
+    return -1; //invalid element
   }
 
   int start = tlog_start(log, LOG_TRI_KILL);
@@ -592,6 +597,7 @@ int BLI_trimesh_log_tri_kill(TriMeshLog *log, TMFace *tri, int kill_verts, int k
   trimesh_log_cdata(log, tri->l3, TM_LOOP);
 
   tlog_end(log, start);
+  return id;
 }
 
 void BLI_trimesh_log_split_edge(TriMeshLog *log, TMEdge *e, float fac, TMVert *newvert, int cd_vert_mask_index) {
@@ -633,6 +639,8 @@ int BLI_trimesh_log_vert_state(TriMeshLog *log, TMVert *v) {
   tlog_i3(log, ivec);
   tlog_f(log, TM_ELEM_CD_GET_FLOAT(v, log->cd_vert_mask_index));
   tlog_end(log, start);
+
+  return id;
 }
 
 void BLI_log_add_setpoint(TriMeshLog *log, int setgroup) {

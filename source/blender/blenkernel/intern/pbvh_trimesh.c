@@ -1376,7 +1376,7 @@ static bool pbvh_trimesh_collapse_short_edges(EdgeQueueContext *eq_ctx,
   PBVH *bvh,
   BLI_Buffer *deleted_faces)
 {
-  return;
+  return false;
   const float min_len_squared = bvh->bm_min_edge_len * bvh->bm_min_edge_len;
   bool any_collapsed = false;
   /* deleted verts point to vertices they were merged into, or NULL when removed. */

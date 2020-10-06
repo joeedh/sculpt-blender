@@ -2995,13 +2995,13 @@ using EnableIfMutable =
     typename std::enable_if<!std::is_const<T>::value, int>::type;
 
 template <typename T>
-bool EqualImpl(Span<T> a, Span<T> b) {
+inline bool EqualImpl(Span<T> a, Span<T> b) {
   static_assert(std::is_const<T>::value, "");
   return std::equal(a.begin(), a.end(), b.begin(), b.end());
 }
 
 template <typename T>
-bool LessThanImpl(Span<T> a, Span<T> b) {
+inline bool LessThanImpl(Span<T> a, Span<T> b) {
   static_assert(std::is_const<T>::value, "");
   return std::lexicographical_compare(a.begin(), a.end(), b.begin(), b.end());
 }
@@ -3230,7 +3230,7 @@ public:
     // Span::operator[]
     //
     // Returns a reference to the i'th element of this span.
-    constexpr reference operator[](size_type i) const noexcept {
+    inline constexpr reference operator[](size_type i) const noexcept {
         // MSVC 2015 accepts this as constexpr, but not ptr_[i]
         return *(data() + i);
     }
@@ -3249,60 +3249,60 @@ public:
     // Span::front()
     //
     // Returns a reference to the first element of this span.
-    constexpr reference front() const noexcept {
+    inline constexpr reference front() const noexcept {
         return PHMAP_ASSERT(size() > 0), *data();
     }
 
     // Span::back()
     //
     // Returns a reference to the last element of this span.
-    constexpr reference back() const noexcept {
+    inline constexpr reference back() const noexcept {
         return PHMAP_ASSERT(size() > 0), *(data() + size() - 1);
     }
 
     // Span::begin()
     //
     // Returns an iterator to the first element of this span.
-    constexpr iterator begin() const noexcept { return data(); }
+    inline constexpr iterator begin() const noexcept { return data(); }
 
     // Span::cbegin()
     //
     // Returns a const iterator to the first element of this span.
-    constexpr const_iterator cbegin() const noexcept { return begin(); }
+    inline constexpr const_iterator cbegin() const noexcept { return begin(); }
 
     // Span::end()
     //
     // Returns an iterator to the last element of this span.
-    constexpr iterator end() const noexcept { return data() + size(); }
+    inline constexpr iterator end() const noexcept { return data() + size(); }
 
     // Span::cend()
     //
     // Returns a const iterator to the last element of this span.
-    constexpr const_iterator cend() const noexcept { return end(); }
+    inline constexpr const_iterator cend() const noexcept { return end(); }
 
     // Span::rbegin()
     //
     // Returns a reverse iterator starting at the last element of this span.
-    constexpr reverse_iterator rbegin() const noexcept {
+    inline constexpr reverse_iterator rbegin() const noexcept {
         return reverse_iterator(end());
     }
 
     // Span::crbegin()
     //
     // Returns a reverse const iterator starting at the last element of this span.
-    constexpr const_reverse_iterator crbegin() const noexcept { return rbegin(); }
+    inline constexpr const_reverse_iterator crbegin() const noexcept { return rbegin(); }
 
     // Span::rend()
     //
     // Returns a reverse iterator starting at the first element of this span.
-    constexpr reverse_iterator rend() const noexcept {
+    inline constexpr reverse_iterator rend() const noexcept {
         return reverse_iterator(begin());
     }
 
     // Span::crend()
     //
     // Returns a reverse iterator starting at the first element of this span.
-    constexpr const_reverse_iterator crend() const noexcept { return rend(); }
+    inline constexpr const_reverse_iterator crend() const noexcept { return rend(); }
 
     // Span mutations
 
@@ -3410,169 +3410,169 @@ const typename Span<T>::size_type Span<T>::npos;
 
 // operator==
 template <typename T>
-bool operator==(Span<T> a, Span<T> b) {
+inline bool operator==(Span<T> a, Span<T> b) {
   return span_internal::EqualImpl<const T>(a, b);
 }
 
 template <typename T>
-bool operator==(Span<const T> a, Span<T> b) {
+inline bool operator==(Span<const T> a, Span<T> b) {
   return span_internal::EqualImpl<const T>(a, b);
 }
 
 template <typename T>
-bool operator==(Span<T> a, Span<const T> b) {
+inline bool operator==(Span<T> a, Span<const T> b) {
   return span_internal::EqualImpl<const T>(a, b);
 }
 
 template <typename T, typename U,
           typename = span_internal::EnableIfConvertibleToSpanConst<U, T>>
-bool operator==(const U& a, Span<T> b) {
+inline bool operator==(const U& a, Span<T> b) {
   return span_internal::EqualImpl<const T>(a, b);
 }
 
 template <typename T, typename U,
           typename = span_internal::EnableIfConvertibleToSpanConst<U, T>>
-bool operator==(Span<T> a, const U& b) {
+inline bool operator==(Span<T> a, const U& b) {
   return span_internal::EqualImpl<const T>(a, b);
 }
 
 // operator!=
 template <typename T>
-bool operator!=(Span<T> a, Span<T> b) {
+inline bool operator!=(Span<T> a, Span<T> b) {
   return !(a == b);
 }
 
 template <typename T>
-bool operator!=(Span<const T> a, Span<T> b) {
+inline bool operator!=(Span<const T> a, Span<T> b) {
   return !(a == b);
 }
 
 template <typename T>
-bool operator!=(Span<T> a, Span<const T> b) {
+inline bool operator!=(Span<T> a, Span<const T> b) {
   return !(a == b);
 }
 
 template <typename T, typename U,
           typename = span_internal::EnableIfConvertibleToSpanConst<U, T>>
-bool operator!=(const U& a, Span<T> b) {
+inline bool operator!=(const U& a, Span<T> b) {
   return !(a == b);
 }
 
 template <typename T, typename U,
           typename = span_internal::EnableIfConvertibleToSpanConst<U, T>>
-bool operator!=(Span<T> a, const U& b) {
+inline bool operator!=(Span<T> a, const U& b) {
   return !(a == b);
 }
 
 // operator<
 template <typename T>
-bool operator<(Span<T> a, Span<T> b) {
+inline bool operator<(Span<T> a, Span<T> b) {
   return span_internal::LessThanImpl<const T>(a, b);
 }
 
 template <typename T>
-bool operator<(Span<const T> a, Span<T> b) {
+inline bool operator<(Span<const T> a, Span<T> b) {
   return span_internal::LessThanImpl<const T>(a, b);
 }
 
 template <typename T>
-bool operator<(Span<T> a, Span<const T> b) {
+inline bool operator<(Span<T> a, Span<const T> b) {
   return span_internal::LessThanImpl<const T>(a, b);
 }
 
 template <typename T, typename U,
           typename = span_internal::EnableIfConvertibleToSpanConst<U, T>>
-bool operator<(const U& a, Span<T> b) {
+inline bool operator<(const U& a, Span<T> b) {
   return span_internal::LessThanImpl<const T>(a, b);
 }
 
 template <typename T, typename U,
           typename = span_internal::EnableIfConvertibleToSpanConst<U, T>>
-bool operator<(Span<T> a, const U& b) {
+inline bool operator<(Span<T> a, const U& b) {
   return span_internal::LessThanImpl<const T>(a, b);
 }
 
 // operator>
 template <typename T>
-bool operator>(Span<T> a, Span<T> b) {
+inline bool operator>(Span<T> a, Span<T> b) {
   return b < a;
 }
 
 template <typename T>
-bool operator>(Span<const T> a, Span<T> b) {
+inline bool operator>(Span<const T> a, Span<T> b) {
   return b < a;
 }
 
 template <typename T>
-bool operator>(Span<T> a, Span<const T> b) {
+inline bool operator>(Span<T> a, Span<const T> b) {
   return b < a;
 }
 
 template <typename T, typename U,
           typename = span_internal::EnableIfConvertibleToSpanConst<U, T>>
-bool operator>(const U& a, Span<T> b) {
+inline bool operator>(const U& a, Span<T> b) {
   return b < a;
 }
 
 template <typename T, typename U,
           typename = span_internal::EnableIfConvertibleToSpanConst<U, T>>
-bool operator>(Span<T> a, const U& b) {
+inline bool operator>(Span<T> a, const U& b) {
   return b < a;
 }
 
 // operator<=
 template <typename T>
-bool operator<=(Span<T> a, Span<T> b) {
+inline bool operator<=(Span<T> a, Span<T> b) {
   return !(b < a);
 }
 
 template <typename T>
-bool operator<=(Span<const T> a, Span<T> b) {
+inline bool operator<=(Span<const T> a, Span<T> b) {
   return !(b < a);
 }
 
 template <typename T>
-bool operator<=(Span<T> a, Span<const T> b) {
+inline bool operator<=(Span<T> a, Span<const T> b) {
   return !(b < a);
 }
 
 template <typename T, typename U,
           typename = span_internal::EnableIfConvertibleToSpanConst<U, T>>
-bool operator<=(const U& a, Span<T> b) {
+inline bool operator<=(const U& a, Span<T> b) {
   return !(b < a);
 }
 
 template <typename T, typename U,
           typename = span_internal::EnableIfConvertibleToSpanConst<U, T>>
-bool operator<=(Span<T> a, const U& b) {
+inline bool operator<=(Span<T> a, const U& b) {
   return !(b < a);
 }
 
 // operator>=
 template <typename T>
-bool operator>=(Span<T> a, Span<T> b) {
+inline bool operator>=(Span<T> a, Span<T> b) {
   return !(a < b);
 }
 
 template <typename T>
-bool operator>=(Span<const T> a, Span<T> b) {
+inline bool operator>=(Span<const T> a, Span<T> b) {
   return !(a < b);
 }
 
 template <typename T>
-bool operator>=(Span<T> a, Span<const T> b) {
+inline bool operator>=(Span<T> a, Span<const T> b) {
   return !(a < b);
 }
 
 template <typename T, typename U,
           typename = span_internal::EnableIfConvertibleToSpanConst<U, T>>
-bool operator>=(const U& a, Span<T> b) {
+inline bool operator>=(const U& a, Span<T> b) {
   return !(a < b);
 }
 
 template <typename T, typename U,
           typename = span_internal::EnableIfConvertibleToSpanConst<U, T>>
-bool operator>=(Span<T> a, const U& b) {
+inline bool operator>=(Span<T> a, const U& b) {
   return !(a < b);
 }
 
@@ -4772,14 +4772,14 @@ namespace phmap {
 // -----------------------------------------------------------------------------
 class NullMutex {
 public:
-    NullMutex() {}
-    ~NullMutex() {}
-    void lock() {}
-    void unlock() {}
-    bool try_lock() { return true; }
-    void lock_shared() {}
-    void unlock_shared() {}
-    bool try_lock_shared() { return true; }
+    inline NullMutex() {}
+    inline ~NullMutex() {}
+    inline void lock() {}
+    inline void unlock() {}
+    inline bool try_lock() { return true; }
+    inline void lock_shared() {}
+    inline void unlock_shared() {}
+    inline bool try_lock_shared() { return true; }
 };
 
 // ------------------------ lockable object used internally -------------------------
@@ -4794,14 +4794,14 @@ public:
         DoNothing() noexcept {}
         explicit DoNothing(mutex_type& ) noexcept {}
         explicit DoNothing(mutex_type& , mutex_type&) noexcept {}
-        DoNothing(mutex_type&, phmap::adopt_lock_t) noexcept {}
-        DoNothing(mutex_type&, phmap::defer_lock_t) noexcept {}
-        DoNothing(mutex_type&, phmap::try_to_lock_t) {}
+        inline DoNothing(mutex_type&, phmap::adopt_lock_t) noexcept {}
+        inline DoNothing(mutex_type&, phmap::defer_lock_t) noexcept {}
+        inline DoNothing(mutex_type&, phmap::try_to_lock_t) {}
         template<class T> explicit DoNothing(T&&) {}
-        DoNothing& operator=(const DoNothing&) { return *this; }
-        DoNothing& operator=(DoNothing&&) { return *this; }
-        void swap(DoNothing &) {}
-        bool owns_lock() const noexcept { return true; }
+        inline DoNothing& operator=(const DoNothing&) { return *this; }
+        inline DoNothing& operator=(DoNothing&&) { return *this; }
+        inline void swap(DoNothing &) {}
+        inline bool owns_lock() const noexcept { return true; }
     };
 
     // ----------------------------------------------------
@@ -4836,7 +4836,7 @@ public:
             o.m_      = nullptr;
         }
 
-        WriteLock& operator=(WriteLock&& other) {
+        inline WriteLock& operator=(WriteLock&& other) {
             WriteLock temp(std::move(other));
             swap(temp);
             return *this;
@@ -4847,30 +4847,30 @@ public:
                 m_->unlock(); 
         }
 
-        void lock() { 
+        inline void lock() {
             if (!locked_) { 
                 m_->lock(); 
                 locked_ = true; 
             }
         }
 
-        void unlock() { 
+        inline void unlock() {
             if (locked_) {
                 m_->unlock(); 
                 locked_ = false;
             }
         } 
 
-        bool try_lock() { 
+        inline bool try_lock() {
             if (locked_)
                 return true;
             locked_ = m_->try_lock(); 
             return locked_;
         }
         
-        bool owns_lock() const noexcept { return locked_; }
+        inline bool owns_lock() const noexcept { return locked_; }
 
-        void swap(WriteLock &o) noexcept { 
+        inline void swap(WriteLock &o) noexcept {
             std::swap(m_, o.m_);
             std::swap(locked_, o.locked_);
         }
@@ -4914,7 +4914,7 @@ public:
             o.m_      = nullptr;
         }
 
-        ReadLock& operator=(ReadLock&& other) {
+        inline ReadLock& operator=(ReadLock&& other) {
             ReadLock temp(std::move(other));
             swap(temp);
             return *this;
@@ -4984,7 +4984,7 @@ public:
         }
 
         WriteLocks(WriteLocks const&) = delete;
-        WriteLocks& operator=(WriteLocks const&) = delete;
+        inline WriteLocks& operator=(WriteLocks const&) = delete;
     private:
         mutex_type& _m1;
         mutex_type& _m2;
@@ -5015,7 +5015,7 @@ public:
         }
 
         ReadLocks(ReadLocks const&) = delete;
-        ReadLocks& operator=(ReadLocks const&) = delete;
+        inline ReadLocks& operator=(ReadLocks const&) = delete;
     private:
         mutex_type& _m1;
         mutex_type& _m2;

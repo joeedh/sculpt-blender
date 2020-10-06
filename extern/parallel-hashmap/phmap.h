@@ -867,14 +867,14 @@ public:
         pointer operator->() const { return &operator*(); }
 
         // PRECONDITION: not an end() iterator.
-        iterator& operator++() {
+        inline iterator& operator++() {
             ++ctrl_;
             ++slot_;
             skip_empty_or_deleted();
             return *this;
         }
         // PRECONDITION: not an end() iterator.
-        iterator operator++(int) {
+        inline iterator operator++(int) {
             auto tmp = *this;
             ++*this;
             return tmp;
@@ -899,10 +899,10 @@ public:
         }
 #endif
 
-        friend bool operator==(const iterator& a, const iterator& b) {
+        inline friend bool operator==(const iterator& a, const iterator& b) {
             return a.ctrl_ == b.ctrl_;
         }
-        friend bool operator!=(const iterator& a, const iterator& b) {
+        inline friend bool operator!=(const iterator& a, const iterator& b) {
             return !(a == b);
         }
 
@@ -948,21 +948,21 @@ public:
         reference operator*() const { return *inner_; }
         pointer operator->() const { return inner_.operator->(); }
 
-        const_iterator& operator++() {
+        inline const_iterator& operator++() {
             ++inner_;
             return *this;
         }
-        const_iterator operator++(int) { return inner_++; }
+        inline const_iterator operator++(int) { return inner_++; }
 
-        friend bool operator==(const const_iterator& a, const const_iterator& b) {
+        inline friend bool operator==(const const_iterator& a, const const_iterator& b) {
             return a.inner_ == b.inner_;
         }
-        friend bool operator!=(const const_iterator& a, const const_iterator& b) {
+        inline friend bool operator!=(const const_iterator& a, const const_iterator& b) {
             return !(a == b);
         }
 
     private:
-        const_iterator(const ctrl_t* ctrl, const slot_type* slot)
+        inline const_iterator(const ctrl_t* ctrl, const slot_type* slot)
             : inner_(const_cast<ctrl_t*>(ctrl), const_cast<slot_type*>(slot)) {}
 
         iterator inner_;
@@ -1077,11 +1077,11 @@ public:
                  const allocator_type& alloc)
         : raw_hash_set(init, 0, hasher(), key_equal(), alloc) {}
 
-    raw_hash_set(const raw_hash_set& that)
+    inline raw_hash_set(const raw_hash_set& that)
         : raw_hash_set(that, AllocTraits::select_on_container_copy_construction(
                            that.alloc_ref())) {}
 
-    raw_hash_set(const raw_hash_set& that, const allocator_type& a)
+    inline raw_hash_set(const raw_hash_set& that, const allocator_type& a)
         : raw_hash_set(0, that.hash_ref(), that.eq_ref(), a) {
         reserve(that.size());
         // Because the table is guaranteed to be empty, we can do something faster
@@ -1097,7 +1097,7 @@ public:
         growth_left() -= that.size();
     }
 
-    raw_hash_set(raw_hash_set&& that) noexcept(
+    inline raw_hash_set(raw_hash_set&& that) noexcept(
         std::is_nothrow_copy_constructible<hasher>::value&&
         std::is_nothrow_copy_constructible<key_equal>::value&&
         std::is_nothrow_copy_constructible<allocator_type>::value)
@@ -1135,7 +1135,7 @@ public:
         }
     }
 
-    raw_hash_set& operator=(const raw_hash_set& that) {
+    inline raw_hash_set& operator=(const raw_hash_set& that) {
         raw_hash_set tmp(that,
                          AllocTraits::propagate_on_container_copy_assignment::value
                          ? that.alloc_ref()
@@ -1144,7 +1144,7 @@ public:
         return *this;
     }
 
-    raw_hash_set& operator=(raw_hash_set&& that) noexcept(
+    inline raw_hash_set& operator=(raw_hash_set&& that) noexcept(
         phmap::allocator_traits<allocator_type>::is_always_equal::value&&
         std::is_nothrow_move_assignable<hasher>::value&&
         std::is_nothrow_move_assignable<key_equal>::value) {
@@ -1157,12 +1157,12 @@ public:
 
     ~raw_hash_set() { destroy_slots(); }
 
-    iterator begin() {
+    inline iterator begin() {
         auto it = iterator_at(0);
         it.skip_empty_or_deleted();
         return it;
     }
-    iterator end() 
+    inline iterator end()
     {
 #if PHMAP_BIDIRECTIONAL
         return iterator_at(capacity_); 
@@ -1171,17 +1171,17 @@ public:
 #endif
     }
 
-    const_iterator begin() const {
+    inline const_iterator begin() const {
         return const_cast<raw_hash_set*>(this)->begin();
     }
-    const_iterator end() const { return const_cast<raw_hash_set*>(this)->end(); }
-    const_iterator cbegin() const { return begin(); }
-    const_iterator cend() const { return end(); }
+    inline const_iterator end() const { return const_cast<raw_hash_set*>(this)->end(); }
+    inline const_iterator cbegin() const { return begin(); }
+    inline const_iterator cend() const { return end(); }
 
-    bool empty() const { return !size(); }
-    size_t size() const { return size_; }
-    size_t capacity() const { return capacity_; }
-    size_t max_size() const { return (std::numeric_limits<size_t>::max)(); }
+    inline bool empty() const { return !size(); }
+    inline size_t size() const { return size_; }
+    inline size_t capacity() const { return capacity_; }
+    inline size_t max_size() const { return (std::numeric_limits<size_t>::max)(); }
 
     PHMAP_ATTRIBUTE_REINITIALIZES void clear() {
         // Iterating over this container is O(bucket_count()). When bucket_count()
@@ -2702,21 +2702,21 @@ public:
 
     ~parallel_hash_set() {}
 
-    iterator begin() {
+    inline iterator begin() {
         auto it = iterator(&sets_[0], &sets_[0] + num_tables, sets_[0].set_.begin());
         it.skip_empty();
         return it;
     }
 
-    iterator       end()          { return iterator(); }
-    const_iterator begin()  const { return const_cast<parallel_hash_set *>(this)->begin(); }
-    const_iterator end()    const { return const_cast<parallel_hash_set *>(this)->end(); }
-    const_iterator cbegin() const { return begin(); }
-    const_iterator cend()   const { return end(); }
+    inline iterator       end()          { return iterator(); }
+    inline const_iterator begin()  const { return const_cast<parallel_hash_set *>(this)->begin(); }
+    inline const_iterator end()    const { return const_cast<parallel_hash_set *>(this)->end(); }
+    inline const_iterator cbegin() const { return begin(); }
+    inline const_iterator cend()   const { return end(); }
 
-    bool empty() const { return !size(); }
+    inline bool empty() const { return !size(); }
 
-    size_t size() const { 
+    inline size_t size() const {
         size_t sz = 0;
         for (const auto& inner : sets_)
             sz += inner.set_.size();
@@ -3111,7 +3111,7 @@ public:
     }
 
     template <class K = key_type>
-    bool contains(const key_arg<K>& key) const {
+    inline bool contains(const key_arg<K>& key) const {
         return find(key) != end();
     }
 
@@ -3700,35 +3700,35 @@ struct FlatHashMapPolicy
     using init_type = std::pair</*non const*/ key_type, mapped_type>;
 
     template <class Allocator, class... Args>
-    static void construct(Allocator* alloc, slot_type* slot, Args&&... args) {
+    inline static void construct(Allocator* alloc, slot_type* slot, Args&&... args) {
         slot_policy::construct(alloc, slot, std::forward<Args>(args)...);
     }
 
     template <class Allocator>
-    static void destroy(Allocator* alloc, slot_type* slot) {
+    inline static void destroy(Allocator* alloc, slot_type* slot) {
         slot_policy::destroy(alloc, slot);
     }
 
     template <class Allocator>
-    static void transfer(Allocator* alloc, slot_type* new_slot,
+    inline static void transfer(Allocator* alloc, slot_type* new_slot,
                          slot_type* old_slot) {
         slot_policy::transfer(alloc, new_slot, old_slot);
     }
 
     template <class F, class... Args>
-    static decltype(phmap::priv::DecomposePair(
+    inline static decltype(phmap::priv::DecomposePair(
                         std::declval<F>(), std::declval<Args>()...))
     apply(F&& f, Args&&... args) {
         return phmap::priv::DecomposePair(std::forward<F>(f),
                                                         std::forward<Args>(args)...);
     }
 
-    static size_t space_used(const slot_type*) { return 0; }
+    inline static size_t space_used(const slot_type*) { return 0; }
 
-    static std::pair<const K, V>& element(slot_type* slot) { return slot->value; }
+    inline static std::pair<const K, V>& element(slot_type* slot) { return slot->value; }
 
-    static V& value(std::pair<const K, V>* kv) { return kv->second; }
-    static const V& value(const std::pair<const K, V>* kv) { return kv->second; }
+    inline static V& value(std::pair<const K, V>* kv) { return kv->second; }
+    inline static const V& value(const std::pair<const K, V>* kv) { return kv->second; }
 };
 
 template <class Reference, class Policy>
@@ -4436,7 +4436,7 @@ public:
     using Base::get_allocator;
     using Base::hash_function;
     using Base::key_eq;
-    typename Base::hasher hash_funct() { return this->hash_function(); }
+    inline typename Base::hasher hash_funct() { return this->hash_function(); }
     void resize(typename Base::size_type hint) { this->rehash(hint); }
 };
 
@@ -4494,8 +4494,8 @@ public:
     using Base::get_allocator;
     using Base::hash_function;
     using Base::key_eq;
-    typename Base::hasher hash_funct() { return this->hash_function(); }
-    void resize(typename Base::size_type hint) { this->rehash(hint); }
+    inline typename Base::hasher hash_funct() { return this->hash_function(); }
+    inline void resize(typename Base::size_type hint) { this->rehash(hint); }
 };
 
 }  // namespace phmap
