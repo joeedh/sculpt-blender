@@ -1214,7 +1214,7 @@ typedef struct PaintCursorContext {
   /* Sculpt related data. */
   Sculpt *sd;
   SculptSession *ss;
-  int prev_active_vertex_index;
+  SculptIdx prev_active_vertex_index;
   bool is_stroke_active;
   bool is_cursor_over_mesh;
   bool is_multires;

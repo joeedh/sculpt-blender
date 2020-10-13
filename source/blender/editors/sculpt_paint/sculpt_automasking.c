@@ -110,7 +110,7 @@ static bool SCULPT_automasking_needs_cache(const Sculpt *sd, const Brush *brush)
   return false;
 }
 
-float SCULPT_automasking_factor_get(SculptSession *ss, int vert)
+float SCULPT_automasking_factor_get(SculptSession *ss, SculptIdx vert)
 {
   if (!ss->cache) {
     return 1.0f;

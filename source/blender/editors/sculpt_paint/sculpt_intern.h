@@ -95,20 +95,20 @@ char SCULPT_mesh_symmetry_xyz_get(Object *object);
 void SCULPT_vertex_random_access_ensure(struct SculptSession *ss);
 
 int SCULPT_vertex_count_get(struct SculptSession *ss);
-const float *SCULPT_vertex_co_get(struct SculptSession *ss, int index);
-void SCULPT_vertex_normal_get(SculptSession *ss, int index, float no[3]);
-float SCULPT_vertex_mask_get(struct SculptSession *ss, int index);
-const float *SCULPT_vertex_color_get(SculptSession *ss, int index);
+const float *SCULPT_vertex_co_get(struct SculptSession *ss, SculptIdx index);
+void SCULPT_vertex_normal_get(SculptSession *ss, SculptIdx index, float no[3]);
+float SCULPT_vertex_mask_get(struct SculptSession *ss, SculptIdx index);
+const float *SCULPT_vertex_color_get(SculptSession *ss, SculptIdx index);
 
-const float *SCULPT_vertex_persistent_co_get(SculptSession *ss, int index);
-void SCULPT_vertex_persistent_normal_get(SculptSession *ss, int index, float no[3]);
+const float *SCULPT_vertex_persistent_co_get(SculptSession *ss, SculptIdx index);
+void SCULPT_vertex_persistent_normal_get(SculptSession *ss, SculptIdx index, float no[3]);
 
 /* Coordinates used for manipulating the base mesh when Grab Active Vertex is enabled. */
-const float *SCULPT_vertex_co_for_grab_active_get(SculptSession *ss, int index);
+const float *SCULPT_vertex_co_for_grab_active_get(SculptSession *ss, SculptIdx index);
 
 /* Returns the info of the limit surface when Multires is available, otherwise it returns the
  * current coordinate of the vertex. */
-void SCULPT_vertex_limit_surface_get(SculptSession *ss, int index, float r_co[3]);
+void SCULPT_vertex_limit_surface_get(SculptSession *ss, SculptIdx index, float r_co[3]);
 
 /* Returns the pointer to the coordinates that should be edited from a brush tool iterator
  * depending on the given deformation target. */
@@ -332,7 +332,7 @@ enum eDynTopoWarnFlag SCULPT_dynamic_topology_check(Scene *scene, Object *ob);
 void SCULPT_pbvh_clear(Object *ob);
 
 /* Automasking. */
-float SCULPT_automasking_factor_get(SculptSession *ss, int vert);
+float SCULPT_automasking_factor_get(SculptSession *ss, SculptIdx vert);
 
 void SCULPT_automasking_init(Sculpt *sd, Object *ob);
 void SCULPT_automasking_end(Object *ob);
@@ -449,7 +449,7 @@ void SCULPT_pose_ik_chain_free(struct SculptPoseIKChain *ik_chain);
 /* Boundary Brush. */
 struct SculptBoundary *SCULPT_boundary_data_init(Object *object,
                                                  Brush *brush,
-                                                 const int initial_vertex,
+                                                 const SculptIdx initial_vertex,
                                                  const float radius);
 void SCULPT_boundary_data_free(struct SculptBoundary *boundary);
 void SCULPT_do_boundary_brush(struct Sculpt *sd,
@@ -723,7 +723,7 @@ typedef struct SculptThreadedTaskData {
   bool mask_by_color_preserve_mask;
 
   /* Index of the vertex that is going to be used as a reference for the colors. */
-  int mask_by_color_vertex;
+  SculptIdx mask_by_color_vertex;
   float *mask_by_color_floodfill;
 
   int face_set;
@@ -797,7 +797,7 @@ float SCULPT_brush_strength_factor(struct SculptSession *ss,
                                    const short vno[3],
                                    const float fno[3],
                                    const float mask,
-                                   const int vertex_index,
+                                   const SculptIdx vertex_index,
                                    const int thread_id);
 
 /* just for vertex paint. */

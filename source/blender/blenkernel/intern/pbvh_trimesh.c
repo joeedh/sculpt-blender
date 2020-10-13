@@ -1519,7 +1519,7 @@ bool pbvh_trimesh_node_raycast(PBVHNode *node,
               if (len_squared_v3v3(location, v_tri[j]->co) <
                 len_squared_v3v3(location, nearest_vertex_co)) {
                 copy_v3_v3(nearest_vertex_co, v_tri[j]->co);
-                *r_active_vertex_index = v_tri[j]->index;
+                *r_active_vertex_index = (SculptIdx)v_tri[j];
               }
             }
           }
@@ -1997,7 +1997,7 @@ bool BKE_pbvh_trimesh_update_topology(PBVH *bvh,
   pbvh_trimesh_verify(bvh);
 #endif
 
-  if (modified) {
+  if (0 && modified) {
     bvh->tm->elem_table_dirty |= TM_VERTEX|TM_EDGE|TM_TRI;
     bvh->tm->elem_index_dirty |= TM_VERTEX|TM_EDGE|TM_TRI;
 

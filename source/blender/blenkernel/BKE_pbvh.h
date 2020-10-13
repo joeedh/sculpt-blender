@@ -26,7 +26,7 @@
 
 #include "stdint.h"
 
-typedef uintptr_t SculptIdx;
+typedef intptr_t SculptIdx;
 
 /* For embedding CCGKey in iterator. */
 #include "BKE_ccg.h"
@@ -491,7 +491,7 @@ void pbvh_vertex_iter_init(PBVH *pbvh, PBVHNode *node, PBVHVertexIter *vi, int m
           } \
           vi.co = vi.tm_vert->co; \
           vi.fno = vi.tm_vert->no; \
-          vi.index = vi.tm_vert->index; \
+          vi.index = (SculptIdx)vi.tm_vert; \
           vi.mask = TM_ELEM_CD_GET_VOID_P(vi.tm_vert, vi.cd_vert_mask_offset); \
         }\
         else { \
