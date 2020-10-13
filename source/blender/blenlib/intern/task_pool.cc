@@ -90,7 +90,7 @@ class Task {
     other.freedata = NULL;
   }
 
-#if defined(WITH_TBB) && TBB_INTERFACE_VERSION_MAJOR < 10
+#if 1 //defined(WITH_TBB) && TBB_INTERFACE_VERSION_MAJOR < 10
   Task(const Task &other)
       : pool(other.pool),
         run(other.run),

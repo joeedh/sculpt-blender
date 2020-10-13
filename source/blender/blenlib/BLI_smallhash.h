@@ -195,9 +195,15 @@ extern const uint BLI_ghash_hash_sizes[];
 */
 BLI_INLINE bool smallhash_test_expand_buckets(const uint nentries, const uint nbuckets)
 {
-  /* (approx * 1.5) */
-  return (nentries + (nentries >> 1)) > nbuckets;
+  /* (approx * 1.25) */
+  return (nentries + (nentries >> 1) - (nentries >> 2)) > nbuckets;
 }
+
+#  ifdef __SSE2__
+//BLI_INLINE SmallHashEntry *smallhash_lookup_simd(SmallHash *sh, const uintptr_t key) {
+  //__m128 
+//}
+#endif
 
 BLI_INLINE SmallHashEntry *smallhash_lookup_first_free(SmallHash *sh, const uintptr_t key)
 {

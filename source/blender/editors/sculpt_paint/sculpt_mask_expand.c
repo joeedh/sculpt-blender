@@ -307,7 +307,7 @@ typedef struct MaskExpandFloodFillData {
 } MaskExpandFloodFillData;
 
 static bool mask_expand_floodfill_cb(
-    SculptSession *ss, int from_v, int to_v, bool is_duplicate, void *userdata)
+    SculptSession *ss, SculptIdx from_v, SculptIdx to_v, bool is_duplicate, void *userdata)
 {
   MaskExpandFloodFillData *data = userdata;
 

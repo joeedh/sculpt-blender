@@ -71,7 +71,7 @@ typedef struct BoundaryInitialVertexFloodFillData {
 } BoundaryInitialVertexFloodFillData;
 
 static bool boundary_initial_vertex_floodfill_cb(
-    SculptSession *ss, int from_v, int to_v, bool is_duplicate, void *userdata)
+    SculptSession *ss, SculptIdx from_v, SculptIdx to_v, bool is_duplicate, void *userdata)
 {
   BoundaryInitialVertexFloodFillData *data = userdata;
 
@@ -224,7 +224,7 @@ typedef struct BoundaryFloodFillData {
 } BoundaryFloodFillData;
 
 static bool boundary_floodfill_cb(
-    SculptSession *ss, int from_v, int to_v, bool is_duplicate, void *userdata)
+    SculptSession *ss, SculptIdx from_v, SculptIdx to_v, bool is_duplicate, void *userdata)
 {
   BoundaryFloodFillData *data = userdata;
   SculptBoundary *boundary = data->boundary;

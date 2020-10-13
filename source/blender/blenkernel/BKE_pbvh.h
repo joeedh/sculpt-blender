@@ -24,6 +24,10 @@
 #include "BLI_bitmap.h"
 #include "BLI_ghash.h"
 
+#include "stdint.h"
+
+typedef uintptr_t SculptIdx;
+
 /* For embedding CCGKey in iterator. */
 #include "BKE_ccg.h"
 
@@ -169,8 +173,8 @@ bool BKE_pbvh_node_raycast(PBVH *pbvh,
                            const float ray_normal[3],
                            struct IsectRayPrecalc *isect_precalc,
                            float *depth,
-                           int *active_vertex_index,
-                           int *active_face_grid_index,
+                           SculptIdx *active_vertex_index,
+                           SculptIdx *active_face_grid_index,
                            float *face_normal);
 
 bool BKE_pbvh_bmesh_node_raycast_detail(PBVHNode *node,
@@ -274,7 +278,7 @@ bool BKE_pbvh_trimesh_update_topology(PBVH *bvh,
   const float view_normal[3],
   float radius,
   const bool use_frontface,
-  const bool use_projected);
+  const bool use_projected, int sym_axis);
 /* Node Access */
 
 void BKE_pbvh_node_mark_update(PBVHNode *node);
@@ -373,7 +377,7 @@ typedef struct PBVHVertexIter {
   int gx;
   int gy;
   int i;
-  int index;
+  SculptIdx index;
   bool respect_hide;
 
   /* grid */

@@ -158,6 +158,11 @@ struct BLI_ThreadSafePool;
 #define MAX_TRIMESH_POOLS 5
 #endif
 
+typedef struct TM_ElemTable {
+  void **table;
+  int size, used;
+} TM_ElemTable;
+
 typedef struct TM_TriMesh {
  struct BLI_ThreadSafePool* pools[MAX_TRIMESH_POOLS];
 
@@ -167,10 +172,7 @@ typedef struct TM_TriMesh {
 
   int shapenr;
 
-  TMVert **vtable;
-  TMEdge **etable;
-  TMFace **ttable;
-  int vtable_tot, etable_tot, ttable_tot;
+  TM_ElemTable vtable, etable, ttable;
 
   SpinLock global_lock;
 
@@ -209,8 +211,12 @@ void TM_vert_iternew(TM_TriMesh *tm, TM_TriMeshIter* iter);
 void TM_edge_iternew(TM_TriMesh *tm, TM_TriMeshIter* iter);
 void TM_loop_iternew(TM_TriMesh *tm, TM_TriMeshIter* iter);
 void TM_tri_iternew(TM_TriMesh *tm, TM_TriMeshIter* iter);
-void *TM_iterstep(TM_TriMeshIter* iter);
 void TM_add(TM_TriMesh *tm, float* vertCos, float* vertNos, int totvert, int* triIndices, int tottri, int threadnr, bool skipcd);
+
+
+BLI_INLINE void *TM_iterstep(TM_TriMeshIter *iter) {
+  return BLI_safepool_iterstep(&iter->iter);
+}
 
 BLI_INLINE void TM_iterate(TM_TriMesh *tm, TM_TriMeshIter *iter, int type) {
   switch (type) {
@@ -280,6 +286,8 @@ void TM_tag_thread_boundaries_once(TM_TriMesh *tm, TMFace **tris, int tottri);
 //last island is always boundary triangles
 void TM_build_islands(TM_TriMesh *tm, TMFace **tris, int tottri, TMTriIsland** r_islands, int *r_totisland);
 void TM_free_islands(TMTriIsland* islands, int totisland, bool free_islands);
+
+bool TM_elem_is_dead(void *elem);
 
 #define TM_ELEM_CD_SET_INT(ele, offset, f) (*((int *)((char *)(ele)->customdata + (offset))) = (f))
 #define TM_ELEM_CD_GET_INT(ele, offset) (*((int *)((char *)(ele)->customdata + (offset))))
@@ -586,8 +594,27 @@ void TM_mesh_elem_index_ensure(TM_TriMesh *tm, int typemask);
 BLI_INLINE TMVert *TM_vert_at_index(TM_TriMesh *bm, const int index)
 {
   BLI_assert((index >= 0) && (index < bm->totvert));
-  BLI_assert((bm->elem_table_dirty & BM_VERT) == 0);
-  return bm->vtable[index];
+  BLI_assert((bm->elem_table_dirty & TM_VERTEX) == 0);
+
+  return (TMVert*) bm->vtable.table[index];
+}
+
+TM_ElemTable *TM_getElemTable(TM_TriMesh *tm, int type);
+
+BLI_INLINE TMEdge *TM_edge_at_index(TM_TriMesh *bm, const int index)
+{
+  BLI_assert((index >= 0) && (index < bm->totedge));
+  BLI_assert((bm->elem_table_dirty & TM_EDGE) == 0);
+
+  return (TMEdge*) bm->etable.table[index];
+}
+
+BLI_INLINE TMFace *TM_tri_at_index(TM_TriMesh *bm, const int index)
+{
+  BLI_assert((index >= 0) && (index < bm->tottri));
+  BLI_assert((bm->elem_table_dirty & TM_TRI) == 0);
+
+  return (TMFace*) bm->ttable.table[index];
 }
 
 #if 0 //defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)

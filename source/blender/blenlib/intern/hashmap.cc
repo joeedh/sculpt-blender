@@ -14,13 +14,6 @@ typedef char* HashString;
 //for a seriously dumb hack
 #define ITER_RESERVE_SIZE 64
 
-void test() {
-    parallel_flat_hash_map<void*, void*> map;
-    void *a=0, *b=0;
-
-    parallel_flat_hash_map<void*, void*>::iterator it;
-    map.insert(std::pair<void*, void*>(a, b));
-}
 /*
 int main() {
     parallel_flat_hash_map<void*, void*> map;

@@ -471,8 +471,8 @@ static Collection *collection_duplicate_recursive(Main *bmain,
 Collection *BKE_collection_duplicate(Main *bmain,
                                      Collection *parent,
                                      Collection *collection,
-                                     eDupli_ID_Flags duplicate_flags,
-                                     eLibIDDuplicateFlags duplicate_options)
+                                     uint duplicate_flags,
+                                     uint duplicate_options)
 {
   const bool is_subprocess = (duplicate_options & LIB_ID_DUPLICATE_IS_SUBPROCESS) != 0;
 

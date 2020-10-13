@@ -252,10 +252,12 @@ static void elemhash_add(TriMeshLog *log, void *elem, int id, int entryidx) {
   BLI_spin_lock(&log->lock);
   BLI_HashMapIter(HashInt, HashP) iter;
 
+  /*
   BLI_HASH_ITER(log->elemhash_ptr, iter, HashInt, HashP) {
     printf("%d %p\n", BLI_hashiter_key(iter), BLI_hashiter_value(iter));
 
   } BLI_HASH_ITER_END
+  */
 
   BLI_hashmap_insert(HashP, HashInt)(log->elemhash_id, (void*)id, elem);
   BLI_hashmap_insert(HashInt, HashP)(log->elemhash_ptr, elem, (void*)id);
@@ -664,7 +666,42 @@ static int meshlog_wind(TriMeshLog *tlog, int entry_i, int threadnr) {
 
   switch (item->value.i) {
   case LOG_VERT_STATE: {
-    //update vert state log entry?
+    int id = log[i++].value.i;
+    float *co = log[i++].value.vec3;
+    float *no = log[i++].value.vec3;
+    int *ivec = log[i++].value.ivec3;
+    float mask = log[i++].value.f;
+
+    TMVert *v = elemhash_lookup_id(tlog, id);
+    break;
+  }
+
+  case LOG_VERT_KILL: {
+    int id = log[i++].value.i;
+    TMVert *v = elemhash_lookup_id(tlog, id);
+    TM_kill_vert(tlog->tm, v, 0);
+
+    break;
+  }
+
+  case LOG_EDGE_KILL: {
+    int id = log[i++].value.i;
+    int kill_verts = log[i++].value.i;
+
+    TMEdge *e = elemhash_lookup_id(tlog, id);
+    TM_kill_edge(tlog->tm, e, 0, !!kill_verts);
+
+    break;
+  }
+
+  case LOG_TRI_KILL: {
+    int id = log[i++].value.i;
+    int kill_verts = log[i++].value.i;
+    int kill_edges = log[i++].value.i;
+
+    TMFace *tri = elemhash_lookup_id(tlog, id);
+    TM_kill_tri(tlog->tm, tri, 0, !!kill_edges, !!kill_verts);
+
     break;
   }
 
@@ -684,6 +721,34 @@ static int meshlog_wind(TriMeshLog *tlog, int entry_i, int threadnr) {
     elemhash_add(tlog, v, id, entry_i);
 
     break;
+  }
+  case LOG_EDGE_ADD: {
+    int id = log[i++].value.i;
+    int v1id = log[i++].value.i;
+    int v2id = log[i++].value.i;
+    int skipcd = log[i++].value.i;
+
+    TMVert *v1 = elemhash_lookup_id(tlog, v1id);
+    TMVert *v2 = elemhash_lookup_id(tlog, v2id);
+    TMEdge *e = TM_get_edge(tlog->tm, v1, v2, 0, skipcd);
+
+    elemhash_add(tlog, e, id, entry_i);
+
+    break;
+  }
+  case LOG_TRI_ADD: {
+    int id = log[i++].value.i;
+    int skipcd = log[i++].value.i;
+    int v1id = log[i++].value.i;
+    int v2id = log[i++].value.i;
+    int v3id = log[i++].value.i;
+
+    TMVert *v1 = elemhash_lookup_id(tlog, v1id);
+    TMVert *v2 = elemhash_lookup_id(tlog, v2id);
+    TMVert *v3 = elemhash_lookup_id(tlog, v3id);
+
+    TMFace *f = TM_make_tri(tlog->tm, v1, v2, v3, 0, !!skipcd);
+    elemhash_add(tlog, f, id, entry_i);
   }
   }
 
@@ -778,37 +843,35 @@ static int meshlog_unwind(TriMeshLog *tlog, int entry_i, int threadnr) {
     int v1id = log[i++].value.i;
     int v2id = log[i++].value.i;
     int skipcd = log[i++].value.i;
+
+    TMEdge *e = elemhash_lookup_id(tlog, id);
+    TM_kill_edge(tlog->tm, e, 0, false);
+
     break;
   }
+
   case LOG_TRI_ADD: {
     int id = log[i++].value.i;
-    int v1id = log[i++].value.i;
-    int v2id = log[i++].value.i;
-    int v3id = log[i++].value.i;
-    int skipcd = log[i++].value.i;
+    TMFace *f = elemhash_lookup_id(tlog, id);
 
-    if (!skipcd) {
-      //remember that customdata logs usually don't handle their own heading tag
-      i = trimesh_skip_loop(tlog, i);
-      i = trimesh_skip_loop(tlog, i);
-      i = trimesh_skip_loop(tlog, i);
-    }
+    TM_kill_tri(tlog->tm, f, 0, false, false);
+
     break;
   }
+
   case LOG_VERT_KILL: {
     int id = log[i++].value.i;
     int totedge = log[i++].value.i;
 
     for (int j=0; j<totedge; j++) {
       int eid = log[i++].value.i;
-      int *ret = NULL;
-      bool exists = BLI_hashmap_lookup_p(HashInt, HashInt)(tlog->elemhash_entry, eid, &ret);
+      int ei = elemhash_get_entry(tlog, eid);
 
-      if (!exists) {
-        continue; //error!
+      if (!ei < 0) {
+        printf("error! %s:%d\n", __FILE__, __LINE__);
+        continue;
       }
 
-      int ei = (int)ret;
       meshlog_wind(tlog, ei, threadnr);
     }
     break;
@@ -817,6 +880,7 @@ static int meshlog_unwind(TriMeshLog *tlog, int entry_i, int threadnr) {
   case LOG_EDGE_KILL: {
     int id = log[i++].value.i;
     int kill_verts = log[i++].value.i;
+
     mesh_wind_list(tlog, i, threadnr);
     break;
   }
@@ -843,19 +907,6 @@ static int meshlog_unwind(TriMeshLog *tlog, int entry_i, int threadnr) {
     i = trimesh_read_loop(tlog, tri->l1, i);
     i = trimesh_read_loop(tlog, tri->l2, i);
     i = trimesh_read_loop(tlog, tri->l3, i);
-    break;
-  }
-
-  case LOG_SPLIT_EDGE: {
-    int v1id = log[i++].value.i;
-    int v2id = log[i++].value.i;
-    float fac = log[i++].value.f;
-    int logged_newvert = log[i++].value.i;
-    break;
-  }
-  case LOG_COLLAPSE_EDGE: {
-    int v1id = log[i++].value.i;
-    int v2id = log[i++].value.i;
     break;
   }
   }

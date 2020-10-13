@@ -23,6 +23,8 @@
  * \ingroup bke
  */
 
+#include "BKE_pbvh.h"
+
 #include "BLI_bitmap.h"
 #include "BLI_utildefines.h"
 #include "DNA_object_enums.h"
@@ -500,7 +502,7 @@ typedef struct SculptSession {
   struct FilterCache *filter_cache;
 
   /* Cursor data and active vertex for tools */
-  int active_vertex_index;
+  SculptIdx active_vertex_index;
 
   int active_face_index;
   int active_grid_index;

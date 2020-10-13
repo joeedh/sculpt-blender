@@ -1,3 +1,5 @@
+#pragma once
+
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -10,42 +12,8 @@
 #include "BLI_listbase.h"
 
 #define POOL_CHUNK_MAGIC ('p' | ('o' << 8) | ('o' << 16) | ('l' || 24))
-#define DEAD_MAGIC ('d' | ('e' << 8) | ('a' << 16) | ('d' || 24))
 
 //#define BLI_SAFEPOOL_HAVE_LENGTH
-
-//keep eight-byte aligned!
-typedef struct poolchunk {
-  struct poolchunk* next, * prev;
-  unsigned int threadnr, magic;
-} poolchunk;
-
-struct pool_thread_data;
-
-/*this structure is always aligned to the pointer size*/
-typedef struct poolelem { 
-  struct pool_thread_data *poolthread;
-  struct poolelem *next; //eats into returned memory
-  intptr_t dead_magic; //eats into returned memory
-} poolelem;
-
-typedef struct pool_thread_data {
-  ListBase chunks;
-  void* freehead;
-  ThreadRWMutex lock;
-  unsigned int used, threadnr;
-} pool_thread_data;
-
-typedef struct BLI_ThreadSafePool {
-  pool_thread_data* threadchunks;
-  int maxthread;
-
-#ifdef BLI_SAFEPOOL_HAVE_LENGTH
-  unsigned int length;
-  ThreadRWMutex lengthlock;
-#endif
-  size_t esize, csize;
-} BLI_ThreadSafePool;
 
 static int getalign(int size) {
   if (size & 15) {
@@ -256,64 +224,3 @@ int BLI_safepool_length(BLI_ThreadSafePool *pool) {
   return pool->length;
 }
 #endif
-
-void lock_all_threads(BLI_ThreadSafePool* pool) {
-  for (int i = 0; i < pool->maxthread; i++) {
-    BLI_rw_mutex_lock(&pool->threadchunks[i].lock, THREAD_LOCK_WRITE);
-  }
-}
-
-void unlock_all_threads(BLI_ThreadSafePool* pool) {
-  for (int i = 0; i < pool->maxthread; i++) {
-    BLI_rw_mutex_unlock(&pool->threadchunks[i].lock);
-  }
-}
-
-void BLI_safepool_iternew(struct BLI_ThreadSafePool* pool, ThreadSafePoolIter* iter) {
-  lock_all_threads(pool);
-
-  memset(iter, 0, sizeof(*iter));
-  iter->pool = pool;
-
-  iter->thread = 0;
-  iter->chunk = pool->threadchunks[0].chunks.first;
-  iter->i = 0;
-}
-
-void BLI_safepool_iterfree(ThreadSafePoolIter* iter) {
-  unlock_all_threads(iter->pool);
-}
-
-void* BLI_safepool_iterstep(ThreadSafePoolIter* iter) {
-  BLI_ThreadSafePool *pool = iter->pool;
-  poolchunk *chunk = iter->chunk;
-
-  if (iter->i < 0) { //end of iteration
-    return NULL;
-  }
-
-  char *ptr = ((char*)chunk) + sizeof(poolchunk);
-  ptr += pool->esize * iter->i;
-
-  iter->i++;
-  if (iter->i >= pool->csize) {
-    iter->i = 0;
-    chunk = iter->chunk = chunk->next;
-  }
-
-  if (!chunk && iter->thread < pool->maxthread-1) {
-    iter->thread++;
-    iter->chunk = pool->threadchunks[iter->thread].chunks.first;
-  } else if (!chunk) {
-    iter->i = -1; //flag end of iteration
-  }
-
-  poolelem *de = (poolelem*) ptr;
-
-  if (!ptr || de->dead_magic == DEAD_MAGIC) {
-    return BLI_safepool_iterstep(iter);
-  }
-
-  return (void*) &de->next;
-}
-

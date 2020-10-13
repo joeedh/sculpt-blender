@@ -123,18 +123,20 @@ void TMesh_free(TM_TriMesh *tm) {
     }
 
     BLI_safepool_destroy(cdata->tpool);
+    cdata->tpool = NULL;
   }
+
 
   for (int i=0; i<MAX_TRIMESH_POOLS; i++) {
     BLI_safepool_destroy(tm->pools[i]);
   }
 
-  if (tm->vtable)
-    MEM_freeN(tm->vtable);
-  if (tm->etable)
-    MEM_freeN(tm->etable);
-  if (tm->ttable)
-    MEM_freeN(tm->ttable);
+  if (tm->vtable.table)
+    MEM_freeN(tm->vtable.table);
+  if (tm->etable.table)
+    MEM_freeN(tm->etable.table);
+  if (tm->ttable.table)
+    MEM_freeN(tm->ttable.table);
 
   MEM_freeN(tm);
 }
@@ -209,10 +211,6 @@ void TM_tri_iternew(TM_TriMesh *tm, TM_TriMeshIter* iter) {
   BLI_safepool_iternew(tm->pools[POOL_TRI], &iter->iter);
 }
 
-void *TM_iterstep(TM_TriMeshIter *iter) {
-  return BLI_safepool_iterstep(&iter->iter);
-}
-
 static TMEdge *edge_add_tri(TM_TriMesh* tm, TMVert* v1, TMVert* v2, TMFace* tri, int threadnr, bool skipcd) {
   TMEdge *e = ensure_edge(tm, v1, v2, threadnr, skipcd);
   trilist_simplelist_append(tm, &e->tris, tri, POOL_TLIST, threadnr);
@@ -226,6 +224,9 @@ TMVert *TM_make_vert(TM_TriMesh *tm, float co[3], float no[3], int threadnr, boo
   trimesh_element_init(v, &tm->vdata, skipcd);
 
   trilist_simplelist_init(tm, &v->edges, V_ELIST_ESIZE, POOL_ELIST);
+
+  v->pad = 12345;
+  v->threadtag = 12345;
 
   if (co) {
     copy_v3_v3(v->co, co);
@@ -292,7 +293,7 @@ void TM_add(TM_TriMesh *tm, float* vertCos, float* vertNos, int totvert, int* tr
     vmap[i] = v;
   }
 
-  for (i = 0; i < tottri; triIndices += 3) {
+  for (i = 0; i < tottri; i++, triIndices += 3) {
     TMVert *v1 = vmap[triIndices[0]];
     TMVert *v2 = vmap[triIndices[1]];
     TMVert *v3 = vmap[triIndices[2]];
@@ -409,7 +410,7 @@ static void weld_verts(TM_TriMesh *tm, TMVert *v1, TMVert *v2, int threadnr) {
   TM_kill_vert(tm, v2, threadnr);
 }
 
-bool BLI_trimesh_elem_is_dead(void *elem) {
+bool TM_elem_is_dead(void *elem) {
   return BLI_safepool_elem_is_dead(elem);
 }
 
@@ -438,7 +439,7 @@ TMVert *TM_split_edge(TM_TriMesh *tm, TMEdge *e, int threadnr, float fac, bool s
     float src_weights[2] = {0.5f, 0.5f};
     void *src_blocks[2] = {e->v1->customdata, e->v2->customdata};
   
-    CustomData_bmesh_interp(&tm->vdata, src_blocks, src_weights, NULL, 2, vc->customdata);
+    CustomData_bmesh_interp(&tm->vdata, (void**)src_blocks, src_weights, NULL, 2, vc->customdata);
     CustomData_bmesh_copy_data(&tm->edata, &tm->edata, &e->customdata, &e2->customdata);
     CustomData_bmesh_copy_data(&tm->edata, &tm->edata, &e->customdata, &e3->customdata);
   }
@@ -805,15 +806,18 @@ void TM_mesh_bm_to_me(struct Main *bmain,
   BKE_mesh_update_customdata_pointers(me, false);
 }
 
-static void resize_table(void ***table, int *size, int newsize) {
-  if (!*table || newsize > *size) {
-    *size = newsize*2;
+static void resize_table(TM_ElemTable *table, int newsize) {
+  if (!table || newsize > table->size) {
+    int size2 = (newsize<<1) - (newsize >> 1);
 
-    if (*table) {
-      *table = MEM_reallocN(*table, newsize*sizeof(void*));
+    if (!table->table) {
+      table->table = MEM_mallocN(sizeof(void*)*size2, "trimesh eleme table");
     } else {
-      *table = MEM_mallocN(sizeof(void*)*newsize, "trimesh table");
+      table->table = MEM_reallocN(table->table, sizeof(void*)*size2);
     }
+
+    table->size = size2;
+    table->used = newsize;
   }
 }
 
@@ -823,104 +827,99 @@ static int TM_get_elem_count(TM_TriMesh *tm, int type) {
     return tm->totvert;
   case TM_EDGE:
     return tm->totedge;
-  /*
+  //*
   case TM_LOOP:
-    return tm->totloop;*/
+    return tm->tottri*3;
   case TM_TRI:
     return tm->tottri;
   }
 
   return -1;
 }
-static bool is_table_dirty(TM_TriMesh *tm, void **table, int tot, int type) {
+static bool is_table_dirty(TM_TriMesh *tm, TM_ElemTable *table, int type) {
   if (!type) {
      return false;
   }
 
-  bool ret = !table;
+  bool ret = !table->table;
 
-  ret = ret || tot < TM_get_elem_count(tm, type);
+  ret = ret || table->used != TM_get_elem_count(tm, type);
   ret = ret || (tm->elem_table_dirty & type);
 
   return ret;
 }
 
+TM_ElemTable *TM_getElemTable(TM_TriMesh *tm, int type) {
+  switch (type) {
+  case TM_VERTEX:
+    return &tm->vtable;
+  case TM_EDGE:
+    return &tm->etable;
+  case TM_TRI:
+    return &tm->ttable;
+  default:
+    return NULL;
+  }
+}
+
 void TM_mesh_elem_table_ensure(TM_TriMesh *tm, int typemask) {
-  if (is_table_dirty(tm, tm->vtable, tm->vtable_tot, typemask & TM_VERTEX)) {
-    TM_TriMeshIter iter;
-    TMVert *v;
+  const int types[] = {TM_VERTEX, TM_EDGE, TM_TRI};
+  const int iters[] = {TM_VERTS_OF_MESH, TM_EDGES_OF_MESH, TM_TRIS_OF_MESH};
 
-    resize_table(&tm->vtable, &tm->vtable_tot, tm->totvert);
+  for (int ti=0; ti<3; ti++) {
+    TM_ElemTable *table = TM_getElemTable(tm, types[ti]);
 
-    TM_vert_iternew(tm, &iter);
-    v=TM_iterstep(&iter);
+    if (is_table_dirty(tm, table, typemask & types[ti])) {
+      TM_TriMeshIter iter;
+      TMElement *e;
+      int i=0;
 
-    for (int i=0; v; v=TM_iterstep(&iter), i++) {
-      tm->vtable[i] = v;
+      resize_table(table, TM_get_elem_count(tm, types[ti]));
+
+      TM_ITER_MESH(e, &iter, tm, iters[ti]) {
+        table->table[i] = e;
+        i++;
+      }
+
+      table->used = i;
+
+      if (i != TM_get_elem_count(tm, types[ti])) {
+        printf("eek %d %d\n", i, TM_get_elem_count(tm, types[ti]));
+      }
     }
+
   }
-  if (is_table_dirty(tm, tm->etable, tm->etable_tot, typemask & TM_EDGE)) {
-    TM_TriMeshIter iter;
-    TMEdge *v;
-
-    resize_table(&tm->etable, &tm->etable_tot, tm->totedge);
-
-    TM_vert_iternew(tm, &iter);
-    v=TM_iterstep(&iter);
-
-    for (int i=0; v; v=TM_iterstep(&iter), i++) {
-      tm->etable[i] = v;
-    }
-  }
-  if (is_table_dirty(tm, tm->ttable, tm->ttable_tot, typemask & TM_TRI)) {
-    TM_TriMeshIter iter;
-    TMFace *v;
-
-    resize_table(&tm->ttable, &tm->ttable_tot, tm->tottri);
-
-    TM_tri_iternew(tm, &iter);
-    v=TM_iterstep(&iter);
-
-    for (int i=0; v; v=TM_iterstep(&iter), i++) {
-      tm->ttable[i] = v;
-    }
-  }
-
   tm->elem_table_dirty &= ~typemask;
 }
 
 void TM_mesh_elem_index_ensure(TM_TriMesh *tm, int typemask) {
   if ((typemask & tm->elem_index_dirty) & TM_VERTEX) {
     TM_TriMeshIter iter;
-    TMVert *v;
+    TMVert *e;
+    int i = 0;
 
-    TM_vert_iternew(tm, &iter);
-    v=TM_iterstep(&iter);
-
-    for (int i=0; v; v=TM_iterstep(&iter), i++) {
-      v->index = i;
+    TM_ITER_MESH(e, &iter, tm, TM_VERTS_OF_MESH) {
+      e->index = i++;
     }
   }
+
   if ((typemask & tm->elem_index_dirty) & TM_EDGE) {
     TM_TriMeshIter iter;
-    TMEdge *v;
+    TMEdge *e;
+    int i = 0;
 
-    TM_vert_iternew(tm, &iter);
-    v=TM_iterstep(&iter);
-
-    for (int i=0; v; v=TM_iterstep(&iter), i++) {
-      v->index = i;
+    TM_ITER_MESH(e, &iter, tm, TM_EDGES_OF_MESH) {
+      e->index = i++;
     }
   }
+
   if ((typemask & tm->elem_index_dirty) & TM_TRI) {
     TM_TriMeshIter iter;
-    TMFace *v;
+    TMFace *e;
+    int i = 0;
 
-    TM_tri_iternew(tm, &iter);
-    v=TM_iterstep(&iter);
-
-    for (int i=0; v; v=TM_iterstep(&iter), i++) {
-      v->index = i;
+    TM_ITER_MESH(e, &iter, tm, TM_TRIS_OF_MESH) {
+      e->index = i++;
     }
   }
 

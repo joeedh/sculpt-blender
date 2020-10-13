@@ -173,7 +173,7 @@ typedef struct AutomaskFloodFillData {
 } AutomaskFloodFillData;
 
 static bool automask_floodfill_cb(
-    SculptSession *ss, int from_v, int to_v, bool UNUSED(is_duplicate), void *userdata)
+    SculptSession *ss, SculptIdx from_v, SculptIdx to_v, bool UNUSED(is_duplicate), void *userdata)
 {
   AutomaskFloodFillData *data = userdata;
 

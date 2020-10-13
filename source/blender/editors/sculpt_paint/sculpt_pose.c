@@ -416,7 +416,7 @@ typedef struct PoseFloodFillData {
 } PoseFloodFillData;
 
 static bool pose_topology_floodfill_cb(
-    SculptSession *ss, int UNUSED(from_v), int to_v, bool is_duplicate, void *userdata)
+    SculptSession *ss, SculptIdx UNUSED(from_v), SculptIdx to_v, bool is_duplicate, void *userdata)
 {
   PoseFloodFillData *data = userdata;
   const float *co = SCULPT_vertex_co_get(ss, to_v);
@@ -445,7 +445,7 @@ static bool pose_topology_floodfill_cb(
 }
 
 static bool pose_face_sets_floodfill_cb(
-    SculptSession *ss, int UNUSED(from_v), int to_v, bool is_duplicate, void *userdata)
+    SculptSession *ss, SculptIdx UNUSED(from_v), SculptIdx to_v, bool is_duplicate, void *userdata)
 {
   PoseFloodFillData *data = userdata;
 
@@ -825,7 +825,7 @@ static SculptPoseIKChain *pose_ik_chain_init_face_sets(
 }
 
 static bool pose_face_sets_fk_find_masked_floodfill_cb(
-    SculptSession *ss, int from_v, int to_v, bool is_duplicate, void *userdata)
+    SculptSession *ss, SculptIdx from_v, SculptIdx to_v, bool is_duplicate, void *userdata)
 {
   PoseFloodFillData *data = userdata;
 
@@ -859,7 +859,7 @@ static bool pose_face_sets_fk_find_masked_floodfill_cb(
 }
 
 static bool pose_face_sets_fk_set_weights_floodfill_cb(
-    SculptSession *ss, int UNUSED(from_v), int to_v, bool UNUSED(is_duplicate), void *userdata)
+    SculptSession *ss, SculptIdx UNUSED(from_v), SculptIdx to_v, bool UNUSED(is_duplicate), void *userdata)
 {
   PoseFloodFillData *data = userdata;
   data->fk_weights[to_v] = 1.0f;
