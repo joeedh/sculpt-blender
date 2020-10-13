@@ -929,7 +929,13 @@ static void long_edge_queue_face_add(EdgeQueueContext *eq_ctx, TMFace *f)
       TMEdge *e = TM_GET_TRI_EDGE(f, i);
 
       const float len_sq = TM_edge_calc_length_squared(e);
+
       if (len_sq > eq_ctx->q->limit_len_squared) {
+        if (e->v1->edges.length > 24 || e->v2->edges.length > 24) {
+          printf("eek! %.4f", len_sq);
+          continue;
+        }
+
         long_edge_queue_edge_add_recursive(
           eq_ctx, e, e, TM_nextTriInEdge(e, f), f, len_sq, eq_ctx->q->limit_len);
       }
@@ -1204,9 +1210,18 @@ static void pbvh_trimesh_split_edge(EdgeQueueContext *eq_ctx,
     }
 
     if (v_opp->edges.length > 8) {
-      for (int i=0; i<v_opp->edges.length; i++) {
+      //prevent degenerate cases that make lots of geometry
+      int len = MIN2(v_opp->edges.length, 32);
+
+      for (int i=0; i<len; i++) {
         TMEdge *e2 = v_opp->edges.items[i];
-        long_edge_queue_edge_add(eq_ctx, e2);
+
+        if (e2 != e) {
+          long_edge_queue_edge_add(eq_ctx, e2);
+        } else {
+          printf("eek! %s %d\n", __FILE__, __LINE__);
+          continue;
+        }
       }
     }
   }
