@@ -174,7 +174,7 @@ bool BKE_pbvh_node_raycast(PBVH *pbvh,
                            struct IsectRayPrecalc *isect_precalc,
                            float *depth,
                            SculptIdx *active_vertex_index,
-                           SculptIdx *active_face_grid_index,
+                           int *active_face_grid_index,
                            float *face_normal);
 
 bool BKE_pbvh_bmesh_node_raycast_detail(PBVHNode *node,

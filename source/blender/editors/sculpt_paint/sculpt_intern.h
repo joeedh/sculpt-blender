@@ -119,7 +119,7 @@ float *SCULPT_brush_deform_target_vertex_co_get(SculptSession *ss,
 #define SCULPT_VERTEX_NEIGHBOR_FIXED_CAPACITY 256
 typedef struct SculptVertexNeighborIter {
   /* Storage */
-  int *neighbors;
+  SculptIdx *neighbors;
   int size;
   int capacity;
   SculptIdx neighbors_fixed[SCULPT_VERTEX_NEIGHBOR_FIXED_CAPACITY];

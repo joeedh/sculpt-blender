@@ -1518,7 +1518,7 @@ bool pbvh_bmesh_node_raycast(PBVHNode *node,
                              struct IsectRayPrecalc *isect_precalc,
                              float *depth,
                              bool use_original,
-                             int *r_active_vertex_index,
+                             SculptIdx *r_active_vertex_index,
                              float *r_face_normal)
 {
   bool hit = false;

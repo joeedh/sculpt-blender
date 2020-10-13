@@ -2202,7 +2202,7 @@ static bool pbvh_faces_node_raycast(PBVH *pbvh,
                                     const float ray_normal[3],
                                     struct IsectRayPrecalc *isect_precalc,
                                     float *depth,
-                                    int *r_active_vertex_index,
+                                    SculptIdx *r_active_vertex_index,
                                     int *r_active_face_index,
                                     float *r_face_normal)
 {
@@ -2270,7 +2270,7 @@ static bool pbvh_grids_node_raycast(PBVH *pbvh,
                                     const float ray_normal[3],
                                     struct IsectRayPrecalc *isect_precalc,
                                     float *depth,
-                                    int *r_active_vertex_index,
+                                    SculptIdx *r_active_vertex_index,
                                     int *r_active_grid_index,
                                     float *r_face_normal)
 {
@@ -2365,7 +2365,7 @@ bool BKE_pbvh_node_raycast(PBVH *pbvh,
                            const float ray_normal[3],
                            struct IsectRayPrecalc *isect_precalc,
                            float *depth,
-                           int *active_vertex_index,
+                           SculptIdx *active_vertex_index,
                            int *active_face_grid_index,
                            float *face_normal)
 {
