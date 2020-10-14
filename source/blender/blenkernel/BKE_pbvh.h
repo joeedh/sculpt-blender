@@ -101,7 +101,7 @@ TMElemSet *TMElemSet_new();
 void TMElemSet_free(TMElemSet *ts);
 void TMElemSet_insert(TMElemSet *ts, void *elem);
 bool TMElemSet_add(TMElemSet *ts, void *elem);
-void TMElemSet_remove(TMElemSet *ts, void *elem);
+void TMElemSet_remove(TMElemSet *ts, void *elem, bool ignoreExist);
 bool TMElemSet_has(TMElemSet *ts, void *elem);
 
 #define TMS_ITER(v, ts) \
@@ -503,7 +503,7 @@ void pbvh_vertex_iter_init(PBVH *pbvh, PBVHNode *node, PBVHVertexIter *vi, int m
         else if (vi.tm_vdata) { \
           TMVert *tv = NULL;\
           while (!tv) {\
-            if (vi.ti >= vi.tm_cur_set->cur) {\
+            if (!vi.tm_cur_set->elems || vi.ti >= vi.tm_cur_set->cur) {\
               if (vi.tm_cur_set != vi.tm_other_verts) {\
                 vi.tm_cur_set = vi.tm_other_verts;\
                 vi.ti = 0;\

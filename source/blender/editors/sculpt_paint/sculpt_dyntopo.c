@@ -263,6 +263,15 @@ static void SCULPT_dynamic_topology_disable_ex(
     ss->bm_log = NULL;
   }
 
+  if (ss->tm) {
+    TMesh_free(ss->tm);
+    ss->tm = NULL;
+  }
+  if (ss->tm_log) {
+    TM_log_free(ss->tm_log);
+    ss->tm_log = NULL;
+  }
+
   BKE_particlesystem_reset_all(ob);
   BKE_ptcache_object_reset(scene, ob, PTCACHE_RESET_OUTDATED);
 
@@ -287,7 +296,7 @@ void sculpt_dynamic_topology_disable_with_undo(Main *bmain,
                                                Object *ob)
 {
   SculptSession *ss = ob->sculpt;
-  if (ss->bm != NULL) {
+  if (ss->tm != NULL) {
     /* May be false in background mode. */
     const bool use_undo = G.background ? (ED_undo_stack_get() != NULL) : true;
     if (use_undo) {
@@ -307,7 +316,7 @@ static void sculpt_dynamic_topology_enable_with_undo(Main *bmain,
                                                      Object *ob)
 {
   SculptSession *ss = ob->sculpt;
-  if (ss->bm == NULL) {
+  if (ss->tm == NULL) {
     /* May be false in background mode. */
     const bool use_undo = G.background ? (ED_undo_stack_get() != NULL) : true;
     if (use_undo) {
@@ -331,7 +340,7 @@ static int sculpt_dynamic_topology_toggle_exec(bContext *C, wmOperator *UNUSED(o
 
   WM_cursor_wait(true);
 
-  if (ss->bm) {
+  if (ss->tm) {
     sculpt_dynamic_topology_disable_with_undo(bmain, depsgraph, scene, ob);
   }
   else {
@@ -381,7 +390,7 @@ enum eDynTopoWarnFlag SCULPT_dynamic_topology_check(Scene *scene, Object *ob)
 
   enum eDynTopoWarnFlag flag = 0;
 
-  BLI_assert(ss->bm == NULL);
+  BLI_assert(ss->tm == NULL);
   UNUSED_VARS_NDEBUG(ss);
 
   for (int i = 0; i < CD_NUMTYPES; i++) {
@@ -426,7 +435,7 @@ static int sculpt_dynamic_topology_toggle_invoke(bContext *C,
   Object *ob = CTX_data_active_object(C);
   SculptSession *ss = ob->sculpt;
 
-  if (!ss->bm) {
+  if (!ss->tm) {
     Scene *scene = CTX_data_scene(C);
     enum eDynTopoWarnFlag flag = SCULPT_dynamic_topology_check(scene, ob);
 

@@ -134,13 +134,15 @@ void TMElemSet_insert(TMElemSet *ts, void *elem) {
   ts->length++;
 }
 
-void TMElemSet_remove(TMElemSet *ts, void *elem) {
+void TMElemSet_remove(TMElemSet *ts, void *elem, bool ignoreExist) {
   int idx = (int)BLI_ghash_lookup(ts->ptr_to_idx, elem);
 
   BLI_ghash_remove(ts->ptr_to_idx, elem, NULL, NULL);
 
   if (ts->elems[idx] != elem) {
-    printf("eek! %p", elem);
+    if (!ignoreExist) {
+      printf("eek! %d %p %p\n", idx, elem, ts->elems[idx]);
+    }
     return;
   }
 
@@ -661,12 +663,12 @@ static void pbvh_trimesh_vert_ownership_transfer(PBVH *bvh, PBVHNode *new_owner,
   BLI_assert(current_owner != new_owner);
 
   /* Remove current ownership */
-  TMElemSet_remove(current_owner->tm_unique_verts, v);
+  TMElemSet_remove(current_owner->tm_unique_verts, v, false);
 
   /* Set new ownership */
   TM_ELEM_CD_SET_INT(v, bvh->cd_vert_node_offset, (int)(new_owner - bvh->nodes));
   TMElemSet_insert(new_owner->tm_unique_verts, v);
-  TMElemSet_remove(new_owner->tm_other_verts, v);
+  TMElemSet_remove(new_owner->tm_other_verts, v, true);
   BLI_assert(!TMElemSet_has(new_owner->tm_other_verts, v));
 
   /* mark node for update */
@@ -679,7 +681,7 @@ static void pbvh_trimesh_vert_remove(PBVH *bvh, TMVert *v)
   int f_node_index_prev = DYNTOPO_NODE_NONE;
 
   PBVHNode *v_node = pbvh_trimesh_node_from_vert(bvh, v);
-  TMElemSet_remove(v_node->tm_unique_verts, v);
+  TMElemSet_remove(v_node->tm_unique_verts, v, false);
   TM_ELEM_CD_SET_INT(v, bvh->cd_vert_node_offset, DYNTOPO_NODE_NONE);
 
   /* Have to check each neighboring face's node */
@@ -696,7 +698,7 @@ static void pbvh_trimesh_vert_remove(PBVH *bvh, TMVert *v)
       f_node->flag |= PBVH_UpdateDrawBuffers | PBVH_UpdateBB;
 
       /* Remove current ownership */
-      TMElemSet_remove(f_node->tm_other_verts, v);
+      TMElemSet_remove(f_node->tm_other_verts, v, true);
 
       BLI_assert(!TMElemSet_has(f_node->tm_unique_verts, v));
       BLI_assert(!TMElemSet_has(f_node->tm_other_verts, v));
@@ -729,7 +731,7 @@ static void pbvh_trimesh_face_remove(PBVH *bvh, TMFace *f)
       }
       else {
         /* Remove from other verts */
-        TMElemSet_remove(f_node->tm_other_verts, v);
+        TMElemSet_remove(f_node->tm_other_verts, v, true);
       }
     }
   }

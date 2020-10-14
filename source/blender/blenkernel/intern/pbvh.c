@@ -3082,6 +3082,7 @@ void pbvh_vertex_iter_init(PBVH *pbvh, PBVHNode *node, PBVHVertexIter *vi, int m
   }
 
   if (pbvh->type == PBVH_TRIMESH) {
+    vi->ti = 0;
     vi->tm_unique_verts = node->tm_unique_verts;
     vi->tm_other_verts = node->tm_other_verts;
     vi->tm_cur_set = vi->tm_unique_verts;
