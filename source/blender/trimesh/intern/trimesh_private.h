@@ -35,10 +35,14 @@ static void trimesh_simplelist_remove(struct TM_TriMesh *tm, struct optmesh_simp
 
   for (int i=0; i<list->length; i++) {
     if (list->items[i] == item) {
+      //swap with last
+      list->items[i] = list->items[list->length-1];
+
+      /*
       while (i < list->length-1) {
         list->items[i] = list->items[i+1];
         i++;
-      }
+      }*/
 
       list->items[list->length-1] = NULL;
       list->length--;

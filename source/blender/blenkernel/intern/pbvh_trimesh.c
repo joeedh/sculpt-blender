@@ -435,7 +435,7 @@ static TMVert *pbvh_trimesh_vert_create(
   TMVert *v = TM_make_vert(bvh->tm, co, no, 0, false);
 
   if (node_index < 0 || node_index >= bvh->totnode) {
-    printf("eek!");
+    printf("eek!\n");
     return v;
   }
 
@@ -932,7 +932,7 @@ static void long_edge_queue_face_add(EdgeQueueContext *eq_ctx, TMFace *f)
 
       if (len_sq > eq_ctx->q->limit_len_squared) {
         if (e->v1->edges.length > 24 || e->v2->edges.length > 24) {
-          printf("eek! %.4f", len_sq);
+          //printf("eek! %.4f %d %d\n", len_sq, e->v1->edges.length, e->v2->edges.length);
           continue;
         }
 
@@ -1307,13 +1307,19 @@ static void pbvh_trimesh_collapse_edge(PBVH *bvh,
   pbvh_trimesh_vert_remove(bvh, v_del);
 
   /* Remove all faces adjacent to the edge */
-  for (int i=0; i<e->tris.length; i++) {
+  while (e->tris.length) {
+    int lastlen = e->tris.length;
     TMFace *f_adj = e->tris.items[0];
 
     pbvh_trimesh_face_remove(bvh, f_adj);
 
     //XXX check threadnr argument!
     TM_kill_tri(bvh->tm, f_adj, 0, false, false);
+
+    if (lastlen == e->tris.length) { //paranoia check
+      printf("eek! %s %d\n", __FILE__, __LINE__);
+      break;
+    }
   }
 
   /* Kill the edge */
@@ -1330,12 +1336,42 @@ static void pbvh_trimesh_collapse_edge(PBVH *bvh,
   BLI_buffer_clear(deleted_faces);
 
   TM_ITER_VERT_TRIEDGES(v_del, tri, e) {
+    tri->flag &= ~TRIMESH_TEMP_TAG;
+
+    TMEdge *e2 = TM_nextEdgeInTri(tri, e);
+    for (int i=0; i<e2->tris.length; i++) {
+      TMFace *tri2 = e2->tris.items[i];
+
+      tri2->flag &= ~TRIMESH_TEMP_TAG;
+
+      for (int j=0; j<3; j++) {
+        TMEdge *e3 = TM_GET_TRI_EDGE(tri2, j);
+        for (int k=0; k<e3->tris.length; k++) {
+          TMFace *tri3 = e3->tris.items[k];
+
+          tri3->flag &= ~TRIMESH_TEMP_TAG;
+        }
+      }
+    }
+  } TM_ITER_VERT_TRIEDGES_END
+
+  TM_ITER_VERT_TRIEDGES(v_del, tri, e) {
     TMEdge *e2 = TM_nextEdgeInTri(tri, e);
     TMFace *existing_face = NULL;
+    TMVert *v2 = TM_nextVertInTri(tri, v_del);
 
-    if (UNLIKELY(existing_face = TM_tri_exists(v_conn, e2->v1, e->v2))) {
-      BLI_buffer_append(deleted_faces, TMFace *, existing_face);
-    } else {
+    if (v2 == TM_other_vert(e, v_del)) {
+      v2 = TM_prevVertInTri(tri, v_del);
+    }
+
+    if (UNLIKELY(existing_face = TM_tri_exists(v_conn, v2, v_del))) {
+      if (!(existing_face->flag & TRIMESH_TEMP_TAG)) {
+        BLI_buffer_append(deleted_faces, TMFace *, existing_face);
+        existing_face->flag |= TRIMESH_TEMP_TAG;
+      } else {
+        printf("eek! %s %d\n", __FILE__, __LINE__);
+      }
+    } else if (1) {
       TMVert *v_tri[3] = {v_conn, TM_nextVertInTri(tri, v_del), TM_prevVertInTri(tri, v_del)};
 
       //BLI_assert(!BM_face_exists(v_tri, 3));
@@ -1351,6 +1387,11 @@ static void pbvh_trimesh_collapse_edge(PBVH *bvh,
         BLI_gset_add(n->tm_other_verts, v_conn);
       }
     }
+
+    if (!(tri->flag & TRIMESH_TEMP_TAG)) {
+      tri->flag |= TRIMESH_TEMP_TAG;
+      BLI_buffer_append(deleted_faces, TMFace *, tri);
+    }
   } TM_ITER_VERT_TRIEDGES_END
 
   /* Delete the tagged faces */
@@ -1363,14 +1404,16 @@ static void pbvh_trimesh_collapse_edge(PBVH *bvh,
     TMEdge *e_tri[3];
 
     v_tri[0] = f_del->v1;
-    e_tri[0] = f_del->e1;
     v_tri[1] = f_del->v2;
-    e_tri[1] = f_del->e2;
     v_tri[2] = f_del->v3;
+
+    e_tri[0] = f_del->e1;
+    e_tri[1] = f_del->e2;
     e_tri[2] = f_del->e3;
 
     /* Remove the face */
     pbvh_trimesh_face_remove(bvh, f_del);
+
     TM_kill_tri(bvh->tm, f_del, 0, false, false);
 
     /* Check if any of the face's edges are now unused by any
@@ -1423,6 +1466,10 @@ static void pbvh_trimesh_collapse_edge(PBVH *bvh,
 
   /* Delete v_del */
   BLI_assert(!TM_vert_face_check(v_del));
+  if (TM_vert_face_check(v_del)) {
+    printf("eek! %s %d\n", __FILE__, __LINE__);
+  }
+
   BLI_trimesh_log_vert_kill(bvh->tm_log, v_del);
 
   /* v_conn == NULL is OK */
@@ -1434,7 +1481,6 @@ static bool pbvh_trimesh_collapse_short_edges(EdgeQueueContext *eq_ctx,
   PBVH *bvh,
   BLI_Buffer *deleted_faces)
 {
-  return false;
   const float min_len_squared = bvh->bm_min_edge_len * bvh->bm_min_edge_len;
   bool any_collapsed = false;
   /* deleted verts point to vertices they were merged into, or NULL when removed. */

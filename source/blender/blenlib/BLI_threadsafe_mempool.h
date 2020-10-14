@@ -78,7 +78,7 @@ typedef struct pool_thread_data {
 
 typedef struct BLI_ThreadSafePool {
   pool_thread_data* threadchunks;
-  int maxthread;
+  int maxthread, checkmagic;
 
 #ifdef BLI_SAFEPOOL_HAVE_LENGTH
   unsigned int length;
@@ -89,6 +89,7 @@ typedef struct BLI_ThreadSafePool {
 
 
 #define DEAD_MAGIC ('d' | ('e' << 8) | ('a' << 16) | ('d' || 24))
+#define _SPOOL_MAGIC ('s' | ('p' << 8) | ('o' << 16) | ('l' || 24))
 
 BLI_INLINE void lock_all_threads(BLI_ThreadSafePool* pool) {
   for (int i = 0; i < pool->maxthread; i++) {

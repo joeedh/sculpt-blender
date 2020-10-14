@@ -414,6 +414,11 @@ BLI_INLINE int TM_edgeTriIndex(TMEdge *e, TMFace *t) {
   return -1;
 }
 
+
+BLI_INLINE TMVert *TM_other_vert(TMEdge *e, TMVert *v) {
+  return v == e->v1 ? e->v2 : e->v1;
+}
+
 BLI_INLINE TMFace *TM_nextTriInEdge(TMEdge *e, TMFace *t) {
   int i = TM_edgeTriIndex(e, t);
 
@@ -515,39 +520,49 @@ BLI_INLINE TMFace *TM_tri_exists(TMVert *v1, TMVert *v2, TMVert *v3) {
 
 #define TM_ITER_VERT_TRIS(v, tname)\
 for (int _i=0; _i<v->edges.length; _i++) {\
-  TMEdge *e = v->edges.items[_i];\
-  for (int _j=0; _j<e->tris.length; _j++) {\
-    TMFace *t = e->tris.items[_j];\
-    t->flag &= ~TRIMESH_VT_ITERFLAG;\
-  }\
-}\
-for (int _i=0; _i<v->edges.length; _i++) {\
-  TMEdge *e = v->edges.items[_i];\
-  for (int _j=0; _j<e->tris.length; _j++) {\
-    TMFace *tname = e->tris.items[_j];\
-    if (tname->flag & TRIMESH_VT_ITERFLAG) {\
-      continue;\
-    }\
-    tname->flag |= TRIMESH_VT_ITERFLAG;
+  TMEdge *_e = v->edges.items[_i];\
+  for (int _j=0; _j<_e->tris.length; _j++) {\
+    TMFace *tname = _e->tris.items[_j];\
+    {\
+      bool ok = true;\
+      for (int _k=0; ok && _k <= _i; _k++) {\
+        TMEdge *e = v->edges.items[_k];\
+        for (int _l=0; _l<e->tris.length; _l++) {\
+          TMFace *_t = e->tris.items[_l];\
+          if (_t == tname && (_k != _i || _l != _j)) {\
+            ok = false;\
+            break;\
+          }\
+        }\
+      }\
+      if (!ok) {\
+        continue;\
+      }\
+    }
 
 #define TM_ITER_VERT_TRIS_END }}
 
 #define TM_ITER_VERT_TRIEDGES(v, tname, ename)\
 for (int _i=0; _i<v->edges.length; _i++) {\
-  TMEdge *e = v->edges.items[_i];\
-  for (int _j=0; _j<e->tris.length; _j++) {\
-    TMFace *t = e->tris.items[_j];\
-    t->flag &= ~TRIMESH_VT_ITERFLAG;\
-  }\
-}\
-for (int _i=0; _i<v->edges.length; _i++) {\
   TMEdge *ename = v->edges.items[_i];\
   for (int _j=0; _j<ename->tris.length; _j++) {\
     TMFace *tname = ename->tris.items[_j];\
-    if (tname->flag & TRIMESH_VT_ITERFLAG) {\
-      continue;\
-    }\
-    tname->flag |= TRIMESH_VT_ITERFLAG;
+    {\
+      bool ok = true;\
+      for (int _k=0; ok && _k <= _i; _k++) {\
+        TMEdge *e = v->edges.items[_k];\
+        for (int _l=0; _l<e->tris.length; _l++) {\
+          TMFace *_t = e->tris.items[_l];\
+          if (_t == tname && (_k != _i || _l != _j)) {\
+            ok = false;\
+            break;\
+          }\
+        }\
+      }\
+      if (!ok) {\
+        continue;\
+      }\
+    }
 
 #define TM_ITER_VERT_TRIEDGES_END }}
 

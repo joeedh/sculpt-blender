@@ -89,6 +89,8 @@ static poolchunk *new_chunk(BLI_ThreadSafePool *pool, pool_thread_data* thread_d
 BLI_ThreadSafePool* BLI_safepool_create(int elemsize, int chunksize, int maxthread) {
   BLI_ThreadSafePool* pool = MEM_callocN(sizeof(*pool), "BLI_ThreadSafePool");
 
+  pool->checkmagic = _SPOOL_MAGIC;
+
   //align to pointer size
   if (elemsize & 7) {
     elemsize += 8 - (elemsize & 7);
@@ -142,6 +144,8 @@ void BLI_safepool_destroy(BLI_ThreadSafePool* pool) {
   BLI_rw_mutex_end(&pool->length_lock);
 #endif
 
+  pool->checkmagic = 0;
+
   MEM_freeN(pool->threadchunks);
   MEM_freeN(pool);
 }
@@ -165,6 +169,9 @@ void* BLI_safepool_alloc(BLI_ThreadSafePool *pool) {
     pool->length++;
     BLI_rw_mutex_unlock(&pool->lengthlock);
 #endif
+
+    de->dead_magic = 0;
+
     return (void*) &de->next;
   }
 
@@ -185,13 +192,58 @@ int get_elem_thread(BLI_ThreadSafePool* pool, void* elem) {
   return ret;
 }
 
+static bool memcheck(void *mem) {
+  bool bad = !mem;
+  bad = bad || (((intptr_t)mem) & 0x7);
+
+  return bad;
+}
+
+bool check_safepool_elem(BLI_ThreadSafePool* pool, void* elem) {
+  if (pool->checkmagic != _SPOOL_MAGIC) {
+    printf("corrupted pool in safepool free! %p\n", pool);
+    return false;
+  }
+
+  if (memcheck((void*)pool)) {
+    printf("bad pool in safepool free! %p\n", pool);
+    return false;
+  }
+
+  bool bad = !elem;
+  bad = bad || (((intptr_t)elem) & 0x7);
+
+  if (bad) {
+    printf("bad memory in safepool free! %p\n", elem);
+    return false;
+  }
+
+  return true;
+
+  for (int i=0; i<pool->maxthread; i++) {
+    pool_thread_data *data = pool->threadchunks + i;
+    poolchunk *chunk;
+
+    for (chunk = (poolchunk*) data->chunks.first; chunk; chunk=chunk->next) {
+      char *p1 = (char*) chunk;
+      char *p2 = (char*) elem;
+
+      if (p2 >= p1 && p2 < p1 + sizeof(poolchunk) + pool->esize*pool->csize) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
 void BLI_safepool_free(BLI_ThreadSafePool* pool, void* elem) {
-  /*hrm.  I could add to the current pool's freelist, couldn't I
-    let's try that
+  //XXX
 
-    int thread = get_elem_thread(pool, elem);
-   */
+  if (!check_safepool_elem(pool, elem)) {
+    return;
+  }
 
+  //add to current thread's free list
   int thread = BLI_thread_local_get(curthread);
 
   if (!pool) {
@@ -204,7 +256,12 @@ void BLI_safepool_free(BLI_ThreadSafePool* pool, void* elem) {
 
   poolelem *de = getelem(elem);
 
-  de->next = tdata->freehead;
+  if (de->dead_magic == DEAD_MAGIC) {
+    printf("error: double free in mem pool %p\n", elem);
+    return;
+  }
+
+  de->next = (poolelem*) tdata->freehead;
   de->dead_magic = DEAD_MAGIC;
   tdata->freehead = de;
   
