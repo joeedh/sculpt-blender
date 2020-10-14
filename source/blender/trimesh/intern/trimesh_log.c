@@ -53,6 +53,7 @@
 
 #include "BKE_key.h"
 #include "BKE_main.h"
+#include "BKE_global.h"
 
 #include "MEM_guardedalloc.h"
 #ifdef WITH_MEM_VALGRIND
@@ -88,10 +89,37 @@ typedef struct TriMeshLog {
 
   int cd_vert_mask_index;
 
-  SpinLock lock;
+  ThreadRWMutex lock;
 
   int curgroup;
 } TriMeshLog;
+
+ThreadLocal(bool) havelock = false;
+
+static void tmlog_lock(TriMeshLog *log, int mode) {
+  if (G.debug_value == 112) {
+    return;
+  }
+
+  if (havelock) {
+    return;
+  }
+
+  BLI_rw_mutex_lock(&log->lock, mode);
+  havelock = true;
+}
+
+static void tmlog_unlock(TriMeshLog *log) {
+  if (G.debug_value == 112) {
+    return;
+  }
+
+  if (!havelock) {
+    return;
+  }
+  BLI_rw_mutex_unlock(&log->lock);
+  havelock = false;
+}
 
 static void trimesh_add_group(TriMeshLog *log, bool set_curgroup) {
   int *groups = log->groups;
@@ -111,7 +139,7 @@ static void trimesh_add_group(TriMeshLog *log, bool set_curgroup) {
 TriMeshLog *TM_log_new(TM_TriMesh *tm, int cd_vert_mask_index) {
   TriMeshLog *log = MEM_callocN(sizeof(*log), "TriMeshLog");
 
-  BLI_spin_init(&log->lock);
+  BLI_rw_mutex_init(&log->lock);
 
   log->elemhash_ptr = BLI_hashmap_new(HashInt,HashP)();
   log->elemhash_id = BLI_hashmap_new(HashP,HashInt)();
@@ -127,7 +155,7 @@ TriMeshLog *TM_log_new(TM_TriMesh *tm, int cd_vert_mask_index) {
 }
 
 void TM_log_free(TriMeshLog *log) {
-  BLI_spin_end(&log->lock);
+  BLI_rw_mutex_end(&log->lock);
 
   BLI_hashmap_free(HashP, HashInt)(log->elemhash_id);
   BLI_hashmap_free(HashInt, HashP)(log->elemhash_ptr);
@@ -144,6 +172,8 @@ static void tlog_truncate(TriMeshLog *log) {
 }
 
 static LogEntry *tlog_push(TriMeshLog *log) {
+  //tmlog_lock(log, THREAD_LOCK_WRITE);
+
   LogEntry *entries = log->entries;
   LogEntry e = {0,};
 
@@ -158,7 +188,10 @@ static LogEntry *tlog_push(TriMeshLog *log) {
   log->entries = entries;
   log->totentries = BLI_array_len(entries);
 
-  return log->entries + log->totentries - 1;
+  LogEntry *ret = log->entries + log->totentries - 1;
+  //tmlog_unlock(log);
+
+  return ret;
 }
 
 static void tlog_f(TriMeshLog *log, float f) {
@@ -202,17 +235,17 @@ static void tlog_ptr(TriMeshLog *log, void *f) {
 static int tlog_start(TriMeshLog *log, int code) {
   int i = log->totentries;
 
-  BLI_spin_lock(&log->lock);
+  tmlog_lock(log, THREAD_LOCK_WRITE);
   tlog_i(log, code);
-  BLI_spin_unlock(&log->lock);
+  //tmlog_unlock(log);
 
   return i;
 }
 
 static void tlog_end(TriMeshLog *log, int entry_i) {
-  BLI_spin_lock(&log->lock);
+  //tmlog_lock(log, THREAD_LOCK_WRITE);
   tlog_i(log, entry_i);
-  BLI_spin_unlock(&log->lock);
+  tmlog_unlock(log);
 }
 
 enum {
@@ -249,7 +282,7 @@ static float vert_mask_get(TMVert *v, const int cd_vert_mask_offset)
 }
 
 static void elemhash_add(TriMeshLog *log, void *elem, int id, int entryidx) {
-  BLI_spin_lock(&log->lock);
+  tmlog_lock(log, THREAD_LOCK_WRITE);
   BLI_HashMapIter(HashInt, HashP) iter;
 
   /*
@@ -262,7 +295,7 @@ static void elemhash_add(TriMeshLog *log, void *elem, int id, int entryidx) {
   BLI_hashmap_insert(HashP, HashInt)(log->elemhash_id, (void*)id, elem);
   BLI_hashmap_insert(HashInt, HashP)(log->elemhash_ptr, elem, (void*)id);
   BLI_hashmap_insert(HashInt, HashInt)(log->elemhash_entry, (void*)id, (void*)entryidx);
-  BLI_spin_unlock(&log->lock);
+  tmlog_unlock(log);
 }
 
 static void *elemhash_lookup_id(TriMeshLog *log, int id) {
@@ -273,9 +306,9 @@ static int elemhash_get_id(TriMeshLog *log, void *elem) {
   void *ret = NULL;
 
   //XXX lock contention issue?
-  BLI_spin_lock(&log->lock);
+  tmlog_lock(log, THREAD_LOCK_READ);
   bool exists = BLI_hashmap_lookup_p(HashInt, HashP)(log->elemhash_ptr, elem, &ret);
-  BLI_spin_unlock(&log->lock);
+  tmlog_unlock(log);
 
   if (!exists) {
     return -1;
@@ -287,19 +320,19 @@ static int elemhash_get_id(TriMeshLog *log, void *elem) {
 static int elemhash_ensure_id(TriMeshLog *log, void *elem) {
   void *ret = NULL;
 
-  BLI_spin_lock(&log->lock);
+  tmlog_lock(log, THREAD_LOCK_READ);
   bool exists = BLI_hashmap_lookup_p(HashInt, HashP)(log->elemhash_ptr, elem, &ret);
 
   if (!exists) {
     int id = log->idgen++;
-    BLI_spin_unlock(&log->lock);
+    tmlog_unlock(log);
 
     elemhash_add(log, elem, id, -1);
 
     return id;
   } else {
     int ret2 = (int)ret;
-    BLI_spin_unlock(&log->lock);
+    tmlog_unlock(log);
     return ret2;
   }
 }
@@ -307,11 +340,11 @@ static int elemhash_ensure_id(TriMeshLog *log, void *elem) {
 static int elemhash_get_entry(TriMeshLog *log, int id) {
   void *ret = NULL;
 
-  BLI_spin_lock(&log->lock);
+  tmlog_lock(log, THREAD_LOCK_READ);
   bool exists = BLI_hashmap_lookup_p(HashInt, HashP)(log->elemhash_ptr, (void*)id, &ret);
 
   int ret2 = exists ? (int)ret : -1;
-  BLI_spin_unlock(&log->lock);
+  tmlog_unlock(log);
 
   return ret2;
 }
@@ -380,10 +413,13 @@ static int trimesh_log_cdata(TriMeshLog *log, void *velem, int type) {
   TMElement *elem = velem;
   CustomData *cdata = trimesh_get_customdata(log->tm, type);
 
+  tmlog_lock(log, THREAD_LOCK_WRITE);
+
   int size = !elem->customdata ? 0 : cdata->totsize;
   if (!size) {
     tlog_i(log, 0);
     tlog_i(log, 0);
+    tmlog_unlock(log);
     return -1;
   }
 
@@ -415,6 +451,7 @@ static int trimesh_log_cdata(TriMeshLog *log, void *velem, int type) {
     }
   }
 
+  tmlog_unlock(log);
   return 0;
 }
 
@@ -648,6 +685,7 @@ int BLI_trimesh_log_vert_state(TriMeshLog *log, TMVert *v) {
   tlog_v3(log, v->no);
   tlog_i3(log, ivec);
   tlog_f(log, TM_ELEM_CD_GET_FLOAT(v, log->cd_vert_mask_index));
+
   tlog_end(log, start);
 
   return id;
@@ -948,8 +986,9 @@ void TM_log_original_vert_data(TriMeshLog *tlog, TMVert *v, const float **r_co, 
   *r_co = v->oco;
   *r_no = v->ono;
 
-  int id = elemhash_get_vert_id(tlog, v, tlog->cd_vert_mask_index);
   return;
+
+  int id = elemhash_get_vert_id(tlog, v, tlog->cd_vert_mask_index);
 
   int entry = elemhash_get_entry(tlog, id);
 

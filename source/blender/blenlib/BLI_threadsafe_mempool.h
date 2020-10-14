@@ -23,11 +23,20 @@
 #include "BLI_compiler_compat.h"
 #include "BLI_listbase.h"
 
+//#define BYPASS_POOL
+#define CUSTOMALLOC __declspec(allocator)
+
+#define DEBUG_SAFEPOOL
+
+#ifdef BYPASS_POOL
+#include "BLI_ghash.h"
+#endif
+
 struct BLI_ThreadSafePool;
 typedef struct BLI_ThreadSafePool BLI_ThreadSafePool;
 
 struct BLI_ThreadSafePool* BLI_safepool_create(int elemsize, int chunksize, int maxthread);
-void* BLI_safepool_alloc(struct BLI_ThreadSafePool *pool);
+CUSTOMALLOC void* BLI_safepool_alloc(struct BLI_ThreadSafePool *pool);
 
 void BLI_safepool_free(struct BLI_ThreadSafePool*pool, void *elem);
 int BLI_safepool_elem_is_dead(void *elem);
@@ -43,6 +52,9 @@ typedef struct ThreadSafePoolIter {
   int thread;
   void *chunk;
   int i;
+#ifdef BYPASS_POOL
+  Link *node;
+#endif
 } ThreadSafePoolIter;
 
 void BLI_safepool_iternew(struct BLI_ThreadSafePool* pool, ThreadSafePoolIter* iter);
@@ -66,7 +78,7 @@ struct pool_thread_data;
 typedef struct poolelem { 
   struct pool_thread_data *poolthread;
   struct poolelem *next; //eats into returned memory
-  intptr_t dead_magic; //eats into returned memory
+  uintptr_t dead_magic; //eats into returned memory, unless DEBUG_SAFEPOOL is defined
 } poolelem;
 
 typedef struct pool_thread_data {
@@ -85,11 +97,22 @@ typedef struct BLI_ThreadSafePool {
   ThreadRWMutex lengthlock;
 #endif
   size_t esize, csize;
+#ifdef BYPASS_POOL
+  ListBase nodes;
+  GSet *nodeset;
+#endif
 } BLI_ThreadSafePool;
 
 
-#define DEAD_MAGIC ('d' | ('e' << 8) | ('a' << 16) | ('d' || 24))
-#define _SPOOL_MAGIC ('s' | ('p' << 8) | ('o' << 16) | ('l' || 24))
+#define DEAD_MAGIC ('d' | ('e' << 8) | ('a' << 16) | ('d' << 24))
+#define _SPOOL_MAGIC ('s' | ('p' << 8) | ('o' << 16) | ('l' << 24))
+
+#ifdef DEBUG_SAFEPOOL
+#define LIVE_MAGIC ('a' | ('l' << 8) | ('i' << 16) | ('v' << 24))
+#define _TAIL_MAGIC1 ((long long)('t' | ('a' << 8) | ('i' << 16) | ('l' << 24)))
+#define _TAIL_MAGIC2 ((long long)('1' | ('2' << 8) | ('3' << 16) | ('4' << 24)))
+#define TAIL_MAGIC (sizeof(void*) == 8 ? (_TAIL_MAGIC1 | (_TAIL_MAGIC2<<32)) : _TAIL_MAGIC1)
+#endif
 
 BLI_INLINE void lock_all_threads(BLI_ThreadSafePool* pool) {
   for (int i = 0; i < pool->maxthread; i++) {
@@ -112,14 +135,30 @@ BLI_INLINE void BLI_safepool_iternew(struct BLI_ThreadSafePool* pool, ThreadSafe
   iter->thread = 0;
   iter->chunk = pool->threadchunks[0].chunks.first;
   iter->i = 0;
+
+#ifdef BYPASS_POOL
+  iter->node = pool->nodes.first;
+#endif
+
+  unlock_all_threads(pool);
 }
 
 BLI_INLINE void BLI_safepool_iterfree(ThreadSafePoolIter* iter) {
-  unlock_all_threads(iter->pool);
+  //unlock_all_threads(iter->pool);
 }
 
 BLI_INLINE void* BLI_safepool_iterstep(ThreadSafePoolIter* iter) {
   BLI_ThreadSafePool *pool = iter->pool;
+
+#ifdef BYPASS_POOL
+  void *ret = iter->node ? (void*)(((char*)iter->node) + sizeof(void*)*2) : NULL;
+
+  if (iter->node) {
+    iter->node = iter->node->next;
+  }
+
+  return ret;
+#else
   poolchunk *chunk = iter->chunk;
 
   if (iter->i < 0) { //end of iteration
@@ -149,8 +188,12 @@ BLI_INLINE void* BLI_safepool_iterstep(ThreadSafePoolIter* iter) {
   if (!ptr || de->dead_magic == DEAD_MAGIC) {
     return BLI_safepool_iterstep(iter);
   }
-
+#ifndef DEBUG_SAFEPOOL
   return (void*) &de->next;
+#else
+  return (void*) (de + 1);
+#endif
+#endif
 }
 
 #endif /* _BLI_THREADSAFE_MEMPOOL_H */

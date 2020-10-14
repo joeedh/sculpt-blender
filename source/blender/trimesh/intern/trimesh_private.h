@@ -8,7 +8,6 @@
 enum {
   POOL_VERTEX = 0,
   POOL_EDGE = 1,
-  //POOL_LOOP = 2,
   POOL_TRI = 2,
   POOL_ELIST = 3, //pool for lists of edges around vertices
   POOL_TLIST = 4, //pool for lists of triangles around edges
@@ -17,8 +16,8 @@ enum {
 #endif
 };
 
-#define V_ELIST_ESIZE 7
-#define E_TLIST_ESIZE 2
+#define V_ELIST_ESIZE 9
+#define E_TLIST_ESIZE 3
 
 struct CustomData;
 void trimesh_element_init(void *elem, struct CustomData *customdata, bool skipcd);

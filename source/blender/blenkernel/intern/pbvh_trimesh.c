@@ -931,8 +931,8 @@ static void long_edge_queue_face_add(EdgeQueueContext *eq_ctx, TMFace *f)
       const float len_sq = TM_edge_calc_length_squared(e);
 
       if (len_sq > eq_ctx->q->limit_len_squared) {
-        if (e->v1->edges.length > 24 || e->v2->edges.length > 24) {
-          //printf("eek! %.4f %d %d\n", len_sq, e->v1->edges.length, e->v2->edges.length);
+        if (e->v1->edges.length > 64 || e->v2->edges.length > 64) {
+          printf("eek! %.4f %d %d\n", len_sq, e->v1->edges.length, e->v2->edges.length);
           continue;
         }
 
@@ -1211,7 +1211,7 @@ static void pbvh_trimesh_split_edge(EdgeQueueContext *eq_ctx,
 
     if (v_opp->edges.length > 8) {
       //prevent degenerate cases that make lots of geometry
-      int len = MIN2(v_opp->edges.length, 32);
+      int len = MIN2(v_opp->edges.length, 512);
 
       for (int i=0; i<len; i++) {
         TMEdge *e2 = v_opp->edges.items[i];
@@ -1435,9 +1435,29 @@ static void pbvh_trimesh_collapse_edge(PBVH *bvh,
         if (v_tri[j] == v_conn) {
           v_conn = NULL;
         }
+
         BLI_ghash_insert(deleted_verts, v_tri[j], NULL);
         TM_kill_vert(bvh->tm, v_tri[j], 0); //XXX check threadnr
       }
+    }
+  }
+
+  for (int i=0; i<v_del->edges.length; i++) {
+    TMEdge *e2 = v_del->edges.items[i];
+
+    if (e2 != e && TM_edge_is_wire(e2)) {
+      TMVert *v2 = TM_other_vert(e2, v_del);
+
+      TM_kill_edge(bvh->tm, e2, 0, false);
+
+      if (v2 != v_conn && v2->edges.length == 0) {
+        pbvh_trimesh_vert_remove(bvh, v2);
+        BLI_trimesh_log_vert_kill(bvh->tm_log, v2);
+        BLI_ghash_insert(deleted_verts, v2, NULL);
+        TM_kill_vert(bvh->tm, v2, 0); //XXX check threadnr
+      }
+      i--;
+      continue;
     }
   }
 
@@ -1911,7 +1931,7 @@ void BKE_pbvh_build_trimesh(PBVH *bvh,
   bvh->tm_log = log;
 
   /* TODO: choose leaf limit better */
-  bvh->leaf_limit = 1024;
+  bvh->leaf_limit = 10000;
 
   if (smooth_shading) {
     bvh->flags |= PBVH_DYNTOPO_SMOOTH_SHADING;
@@ -1986,7 +2006,7 @@ bool BKE_pbvh_trimesh_update_topology(PBVH *bvh,
   int sym_axis)
 {
 
-  if (PIL_check_seconds_timer() - last_update_time[sym_axis] < 0.05) {
+  if (PIL_check_seconds_timer() - last_update_time[sym_axis] < 0.025) {
     return false;
   }
 

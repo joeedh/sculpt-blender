@@ -86,7 +86,7 @@
 #  define ASSERT_IS_VALID_MESH(mesh)
 #endif
 
-static ThreadRWMutex loops_cache_lock = PTHREAD_RWLOCK_INITIALIZER;
+static ThreadRWMutex loops_cache_lock = BLI_RWLOCK_INITIALIZER;
 
 static void mesh_init_origspace(Mesh *mesh);
 static void editbmesh_calc_modifier_final_normals(Mesh *mesh_final,

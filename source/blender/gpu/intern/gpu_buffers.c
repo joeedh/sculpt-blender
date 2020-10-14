@@ -859,7 +859,9 @@ static void gpu_trimesh_vert_to_buffer_copy(TMVert *v,
   }
 
   /* Add default face sets color to avoid artifacts. */
+  
   const uchar face_set[3] = {UCHAR_MAX, UCHAR_MAX, UCHAR_MAX};
+
   GPU_vertbuf_attr_set(vert_buf, g_vbo_id.fset, v_index, &face_set);
 }
 

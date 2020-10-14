@@ -889,6 +889,7 @@ static void update_data_blocks(BMesh *bm, CustomData *olddata, CustomData *data)
   }
 }
 
+
 void BM_data_layer_add(BMesh *bm, CustomData *data, int type)
 {
   CustomData olddata;

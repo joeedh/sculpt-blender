@@ -431,6 +431,9 @@ void TM_kill_vert(TM_TriMesh *tm, TMVert *v, int threadnr) {
   tm->elem_index_dirty |= TM_VERTEX;
   tm->elem_table_dirty |= TM_VERTEX;
 
+  ///clear debug tag, 12345
+  v->pad = v->threadtag = 0;
+
   while (v->edges.length > 0) {
     TM_kill_edge(tm, v->edges.items[0], threadnr, false);
   }

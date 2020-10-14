@@ -110,6 +110,29 @@ void TMesh_free(TM_TriMesh *tm) {
 
   const int types1[] = {TM_VERTEX, TM_EDGE, TM_LOOP, TM_TRI};
   const int types2[] = {TM_VERTS_OF_MESH, TM_EDGES_OF_MESH, TM_LOOPS_OF_MESH, TM_TRIS_OF_MESH};
+  TMVert *v;
+  TMEdge *e;
+  int totmemd = 0;
+
+  TM_ITER_MESH(v, &iter, tm, TM_VERTS_OF_MESH) {
+    //trimesh_simplelist_free(tm, &v->edges, POOL_ELIST, 0);
+    if (!v->edges.is_pool_allocd) {
+      MEM_freeN(v->edges.items);
+      //printf("len: %d\n", v->edges.length);
+      totmemd++;
+    }
+  }
+
+  TM_ITER_MESH(e, &iter, tm, TM_EDGES_OF_MESH) {
+    //trimesh_simplelist_free(tm, &e->tris, POOL_TLIST, 0);
+    if (!e->tris.is_pool_allocd) {
+      MEM_freeN(e->tris.items);
+      //printf("len: %d\n", e->tris.length);
+      totmemd++;
+    }
+  }
+
+  printf("totmemd: %d\n", totmemd);
 
   for (int i=0; i<4; i++) {
     CustomData *cdata = trimesh_get_customdata(tm, types1[i]);
