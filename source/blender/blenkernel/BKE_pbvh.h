@@ -507,7 +507,7 @@ void pbvh_vertex_iter_init(PBVH *pbvh, PBVHNode *node, PBVHVertexIter *vi, int m
               if (vi.tm_cur_set != vi.tm_other_verts) {\
                 vi.tm_cur_set = vi.tm_other_verts;\
                 vi.ti = 0;\
-                if (vi.ti >= vi.tm_other_verts->cur) {\
+                if (!vi.tm_cur_set->elems || vi.ti >= vi.tm_other_verts->cur) {\
                   break;\
                 }\
               } else {\
