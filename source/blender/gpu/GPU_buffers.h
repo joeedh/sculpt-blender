@@ -98,8 +98,8 @@ struct TM_TriMesh;
 void GPU_pbvh_trimesh_buffers_update(GPU_PBVH_Buffers *buffers,
                                    struct TM_TriMesh *bm,
                                    struct GSet *bm_faces,
-                                   struct GSet *bm_unique_verts,
-                                   struct GSet *bm_other_verts,
+                                   struct TMElemSet *bm_unique_verts,
+                                   struct TMElemSet *bm_other_verts,
                                    const int update_flags);
 
 void GPU_pbvh_grid_buffers_update(GPU_PBVH_Buffers *buffers,

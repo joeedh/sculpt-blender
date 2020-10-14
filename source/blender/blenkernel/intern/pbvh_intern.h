@@ -33,6 +33,7 @@ typedef struct {
   float bmin[3], bmax[3], bcentroid[3];
 } BBC;
 
+struct GHash;
 /* Note: this structure is getting large, might want to split it into
  * union'd structs */
 struct PBVHNode {
@@ -110,8 +111,8 @@ struct PBVHNode {
 
   /* trimesh */
   GSet *tm_faces;
-  GSet *tm_unique_verts;
-  GSet *tm_other_verts;
+  TMElemSet *tm_unique_verts;
+  TMElemSet *tm_other_verts;
   float (*tm_orco)[3];
   int (*tm_ortri)[3];
   int tm_tot_ortri;

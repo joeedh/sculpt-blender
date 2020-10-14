@@ -74,26 +74,37 @@ static void pbvh_trimesh_verify(PBVH *bvh);
 /** \} */
 
 
-static TMElemSet *TMElemSet_new() {
-  TMElemSet *ts = MEM_callocN(sizeof(*ts), "tmelemset");
+TMElemSet *TMElemSet_new() {
+  TMElemSet *ts = MEM_callocN(sizeof(TMElemSet), "tmelemset");
 
   ts->ptr_to_idx = BLI_ghash_ptr_new("tm elem set ptr to idx");
 
   return ts;
 }
 
-static void TMElemSet_free(TMElemSet *ts) {
+void TMElemSet_free(TMElemSet *ts) {
   if (ts->elems) {
     MEM_freeN(ts->elems);
   }
 
-  BLI_gset_free(ts->ptr_to_idx, NULL);
+  BLI_ghash_free(ts->ptr_to_idx, NULL, NULL);
+  MEM_freeN(ts);
 }
 
-static void TMElemSet_insert(TMElemSet *ts, void *elem) {
+bool TMElemSet_add(TMElemSet *ts, void *elem) {
+  if (TMElemSet_has(ts, elem)) {
+    return true;
+  }
+
+  TMElemSet_insert(ts, elem);
+  return false;
+}
+
+void TMElemSet_insert(TMElemSet *ts, void *elem) {
   if (ts->cur >= ts->size) {
     int newsize = (ts->cur+1);
-    newsize = (newsize >> 1) - (newsize << 1);
+    newsize = (newsize << 1) - (newsize >> 1);
+    newsize = MAX2(newsize, 8);
 
     if (!ts->elems) {
       ts->elems = (void*) MEM_mallocN(sizeof(void*)*newsize, "ts->elems");
@@ -123,7 +134,7 @@ static void TMElemSet_insert(TMElemSet *ts, void *elem) {
   ts->length++;
 }
 
-static void TMElemSet_remove(TMElemSet *ts, void *elem) {
+void TMElemSet_remove(TMElemSet *ts, void *elem) {
   int idx = (int)BLI_ghash_lookup(ts->ptr_to_idx, elem);
 
   BLI_ghash_remove(ts->ptr_to_idx, elem, NULL, NULL);
@@ -137,7 +148,7 @@ static void TMElemSet_remove(TMElemSet *ts, void *elem) {
   ts->elems[idx] = NULL;
 }
 
-static bool TMElemSet_has(TMElemSet *ts, void *elem) {
+bool TMElemSet_has(TMElemSet *ts, void *elem) {
   return BLI_ghash_haskey(ts->ptr_to_idx, elem);
 }
 
@@ -216,8 +227,8 @@ static void pbvh_trimesh_node_finalize(PBVH *bvh,
   bool has_visible = false;
 
   /* Create vert hash sets */
-  n->tm_unique_verts = BLI_gset_ptr_new("trimesh_unique_verts");
-  n->tm_other_verts = BLI_gset_ptr_new("trimesh_other_verts");
+  n->tm_unique_verts = TMElemSet_new();//BLI_gset_ptr_new("trimesh_unique_verts");
+  n->tm_other_verts = TMElemSet_new();//BLI_gset_ptr_new("trimesh_other_verts");
 
   BB_reset(&n->vb);
 
@@ -236,10 +247,10 @@ static void pbvh_trimesh_node_finalize(PBVH *bvh,
       has_visible |= !(v->flag & TM_ELEM_HIDDEN);
 
       if (TM_ELEM_CD_GET_INT(v, cd_vert_node_offset) != DYNTOPO_NODE_NONE) {
-        BLI_gset_add(n->tm_other_verts, v);
+        TMElemSet_add(n->tm_other_verts, v);
       }
       else {
-        BLI_gset_insert(n->tm_unique_verts, v);
+        TMElemSet_insert(n->tm_unique_verts, v);
         TM_ELEM_CD_SET_INT(v, cd_vert_node_offset, node_index);
       }
 
@@ -338,11 +349,13 @@ static void pbvh_trimesh_node_split(PBVH *bvh, const BBC *bbc_array, int node_in
 
   /* Mark this node's unique verts as unclaimed */
   if (n->tm_unique_verts) {
-    GSET_ITER (gs_iter, n->tm_unique_verts) {
-      TMVert *v = BLI_gsetIterator_getKey(&gs_iter);
+    TMVert *v;
+
+    TMS_ITER (v, n->tm_unique_verts) {
       TM_ELEM_CD_SET_INT(v, cd_vert_node_offset, DYNTOPO_NODE_NONE);
-    }
-    BLI_gset_free(n->tm_unique_verts, NULL);
+    } TMS_ITER_END
+
+    TMElemSet_free(n->tm_unique_verts);
   }
 
   /* Unclaim faces */
@@ -355,7 +368,7 @@ static void pbvh_trimesh_node_split(PBVH *bvh, const BBC *bbc_array, int node_in
   BLI_gset_free(n->tm_faces, NULL);
 
   if (n->tm_other_verts) {
-    BLI_gset_free(n->tm_other_verts, NULL);
+    TMElemSet_free(n->tm_other_verts);
   }
 
   if (n->layer_disp) {
@@ -510,7 +523,7 @@ static TMVert *pbvh_trimesh_vert_create(
   v->index = bvh->tm->totvert-1;
   TM_ELEM_CD_SET_INT(v, bvh->cd_vert_node_offset, node_index);
 
-  BLI_gset_insert(node->tm_unique_verts, v);
+  TMElemSet_insert(node->tm_unique_verts, v);
 
   bvh->tm->elem_table_dirty |= TM_VERTEX;
   bvh->tm->elem_index_dirty |= TM_VERTEX;
@@ -648,13 +661,13 @@ static void pbvh_trimesh_vert_ownership_transfer(PBVH *bvh, PBVHNode *new_owner,
   BLI_assert(current_owner != new_owner);
 
   /* Remove current ownership */
-  BLI_gset_remove(current_owner->tm_unique_verts, v, NULL);
+  TMElemSet_remove(current_owner->tm_unique_verts, v);
 
   /* Set new ownership */
   TM_ELEM_CD_SET_INT(v, bvh->cd_vert_node_offset, (int)(new_owner - bvh->nodes));
-  BLI_gset_insert(new_owner->tm_unique_verts, v);
-  BLI_gset_remove(new_owner->tm_other_verts, v, NULL);
-  BLI_assert(!BLI_gset_haskey(new_owner->tm_other_verts, v));
+  TMElemSet_insert(new_owner->tm_unique_verts, v);
+  TMElemSet_remove(new_owner->tm_other_verts, v);
+  BLI_assert(!TMElemSet_has(new_owner->tm_other_verts, v));
 
   /* mark node for update */
   new_owner->flag |= PBVH_UpdateDrawBuffers | PBVH_UpdateBB;
@@ -666,7 +679,7 @@ static void pbvh_trimesh_vert_remove(PBVH *bvh, TMVert *v)
   int f_node_index_prev = DYNTOPO_NODE_NONE;
 
   PBVHNode *v_node = pbvh_trimesh_node_from_vert(bvh, v);
-  BLI_gset_remove(v_node->tm_unique_verts, v, NULL);
+  TMElemSet_remove(v_node->tm_unique_verts, v);
   TM_ELEM_CD_SET_INT(v, bvh->cd_vert_node_offset, DYNTOPO_NODE_NONE);
 
   /* Have to check each neighboring face's node */
@@ -683,10 +696,10 @@ static void pbvh_trimesh_vert_remove(PBVH *bvh, TMVert *v)
       f_node->flag |= PBVH_UpdateDrawBuffers | PBVH_UpdateBB;
 
       /* Remove current ownership */
-      BLI_gset_remove(f_node->tm_other_verts, v, NULL);
+      TMElemSet_remove(f_node->tm_other_verts, v);
 
-      BLI_assert(!BLI_gset_haskey(f_node->tm_unique_verts, v));
-      BLI_assert(!BLI_gset_haskey(f_node->tm_other_verts, v));
+      BLI_assert(!TMElemSet_has(f_node->tm_unique_verts, v));
+      BLI_assert(!TMElemSet_has(f_node->tm_other_verts, v));
     }
   }
   TM_ITER_VERT_TRIS_END;
@@ -703,7 +716,7 @@ static void pbvh_trimesh_face_remove(PBVH *bvh, TMFace *f)
     TMVert *v = TM_GET_TRI_VERT(f, i);
 
     if (pbvh_trimesh_node_vert_use_count_is_equal(bvh, f_node, v, 1)) {
-      if (BLI_gset_haskey(f_node->tm_unique_verts, v)) {
+      if (TMElemSet_has(f_node->tm_unique_verts, v)) {
         /* Find a different node that uses 'v' */
         PBVHNode *new_node;
 
@@ -716,7 +729,7 @@ static void pbvh_trimesh_face_remove(PBVH *bvh, TMFace *f)
       }
       else {
         /* Remove from other verts */
-        BLI_gset_remove(f_node->tm_other_verts, v, NULL);
+        TMElemSet_remove(f_node->tm_other_verts, v);
       }
     }
   }
@@ -1273,8 +1286,8 @@ static void pbvh_trimesh_split_edge(EdgeQueueContext *eq_ctx,
     TM_kill_tri(bvh->tm, f_adj, 0, false, false);
 
     /* Ensure new vertex is in the node */
-    if (!BLI_gset_haskey(bvh->nodes[ni].tm_unique_verts, v_new)) {
-      BLI_gset_add(bvh->nodes[ni].tm_other_verts, v_new);
+    if (!TMElemSet_has(bvh->nodes[ni].tm_unique_verts, v_new)) {
+      TMElemSet_add(bvh->nodes[ni].tm_other_verts, v_new);
     }
 
     if (v_opp->edges.length > 8) {
@@ -1451,8 +1464,8 @@ static void pbvh_trimesh_collapse_edge(PBVH *bvh,
       pbvh_trimesh_face_create(bvh, ni, v_tri, e_tri, tri);
 
       /* Ensure that v_conn is in the new face's node */
-      if (!BLI_gset_haskey(n->tm_unique_verts, v_conn)) {
-        BLI_gset_add(n->tm_other_verts, v_conn);
+      if (!TMElemSet_has(n->tm_unique_verts, v_conn)) {
+        TMElemSet_has(n->tm_other_verts, v_conn);
       }
     }
 
@@ -1768,18 +1781,22 @@ void pbvh_trimesh_normals_update(PBVHNode **nodes, int totnode)
     PBVHNode *node = nodes[n];
 
     if (node->flag & PBVH_UpdateNormals) {
+      TMVert *v;
       GSetIterator gs_iter;
 
       GSET_ITER (gs_iter, node->tm_faces) {
         TM_calc_tri_normal(BLI_gsetIterator_getKey(&gs_iter));
       }
-      GSET_ITER (gs_iter, node->tm_unique_verts) {
-        TM_calc_vert_normal(BLI_gsetIterator_getKey(&gs_iter), false);
-      }
+
+      TMS_ITER (v, node->tm_unique_verts) {
+        TM_calc_vert_normal(v, false);
+      } TMS_ITER_END
+
       /* This should be unneeded normally */
-      GSET_ITER (gs_iter, node->tm_other_verts) {
-        TM_calc_vert_normal(BLI_gsetIterator_getKey(&gs_iter), false);
-      }
+      TMS_ITER (v, node->tm_other_verts) {
+        TM_calc_vert_normal(v, false);
+      } TMS_ITER_END
+
       node->flag &= ~PBVH_UpdateNormals;
     }
   }
@@ -1928,8 +1945,8 @@ static void pbvh_trimesh_create_nodes_fast_recursive(
     n->tm_faces = BLI_gset_ptr_new_ex("tm_faces", node->totface);
 
     /* Create vert hash sets */
-    n->tm_unique_verts = BLI_gset_ptr_new("tm_unique_verts");
-    n->tm_other_verts = BLI_gset_ptr_new("tm_other_verts");
+    n->tm_unique_verts = TMElemSet_new();
+    n->tm_other_verts = TMElemSet_new();
 
     BB_reset(&n->vb);
 
@@ -1947,12 +1964,12 @@ static void pbvh_trimesh_create_nodes_fast_recursive(
       for (int j=0; j<3; j++)  {
         TMVert *v = TM_GET_TRI_VERT(f, j);
 
-        if (!BLI_gset_haskey(n->tm_unique_verts, v)) {
+        if (!TMElemSet_has(n->tm_unique_verts, v)) {
           if (TM_ELEM_CD_GET_INT(v, cd_vert_node_offset) != DYNTOPO_NODE_NONE) {
-            BLI_gset_add(n->tm_other_verts, v);
+            TMElemSet_add(n->tm_other_verts, v);
           }
           else {
-            BLI_gset_insert(n->tm_unique_verts, v);
+            TMElemSet_insert(n->tm_unique_verts, v);
             TM_ELEM_CD_SET_INT(v, cd_vert_node_offset, node_index);
           }
         }
@@ -2174,7 +2191,7 @@ void BKE_pbvh_trimesh_node_save_orig(TM_TriMesh *tm, PBVHNode *node)
     return;
   }
 
-  const int totvert = BLI_gset_len(node->tm_unique_verts) + BLI_gset_len(node->tm_other_verts);
+  const int totvert = node->tm_unique_verts->length + node->tm_other_verts->length;
 
   const int tottri = BLI_gset_len(node->tm_faces);
 
@@ -2184,18 +2201,19 @@ void BKE_pbvh_trimesh_node_save_orig(TM_TriMesh *tm, PBVHNode *node)
   /* Copy out the vertices and assign a temporary index */
   int i = 0;
   GSetIterator gs_iter;
-  GSET_ITER (gs_iter, node->tm_unique_verts) {
-    TMVert *v = BLI_gsetIterator_getKey(&gs_iter);
+  TMVert *v;
+
+  TMS_ITER (v, node->tm_unique_verts) {
     copy_v3_v3(node->tm_orco[i], v->co);
     v->index = i; /* set_dirty! */
     i++;
-  }
-  GSET_ITER (gs_iter, node->tm_other_verts) {
-    TMVert *v = BLI_gsetIterator_getKey(&gs_iter);
+  } TMS_ITER_END
+  TMS_ITER (v, node->tm_other_verts) {
     copy_v3_v3(node->tm_orco[i], v->co);
     v->index = i;/* set_dirty! */
     i++;
-  }
+  } TMS_ITER_END
+
   /* Likely this is already dirty. */
   tm->elem_index_dirty |= TM_VERTEX;
 
@@ -2239,12 +2257,12 @@ void BKE_pbvh_trimesh_after_stroke(PBVH *bvh)
   }
 }
 
-GSet *BKE_pbvh_trimesh_node_unique_verts(PBVHNode *node)
+TMElemSet *BKE_pbvh_trimesh_node_unique_verts(PBVHNode *node)
 {
   return node->tm_unique_verts;
 }
 
-GSet *BKE_pbvh_trimesh_node_other_verts(PBVHNode *node)
+TMElemSet *BKE_pbvh_trimesh_node_other_verts(PBVHNode *node)
 {
   return node->tm_other_verts;
 }

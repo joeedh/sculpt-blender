@@ -693,6 +693,19 @@ void BKE_pbvh_free(PBVH *pbvh)
       if (node->face_vert_indices) {
         MEM_freeN((void *)node->face_vert_indices);
       }
+
+      if (node->tm_unique_verts) {
+        TMElemSet_free(node->tm_unique_verts);
+      }
+
+      if (node->tm_other_verts) {
+        TMElemSet_free(node->tm_other_verts);
+      }
+
+      if (node->tm_faces) {
+        BLI_gset_free(node->tm_faces, NULL);
+      }
+
       if (node->bm_faces) {
         BLI_gset_free(node->bm_faces, NULL);
       }
@@ -1544,28 +1557,25 @@ static void pbvh_bmesh_node_visibility_update(PBVHNode *node)
 
 static void pbvh_trimesh_node_visibility_update(PBVHNode *node)
 {
-  GSet *unique, *other;
+  TMElemSet *unique, *other;
+  TMVert *v;
 
   unique = BKE_pbvh_trimesh_node_unique_verts(node);
   other = BKE_pbvh_trimesh_node_other_verts(node);
 
-  GSetIterator gs_iter;
-
-  GSET_ITER (gs_iter, unique) {
-    TMVert *v = BLI_gsetIterator_getKey(&gs_iter);
+  TMS_ITER (v, unique) {
     if (!TM_elem_flag_test(v, TM_ELEM_HIDDEN)) {
       BKE_pbvh_node_fully_hidden_set(node, false);
       return;
     }
-  }
+  } TMS_ITER_END
 
-  GSET_ITER (gs_iter, other) {
-    TMVert *v = BLI_gsetIterator_getKey(&gs_iter);
+  TMS_ITER(v, other) {
     if (!TM_elem_flag_test(v, TM_ELEM_HIDDEN)) {
       BKE_pbvh_node_fully_hidden_set(node, false);
       return;
     }
-  }
+  } TMS_ITER_END;
 
   BKE_pbvh_node_fully_hidden_set(node, true);
 }
@@ -1903,9 +1913,9 @@ void BKE_pbvh_node_num_verts(PBVH *pbvh, PBVHNode *node, int *r_uniquevert, int 
       }
       break;
     case PBVH_TRIMESH:
-      tot = BLI_gset_len(node->tm_unique_verts);
+      tot = node->tm_unique_verts->length;
       if (r_totvert) {
-        *r_totvert = tot + BLI_gset_len(node->tm_other_verts);
+        *r_totvert = tot + node->tm_other_verts->length;
       }
       if (r_uniquevert) {
         *r_uniquevert = tot;
@@ -3072,8 +3082,10 @@ void pbvh_vertex_iter_init(PBVH *pbvh, PBVHNode *node, PBVHVertexIter *vi, int m
   }
 
   if (pbvh->type == PBVH_TRIMESH) {
-    BLI_gsetIterator_init(&vi->tm_unique_verts, node->tm_unique_verts);
-    BLI_gsetIterator_init(&vi->tm_other_verts, node->tm_other_verts);
+    vi->tm_unique_verts = node->tm_unique_verts;
+    vi->tm_other_verts = node->tm_other_verts;
+    vi->tm_cur_set = vi->tm_unique_verts;
+
     vi->tm_vdata = &pbvh->tm->vdata;
     vi->cd_vert_mask_offset = CustomData_get_offset(vi->tm_vdata, CD_PAINT_MASK);
   }

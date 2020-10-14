@@ -867,23 +867,22 @@ static void gpu_trimesh_vert_to_buffer_copy(TMVert *v,
 
 
 /* Return the total number of vertices that don't have BM_ELEM_HIDDEN set */
-static int gpu_trimesh_vert_visible_count(GSet *bm_unique_verts, GSet *bm_other_verts)
+static int gpu_trimesh_vert_visible_count(TMElemSet *bm_unique_verts, TMElemSet *bm_other_verts)
 {
-  GSetIterator gs_iter;
   int totvert = 0;
+  TMVert *v;
 
-  GSET_ITER (gs_iter, bm_unique_verts) {
-    TMVert *v = BLI_gsetIterator_getKey(&gs_iter);
+  TMS_ITER (v, bm_unique_verts) {
     if (!TM_elem_flag_test(v, TM_ELEM_HIDDEN)) {
       totvert++;
     }
-  }
-  GSET_ITER (gs_iter, bm_other_verts) {
-    TMVert *v = BLI_gsetIterator_getKey(&gs_iter);
+  } TMS_ITER_END
+
+  TMS_ITER (v, bm_other_verts) {
     if (!TM_elem_flag_test(v, TM_ELEM_HIDDEN)) {
       totvert++;
     }
-  }
+  } TMS_ITER_END
 
   return totvert;
 }
@@ -1145,8 +1144,8 @@ void GPU_pbvh_bmesh_buffers_update(GPU_PBVH_Buffers *buffers,
 void GPU_pbvh_trimesh_buffers_update(GPU_PBVH_Buffers *buffers,
   TM_TriMesh *bm,
   GSet *bm_faces,
-  GSet *bm_unique_verts,
-  GSet *bm_other_verts,
+  TMElemSet *bm_unique_verts,
+  TMElemSet *bm_other_verts,
   const int update_flags)
 {
   const bool show_mask = (update_flags & GPU_PBVH_BUFFERS_SHOW_MASK) != 0;

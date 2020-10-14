@@ -288,17 +288,16 @@ static void partialvis_update_bmesh(Object *ob,
 }
 
 static void partialvis_update_trimesh_verts(TM_TriMesh *bm,
-  GSet *verts,
+  TMElemSet *verts,
   PartialVisAction action,
   PartialVisArea area,
   float planes[4][4],
   bool *any_changed,
   bool *any_visible)
 {
-  GSetIterator gs_iter;
+  TMVert *v;
 
-  GSET_ITER (gs_iter, verts) {
-    TMVert *v = BLI_gsetIterator_getKey(&gs_iter);
+  TMS_ITER (v, verts) {
     float *vmask = CustomData_bmesh_get(&bm->vdata, v->customdata, CD_PAINT_MASK);
 
     /* Hide vertex if in the hide volume. */
@@ -315,7 +314,7 @@ static void partialvis_update_trimesh_verts(TM_TriMesh *bm,
     if (!TM_elem_flag_test(v, TM_ELEM_HIDDEN)) {
       (*any_visible) = true;
     }
-  }
+  } TMS_ITER_END
 }
 
 /* Return true if all vertices in the face are visible, false otherwise */
@@ -352,7 +351,8 @@ static void partialvis_update_trimesh(Object *ob,
   float planes[4][4])
 {
   TM_TriMesh *bm;
-  GSet *unique, *other, *faces;
+  TMElemSet *unique, *other;
+  GSet *faces;
   bool any_changed = false, any_visible = false;
 
   bm = BKE_pbvh_get_trimesh(pbvh);
