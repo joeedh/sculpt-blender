@@ -73,6 +73,74 @@ static void pbvh_trimesh_verify(PBVH *bvh);
 
 /** \} */
 
+
+static TMElemSet *TMElemSet_new() {
+  TMElemSet *ts = MEM_callocN(sizeof(*ts), "tmelemset");
+
+  ts->ptr_to_idx = BLI_ghash_ptr_new("tm elem set ptr to idx");
+
+  return ts;
+}
+
+static void TMElemSet_free(TMElemSet *ts) {
+  if (ts->elems) {
+    MEM_freeN(ts->elems);
+  }
+
+  BLI_gset_free(ts->ptr_to_idx, NULL);
+}
+
+static void TMElemSet_insert(TMElemSet *ts, void *elem) {
+  if (ts->cur >= ts->size) {
+    int newsize = (ts->cur+1);
+    newsize = (newsize >> 1) - (newsize << 1);
+
+    if (!ts->elems) {
+      ts->elems = (void*) MEM_mallocN(sizeof(void*)*newsize, "ts->elems");
+    } else {
+      ts->elems = (void*) MEM_reallocN(ts->elems, newsize*sizeof(void*));
+    }
+
+    BLI_ghash_clear(ts->ptr_to_idx, NULL, NULL);
+
+    //compact
+    int i = 0, j = 0;
+    for (i=0; i<ts->cur; i++) {
+      void *elem2 = ts->elems[j];
+
+      if (elem2) {
+        BLI_ghash_insert(ts->ptr_to_idx, elem2, (void*)j);
+        ts->elems[j++] = elem2;
+      }
+    }
+
+    ts->size = newsize;
+    ts->cur = ts->length;
+  }
+
+  BLI_ghash_insert(ts->ptr_to_idx, elem, (void*)ts->cur);
+  ts->elems[ts->cur++] = elem;
+  ts->length++;
+}
+
+static void TMElemSet_remove(TMElemSet *ts, void *elem) {
+  int idx = (int)BLI_ghash_lookup(ts->ptr_to_idx, elem);
+
+  BLI_ghash_remove(ts->ptr_to_idx, elem, NULL, NULL);
+
+  if (ts->elems[idx] != elem) {
+    printf("eek! %p", elem);
+    return;
+  }
+
+  ts->length--;
+  ts->elems[idx] = NULL;
+}
+
+static bool TMElemSet_has(TMElemSet *ts, void *elem) {
+  return BLI_ghash_haskey(ts->ptr_to_idx, elem);
+}
+
 /****************************** Building ******************************/
 
 #define _TRITEST(a, b, c) tri->v1 == a && tri->v2 == b && tri->v3 == c

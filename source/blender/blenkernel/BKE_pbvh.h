@@ -35,6 +35,19 @@ typedef intptr_t SculptIdx;
 extern "C" {
 #endif
 
+typedef struct TMElemSet {
+  GHash *ptr_to_idx;
+  void **elems;
+  int size, length;
+  int cur;
+} TMElemSet;
+
+TMElemSet *TMElemSet_new();
+void TMElemSet_free(TMElemSet *ts);
+void TMElemSet_insert(TMElemSet *ts, void *elem);
+void TMElemSet_remove(TMElemSet *ts, void *elem);
+bool TMElemSet_has(TMElemSet *ts, void *elem);
+
 struct BMLog;
 struct BMesh;
 struct CCGElem;
