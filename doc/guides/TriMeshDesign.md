@@ -65,7 +65,7 @@ It's extremely finicky code; I ended up doing templates-via-C-macros (gross), an
 highly dependent on the compiler sucessfully inlining some extremely sphagetti-like C++ template code.
 GCC and Clang do; msvc does not.
 
-Hopefully I won't end up needing this library.  If not I may try porting some of the features I want 
+Hopefully I won't end up needing this library.  If I do need it I may try porting some of the features I want 
 into my old BLI_smallhash library.  
 
 # CustomData

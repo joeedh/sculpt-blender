@@ -42,15 +42,9 @@ static size_t get_chunk_size(BLI_ThreadSafePool* pool) {
   //return getalign(sizeof(pool_thread_data) + pool->esize*pool->csize);
 }
 
-#ifndef DEBUG_SAFEPOOL
-#define getelem(elem) ((poolelem*) (((char*)(elem)) - sizeof(void*)))
-#else
-#define getelem(elem) ((poolelem*) (((char*)(elem)) - sizeof(poolelem)))
-#endif
-
 static pool_thread_data* get_poolthread_from_elem(BLI_ThreadSafePool *pool, void* elem) {
   //version of code for if elements are allowed to link themselves to other thread pools
-  poolelem *de = getelem(elem);
+  poolelem *de = bli_safepool_getelem(elem);
 
   return de->poolthread;
 }
@@ -142,12 +136,6 @@ BLI_ThreadSafePool* BLI_safepool_create(int elemsize, int chunksize, int maxthre
   }
 
   return pool;
-}
-
-int BLI_safepool_elem_is_dead(void *elem) {
-  poolelem *de = getelem(elem);
-
-  return de->dead_magic == DEAD_MAGIC;
 }
 
 void BLI_safepool_destroy(BLI_ThreadSafePool* pool) {
@@ -357,7 +345,7 @@ void BLI_safepool_free(BLI_ThreadSafePool* pool, void* elem) {
   pool_thread_data *tdata = pool->threadchunks + thread;
   BLI_rw_mutex_lock(&tdata->lock, THREAD_LOCK_WRITE);
 
-  poolelem *de = getelem(elem);
+  poolelem *de = bli_safepool_getelem(elem);
 
 #ifdef DEBUG_SAFEPOOL
   {

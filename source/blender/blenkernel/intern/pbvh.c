@@ -694,6 +694,14 @@ void BKE_pbvh_free(PBVH *pbvh)
         MEM_freeN((void *)node->face_vert_indices);
       }
 
+      if (node->tm_orco) {
+        MEM_freeN(node->tm_orco);
+      }
+
+      if (node->tm_ortri) {
+        MEM_freeN(node->tm_ortri);
+      }
+
       if (node->tm_unique_verts) {
         TMElemSet_free(node->tm_unique_verts);
       }
@@ -1354,7 +1362,8 @@ static void pbvh_update_draw_buffer_cb(void *__restrict userdata,
                                         node->tm_faces,
                                         node->tm_unique_verts,
                                         node->tm_other_verts,
-                                        update_flags);
+                                        update_flags,
+                                        pbvh->cd_vert_node_offset);
         break;
     }
   }

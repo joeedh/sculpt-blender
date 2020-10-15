@@ -231,7 +231,7 @@ static void SCULPT_dynamic_topology_disable_ex(
     BKE_mesh_update_customdata_pointers(me, false);
   }
   else {
-    BKE_sculptsession_bm_to_me(ob, true);
+    BKE_sculptsession_tm_to_me(ob, true);
 
     /* Reset Face Sets as they are no longer valid. */
     if (!CustomData_has_layer(&me->pdata, CD_SCULPT_FACE_SETS)) {

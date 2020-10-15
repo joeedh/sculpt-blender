@@ -40,7 +40,8 @@ enum {
   TRIMESH_SHARP = 1<<5,
   TRIMESH_EDGEDRAW = 1<<6,
   TRIMESH_VT_ITERFLAG = 1<<9,
-  TRIMESH_TEMP_TAG = 1<<10
+  TRIMESH_TEMP_TAG = 1<<10,
+  TRIMESH_TEMP_TAG2 = 1<<10
 };
 
 BLI_INLINE uint8_t BLI_trimesh_vert_flag_to_mflag(int16_t f)  {

@@ -23,6 +23,7 @@
 
 #include "BLI_bitmap.h"
 #include "BLI_ghash.h"
+#include "BLI_threadsafe_mempool.h"
 
 #include "stdint.h"
 
@@ -83,6 +84,7 @@ typedef enum {
 
   PBVH_UpdateTopology = 1 << 13,
   PBVH_UpdateColor = 1 << 14,
+  PBVH_Delete = 1 << 15,
 } PBVHNodeFlags;
 
 typedef struct PBVHFrustumPlanes {
@@ -515,6 +517,10 @@ void pbvh_vertex_iter_init(PBVH *pbvh, PBVHNode *node, PBVHVertexIter *vi, int m
               }\
             } else {\
               tv = vi.tm_cur_set->elems[vi.ti++];\
+              if (tv && BLI_safepool_elem_is_dead(tv)) {\
+                printf("dead vert: %p\n", tv);\
+                tv = NULL;\
+              }\
             }\
           }\
           if (!tv) {\

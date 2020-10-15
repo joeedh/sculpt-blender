@@ -90,7 +90,7 @@ struct PBVHNode {
 
   /* Indicates whether this node is a leaf or not; also used for
    * marking various updates that need to be applied. */
-  PBVHNodeFlags flag : 16;
+  PBVHNodeFlags flag : 32;
 
   /* Used for raycasting: how close bb is to the ray point. */
   float tmin;
@@ -116,6 +116,9 @@ struct PBVHNode {
   float (*tm_orco)[3];
   int (*tm_ortri)[3];
   int tm_tot_ortri;
+  int tm_tot_orco;
+
+  int tm_subtree_tottri;
 
   /* Used to store the brush color during a stroke and composite it over the original color */
   PBVHColorBufferNode color_buffer;

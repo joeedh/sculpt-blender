@@ -100,7 +100,7 @@ void GPU_pbvh_trimesh_buffers_update(GPU_PBVH_Buffers *buffers,
                                    struct GSet *bm_faces,
                                    struct TMElemSet *bm_unique_verts,
                                    struct TMElemSet *bm_other_verts,
-                                   const int update_flags);
+                                   const int update_flags, const int cd_vert_node_offset);
 
 void GPU_pbvh_grid_buffers_update(GPU_PBVH_Buffers *buffers,
                                   struct SubdivCCG *subdiv_ccg,

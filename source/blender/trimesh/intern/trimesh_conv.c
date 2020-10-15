@@ -475,3 +475,295 @@ void TM_mesh_tm_from_me(TM_TriMesh *bm, const Mesh *me, const struct TriMeshFrom
     MEM_freeN(ftable);
   }
 }
+
+
+char BLI_trimesh_mesh_cd_flag_from_bmesh(TM_TriMesh *tm)
+{
+  char cd_flag = 0;
+  if (CustomData_has_layer(&tm->vdata, CD_BWEIGHT)) {
+    cd_flag |= ME_CDFLAG_VERT_BWEIGHT;
+  }
+  if (CustomData_has_layer(&tm->edata, CD_BWEIGHT)) {
+    cd_flag |= ME_CDFLAG_EDGE_BWEIGHT;
+  }
+  if (CustomData_has_layer(&tm->edata, CD_CREASE)) {
+    cd_flag |= ME_CDFLAG_EDGE_CREASE;
+  }
+  return cd_flag;
+}
+
+BLI_INLINE void tmesh_quick_edgedraw_flag(MEdge *med, TMEdge *e)
+{
+  /* This is a cheap way to set the edge draw, its not precise and will
+  * pick the first 2 faces an edge uses.
+  * The dot comparison is a little arbitrary, but set so that a 5 subd
+  * IcoSphere won't vanish but subd 6 will (as with pre-bmesh Blender). */
+
+  if (e->tris.length > 1) {
+    TMFace *t1 = e->tris.items[0];
+    TMFace *t2 = e->tris.items[1];
+
+    if (dot_v3v3(t1->no, t2->no) > 0.9995f) {
+      med->flag &= ~ME_EDGEDRAW;
+    } else {
+      med->flag |= ME_EDGEDRAW;
+    }
+  }
+}
+
+
+/**
+* \brief BMesh -> Mesh
+*/
+static TMVert **tm_to_mesh_vertex_map(TM_TriMesh *bm, int ototvert)
+{
+  const int cd_shape_keyindex_offset = CustomData_get_offset(&bm->vdata, CD_SHAPE_KEYINDEX);
+  TMVert **vertMap = NULL;
+  TMVert *eve;
+  int i = 0;
+  TM_TriMeshIter iter;
+
+  /* Caller needs to ensure this. */
+  BLI_assert(ototvert > 0);
+
+  vertMap = MEM_callocN(sizeof(*vertMap) * ototvert, "vertMap");
+  if (cd_shape_keyindex_offset != -1) {
+    TM_vert_iternew(bm, &iter);
+    eve = TM_iterstep(&iter);
+
+    for (; eve; eve = TM_iterstep(&iter), i++) {
+      const int keyi = TM_ELEM_CD_GET_INT(eve, cd_shape_keyindex_offset);
+      if ((keyi != ORIGINDEX_NONE) && (keyi < ototvert) &&
+        /* Not fool-proof, but chances are if we have many verts with the same index,
+        * we will want to use the first one,
+        * since the second is more likely to be a duplicate. */
+        (vertMap[keyi] == NULL)) {
+        vertMap[keyi] = eve;
+      }
+    }
+  }
+  else {
+    TM_vert_iternew(bm, &iter);
+    eve = TM_iterstep(&iter);
+
+    for (; eve; eve = TM_iterstep(&iter), i++) {
+      if (i < ototvert) {
+        vertMap[i] = eve;
+      }
+      else {
+        break;
+      }
+    }
+  }
+
+  return vertMap;
+}
+
+void TM_mesh_bm_to_me(struct Main *bmain,
+  TM_TriMesh *tm,
+  struct Mesh *me,
+  const struct TMeshToMeshParams *params)
+{
+  TMVert *v;
+  TMEdge *e;
+  TMFace *f;
+
+  const int cd_vert_bweight_offset = CustomData_get_offset(&tm->vdata, CD_BWEIGHT);
+  const int cd_edge_bweight_offset = CustomData_get_offset(&tm->edata, CD_BWEIGHT);
+  const int cd_edge_crease_offset = CustomData_get_offset(&tm->edata, CD_CREASE);
+  const int cd_shape_keyindex_offset = CustomData_get_offset(&tm->vdata, CD_SHAPE_KEYINDEX);
+
+  MVert *oldverts = NULL;
+  const int ototvert = me->totvert;
+
+  if (me->key && (cd_shape_keyindex_offset != -1)) {
+    /* Keep the old verts in case we are working on* a key, which is done at the end. */
+
+    /* Use the array in-place instead of duplicating the array. */
+#if 0
+    oldverts = MEM_dupallocN(me->mvert);
+#else
+    oldverts = me->mvert;
+    me->mvert = NULL;
+    CustomData_update_typemap(&me->vdata);
+    CustomData_set_layer(&me->vdata, CD_MVERT, NULL);
+#endif
+  }
+
+  /* Free custom data. */
+  CustomData_free(&me->vdata, me->totvert);
+  CustomData_free(&me->edata, me->totedge);
+  CustomData_free(&me->fdata, me->totface);
+  CustomData_free(&me->ldata, me->totloop);
+  CustomData_free(&me->pdata, me->totpoly);
+
+  /* Add new custom data. */
+  me->totvert = tm->totvert;
+  me->totedge = tm->totedge;
+  me->totloop = tm->tottri*3;
+  me->totpoly = tm->tottri;
+  me->totface = tm->tottri;
+  me->act_face = -1;
+
+  {
+    CustomData_MeshMasks mask = CD_MASK_MESH;
+    CustomData_MeshMasks_update(&mask, &params->cd_mask_extra);
+    CustomData_copy(&tm->vdata, &me->vdata, mask.vmask, CD_CALLOC, me->totvert);
+    CustomData_copy(&tm->edata, &me->edata, mask.emask, CD_CALLOC, me->totedge);
+    CustomData_copy(&tm->ldata, &me->ldata, mask.lmask, CD_CALLOC, me->totloop);
+    CustomData_copy(&tm->tdata, &me->pdata, mask.pmask, CD_CALLOC, me->totpoly);
+  }
+
+  MVert *mvert = me->totvert ? MEM_callocN(sizeof(MVert) * me->totvert, "tm_to_me.vert") : NULL;
+  MEdge *medge = me->totedge ? MEM_callocN(sizeof(MEdge) * me->totedge, "tm_to_me.edge") : NULL;
+  MLoop *mloop = me->totloop ? MEM_callocN(sizeof(MLoop) * me->totloop, "tm_to_me.loop") : NULL;
+  MPoly *mpoly = me->totface ? MEM_callocN(sizeof(MPoly) * me->totpoly, "tm_to_me.poly") : NULL;
+  MFace *mface = me->totface ? MEM_callocN(sizeof(MFace) * me->totface, "tm_to_me.face") : NULL;
+
+  CustomData_add_layer(&me->vdata, CD_MVERT, CD_ASSIGN, mvert, me->totvert);
+  CustomData_add_layer(&me->edata, CD_MEDGE, CD_ASSIGN, medge, me->totedge);
+  CustomData_add_layer(&me->ldata, CD_MLOOP, CD_ASSIGN, mloop, me->totloop);
+  CustomData_add_layer(&me->pdata, CD_MPOLY, CD_ASSIGN, mpoly, me->totpoly);
+
+  me->cd_flag = BLI_trimesh_mesh_cd_flag_from_bmesh(tm);
+
+  /* This is called again, 'dotess' arg is used there. */
+  BKE_mesh_update_customdata_pointers(me, 0);
+
+  TM_TriMeshIter iter;
+  TM_vert_iternew(tm, &iter);
+  v = TM_iterstep(&iter);
+  int i = 0;
+
+  for (; v; v = TM_iterstep(&iter), mvert++, i++) {
+    copy_v3_v3(mvert->co, v->co);
+    normal_float_to_short_v3(mvert->no, v->no);
+    mvert->flag = BLI_trimesh_vert_flag_to_mflag(v->flag);
+    v->index = i;
+
+    /* Copy over custom-data. */
+    CustomData_from_bmesh_block(&tm->vdata, &me->vdata, v->customdata, i);
+
+    if (cd_vert_bweight_offset != -1) {
+      mvert->bweight = TM_ELEM_CD_GET_FLOAT_AS_UCHAR(v, cd_vert_bweight_offset);
+    }
+  }
+
+  TM_edge_iternew(tm, &iter);
+  e = TM_iterstep(&iter);
+  i = 0;
+
+  MEdge *med = medge;
+  for (; e; e = TM_iterstep(&iter), i++, med++) {
+    med->v1 = e->v1->index;
+    med->v2 = e->v2->index;
+    e->index = i;
+
+    med->flag = BLI_trimesh_edge_flag_to_mflag(e->flag);
+
+    /* Copy over custom-data. */
+    CustomData_from_bmesh_block(&tm->edata, &me->edata, e->customdata, i);
+
+    tmesh_quick_edgedraw_flag(med, e);
+
+    if (cd_edge_crease_offset != -1) {
+      med->crease = TM_ELEM_CD_GET_FLOAT_AS_UCHAR(e, cd_edge_crease_offset);
+    }
+    if (cd_edge_bweight_offset != -1) {
+      med->bweight = TM_ELEM_CD_GET_FLOAT_AS_UCHAR(e, cd_edge_bweight_offset);
+    }
+  }
+
+  TM_tri_iternew(tm, &iter);
+  f = TM_iterstep(&iter);
+  i = 0;
+
+  int j = 0;
+  for (; f; f = TM_iterstep(&iter), i++, mpoly++) {
+    mpoly->loopstart = j;
+    mpoly->totloop = 3;
+    mpoly->mat_nr = f->mat_nr;
+
+    for (int k=0; k<3; k++, j++, mloop++) {
+      TMLoopData *ld = TM_GET_TRI_LOOP(f, k);
+
+      mloop->e = TM_GET_TRI_EDGE(f, k)->index;
+      mloop->v = TM_GET_TRI_VERT(f, k)->index;
+
+      /* Copy over custom-data. */
+      CustomData_from_bmesh_block(&tm->ldata, &me->ldata, ld->customdata, j);
+    }
+
+    /* Copy over custom-data. */
+    CustomData_from_bmesh_block(&tm->tdata, &me->pdata, f->customdata, i);
+  }
+
+  /* Patch hook indices and vertex parents. */
+  if (params->calc_object_remap && (ototvert > 0)) {
+    BLI_assert(bmain != NULL);
+    Object *ob;
+    ModifierData *md;
+    TMVert **vertMap = NULL;
+    TMVert *eve = NULL;
+
+    for (ob = bmain->objects.first; ob; ob = ob->id.next) {
+      if ((ob->parent) && (ob->parent->data == me) && ELEM(ob->partype, PARVERT1, PARVERT3)) {
+
+        if (vertMap == NULL) {
+          vertMap = tm_to_mesh_vertex_map(tm, ototvert);
+        }
+
+        if (ob->par1 < ototvert) {
+          eve = vertMap[ob->par1];
+          if (eve) {
+            ob->par1 = eve->index;
+          }
+        }
+        if (ob->par2 < ototvert) {
+          eve = vertMap[ob->par2];
+          if (eve) {
+            ob->par2 = eve->index;
+          }
+        }
+        if (ob->par3 < ototvert) {
+          eve = vertMap[ob->par3];
+          if (eve) {
+            ob->par3 = eve->index;
+          }
+        }
+      }
+      if (ob->data == me) {
+        for (md = ob->modifiers.first; md; md = md->next) {
+          if (md->type == eModifierType_Hook) {
+            HookModifierData *hmd = (HookModifierData *)md;
+
+            if (vertMap == NULL) {
+              vertMap = tm_to_mesh_vertex_map(tm, ototvert);
+            }
+
+            for (i = j = 0; i < hmd->totindex; i++) {
+              if (hmd->indexar[i] < ototvert) {
+                eve = vertMap[hmd->indexar[i]];
+
+                if (eve) {
+                  hmd->indexar[j++] = eve->index;
+                }
+              }
+              else {
+                j++;
+              }
+            }
+
+            hmd->totindex = j;
+          }
+        }
+      }
+    }
+
+    if (vertMap) {
+      MEM_freeN(vertMap);
+    }
+  }
+
+  BKE_mesh_update_customdata_pointers(me, false);
+}

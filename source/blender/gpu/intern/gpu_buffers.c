@@ -832,6 +832,7 @@ static void gpu_trimesh_vert_to_buffer_copy(TMVert *v,
                                           const float fno[3],
                                           const float *fmask,
                                           const int cd_vert_mask_offset,
+                                          const int cd_vert_node_offset,
                                           const bool show_mask,
                                           const bool show_vcol,
                                           bool *empty_mask)
@@ -847,7 +848,9 @@ static void gpu_trimesh_vert_to_buffer_copy(TMVert *v,
   GPU_vertbuf_attr_set(vert_buf, g_vbo_id.nor, v_index, no_short);
 
   if (show_mask) {
-    float effective_mask = fmask ? *fmask : TM_ELEM_CD_GET_FLOAT(v, cd_vert_mask_offset);
+    //float effective_mask = fmask ? *fmask : TM_ELEM_CD_GET_FLOAT(v, cd_vert_mask_offset);
+    int ni = TM_ELEM_CD_GET_INT(v, cd_vert_node_offset);
+    float effective_mask = (float)(ni % 64) / 64.0f;
     uchar cmask = (uchar)(effective_mask * 255);
     GPU_vertbuf_attr_set(vert_buf, g_vbo_id.msk, v_index, &cmask);
     *empty_mask = *empty_mask && (cmask == 0);
@@ -1146,7 +1149,7 @@ void GPU_pbvh_trimesh_buffers_update(GPU_PBVH_Buffers *buffers,
   GSet *bm_faces,
   TMElemSet *bm_unique_verts,
   TMElemSet *bm_other_verts,
-  const int update_flags)
+  const int update_flags, const int cd_vert_node_offset)
 {
   const bool show_mask = (update_flags & GPU_PBVH_BUFFERS_SHOW_MASK) != 0;
   const bool show_vcol = (update_flags & GPU_PBVH_BUFFERS_SHOW_VCOL) != 0;
@@ -1215,6 +1218,7 @@ void GPU_pbvh_trimesh_buffers_update(GPU_PBVH_Buffers *buffers,
               NULL,
               NULL,
               cd_vert_mask_offset,
+              cd_vert_node_offset,
               show_mask,
               show_vcol,
               &empty_mask);
@@ -1283,6 +1287,7 @@ void GPU_pbvh_trimesh_buffers_update(GPU_PBVH_Buffers *buffers,
             f->no,
             &fmask,
             cd_vert_mask_offset,
+            cd_vert_node_offset,
             show_mask,
             show_vcol,
             &empty_mask);

@@ -39,7 +39,6 @@ struct BLI_ThreadSafePool* BLI_safepool_create(int elemsize, int chunksize, int 
 CUSTOMALLOC void* BLI_safepool_alloc(struct BLI_ThreadSafePool *pool);
 
 void BLI_safepool_free(struct BLI_ThreadSafePool*pool, void *elem);
-int BLI_safepool_elem_is_dead(void *elem);
 
 void BLI_safepool_threaded_free(struct BLI_ThreadSafePool*pool, void *elem, int threadnr);
 #ifdef BLI_SAFEPOOL_HAVE_LENGTH
@@ -114,6 +113,13 @@ typedef struct BLI_ThreadSafePool {
 #define TAIL_MAGIC (sizeof(void*) == 8 ? (_TAIL_MAGIC1 | (_TAIL_MAGIC2<<32)) : _TAIL_MAGIC1)
 #endif
 
+#ifndef DEBUG_SAFEPOOL
+#define bli_safepool_getelem(elem) ((poolelem*) (((char*)(elem)) - sizeof(void*)))
+#else
+#define bli_safepool_getelem(elem) ((poolelem*) (((char*)(elem)) - sizeof(poolelem)))
+#endif
+
+
 BLI_INLINE void lock_all_threads(BLI_ThreadSafePool* pool) {
   for (int i = 0; i < pool->maxthread; i++) {
     BLI_rw_mutex_lock(&pool->threadchunks[i].lock, THREAD_LOCK_WRITE);
@@ -126,10 +132,15 @@ BLI_INLINE void unlock_all_threads(BLI_ThreadSafePool* pool) {
   }
 }
 
-BLI_INLINE void BLI_safepool_iternew(struct BLI_ThreadSafePool* pool, ThreadSafePoolIter* iter) {
+BLI_INLINE bool BLI_safepool_elem_is_dead(void *elem) {
+  poolelem *de = bli_safepool_getelem(elem);
+
+  return de->dead_magic == DEAD_MAGIC;
+}
+
+BLI_INLINE void BLI_safepool_iternew(struct BLI_ThreadSafePool *pool, ThreadSafePoolIter *iter) {
   lock_all_threads(pool);
 
-  memset(iter, 0, sizeof(*iter));
   iter->pool = pool;
 
   iter->thread = 0;

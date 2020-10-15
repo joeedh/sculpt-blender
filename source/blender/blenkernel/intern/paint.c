@@ -1481,11 +1481,6 @@ void BKE_sculptsession_free(Object *ob)
   if (ob && ob->sculpt) {
     SculptSession *ss = ob->sculpt;
 
-    if (ss->bm) {
-      BKE_sculptsession_bm_to_me(ob, true);
-      BM_mesh_free(ss->bm);
-    }
-
     if (ss->tm) {
       BKE_sculptsession_tm_to_me(ob, true);
       TMesh_free(ss->tm);
