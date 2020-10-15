@@ -85,11 +85,18 @@ TMElemSet *TMElemSet_new() {
 }
 
 void TMElemSet_free(TMElemSet *ts) {
+  if (!ts->ptr_to_idx) {
+    printf("double call to TMElemSet_free!\n");
+    return;
+  }
+
   if (ts->elems) {
     MEM_freeN(ts->elems);
   }
 
   BLI_ghash_free(ts->ptr_to_idx, NULL, NULL);
+  ts->ptr_to_idx = NULL;
+
   MEM_freeN(ts);
 }
 
@@ -2068,7 +2075,7 @@ void BKE_pbvh_build_trimesh(PBVH *bvh,
   bvh->tm_log = log;
 
   /* TODO: choose leaf limit better */
-  bvh->leaf_limit = 10000;
+  bvh->leaf_limit = 5000;
 
   if (smooth_shading) {
     bvh->flags |= PBVH_DYNTOPO_SMOOTH_SHADING;
@@ -2449,6 +2456,18 @@ void BKE_pbvh_trimesh_after_stroke(PBVH *bvh)
     n->tm_subtree_tottri = 0;
   }
 
+#if 1
+
+  for (int i=0; i<bvh->totnode; i++) {
+    PBVHNode *n = bvh->nodes + i;
+
+    if (n->flag & PBVH_Leaf) {
+      /* Recursively split nodes that have gotten too many
+      * elements */
+      pbvh_trimesh_node_limit_ensure(bvh, i);
+    }
+  }
+#else
   pbvh_count_subtree_verts(bvh, bvh->nodes);
 
   BKE_pbvh_trimesh_corect_tree(bvh, bvh->nodes, NULL);
@@ -2509,7 +2528,12 @@ void BKE_pbvh_trimesh_after_stroke(PBVH *bvh)
       int i1 = map[bvh->nodes[i].children_offset];
       int i2 = map[bvh->nodes[i].children_offset+1];
 
-      if (bvh->nodes[j].children_offset && i2 != i1 + 1) {
+      if (bvh->nodes[i].children_offset >= bvh->totnode) {
+        printf("bad child node reference %d->%d\n", i, bvh->nodes[i].children_offset);
+        continue;
+      }
+
+      if (bvh->nodes[i].children_offset && i2 != i1 + 1) {
         printf("      EVIL %d %d\n", i1, i2);
       }
 
@@ -2523,7 +2547,7 @@ void BKE_pbvh_trimesh_after_stroke(PBVH *bvh)
   if (j != totnode) {
     printf("eek!");
   }
-  bvh->totnode = totnode;
+  bvh->totnode = j;
 
   GSetIterator gsiter;
   TMVert *v;
@@ -2557,8 +2581,8 @@ void BKE_pbvh_trimesh_after_stroke(PBVH *bvh)
     }
   }
 
+#endif
   //BKE_pbvh_update_vertex_data(bvh, PBVH_UpdateVisibility|PBVH_UpdateMask|PBVH_UpdateColor);
-  return;
 #if 0
   for (int i = 0; i < bvh->totnode; i++) {
     PBVHNode *n = &bvh->nodes[i];

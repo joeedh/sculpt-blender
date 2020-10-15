@@ -1375,6 +1375,11 @@ static void pbvh_update_draw_buffers(PBVH *pbvh, PBVHNode **nodes, int totnode, 
     /* Free buffers uses OpenGL, so not in parallel. */
     for (int n = 0; n < totnode; n++) {
       PBVHNode *node = nodes[n];
+      if (node->flag & PBVH_Delete) {
+        printf("corrupted node! %p\n", node);
+        return;
+      }
+
       if (node->flag & PBVH_RebuildDrawBuffers) {
         GPU_pbvh_buffers_free(node->draw_buffers);
         node->draw_buffers = NULL;
@@ -2843,7 +2848,7 @@ void BKE_pbvh_draw_cb(PBVH *pbvh,
   for (int a = 0; a < totnode; a++) {
     PBVHNode *node = nodes[a];
 
-    if (node->flag & PBVH_UpdateDrawBuffers) {
+    if (node->flag & PBVH_UpdateDrawBuffers && node->draw_buffers) {
       /* Flush buffers uses OpenGL, so not in parallel. */
       GPU_pbvh_buffers_update_flush(node->draw_buffers);
     }

@@ -848,9 +848,10 @@ static void gpu_trimesh_vert_to_buffer_copy(TMVert *v,
   GPU_vertbuf_attr_set(vert_buf, g_vbo_id.nor, v_index, no_short);
 
   if (show_mask) {
-    //float effective_mask = fmask ? *fmask : TM_ELEM_CD_GET_FLOAT(v, cd_vert_mask_offset);
-    int ni = TM_ELEM_CD_GET_INT(v, cd_vert_node_offset);
-    float effective_mask = (float)(ni % 64) / 64.0f;
+    float effective_mask = fmask ? *fmask : TM_ELEM_CD_GET_FLOAT(v, cd_vert_mask_offset);
+    //int ni = TM_ELEM_CD_GET_INT(v, cd_vert_node_offset);
+    //float effective_mask = (float)(ni % 64) / 64.0f;
+
     uchar cmask = (uchar)(effective_mask * 255);
     GPU_vertbuf_attr_set(vert_buf, g_vbo_id.msk, v_index, &cmask);
     *empty_mask = *empty_mask && (cmask == 0);
