@@ -1397,6 +1397,16 @@ static char *rna_View3DOverlay_path(PointerRNA *UNUSED(ptr))
 
 /* Space Image Editor */
 
+static PointerRNA rna_SpaceImage_overlay_get(PointerRNA *ptr)
+{
+  return rna_pointer_inherit_refine(ptr, &RNA_SpaceImageOverlay, ptr->data);
+}
+
+static char *rna_SpaceImageOverlay_path(PointerRNA *UNUSED(ptr))
+{
+  return BLI_strdup("overlay");
+}
+
 static char *rna_SpaceUVEditor_path(PointerRNA *UNUSED(ptr))
 {
   return BLI_strdup("uv_editor");
@@ -1777,11 +1787,9 @@ static const EnumPropertyItem *rna_SpaceProperties_context_itemf(bContext *UNUSE
   SpaceProperties *sbuts = (SpaceProperties *)(ptr->data);
   EnumPropertyItem *item = NULL;
 
-  /* We use 32 tabs maximum here so a flag for each can fit into a 32 bit integer flag.
-   * A theoretical maximum would be BCONTEXT_TOT * 2, with every tab displayed and a spacer
-   * in every other item. But this size is currently limited by the size of integer
-   * supported by RNA enums. */
-  int context_tabs_array[32];
+  /* Although it would never reach this amount, a theoretical maximum number of tabs
+   * is BCONTEXT_TOT * 2, with every tab displayed and a spacer in every other item. */
+  short context_tabs_array[BCONTEXT_TOT * 2];
   int totitem = ED_buttons_tabs_list(sbuts, context_tabs_array);
   BLI_assert(totitem <= ARRAY_SIZE(context_tabs_array));
 
@@ -1815,6 +1823,53 @@ static void rna_SpaceProperties_context_update(Main *UNUSED(bmain),
   if (ELEM(sbuts->mainb, BCONTEXT_WORLD, BCONTEXT_MATERIAL, BCONTEXT_TEXTURE, BCONTEXT_DATA)) {
     sbuts->preview = 1;
   }
+}
+
+static int rna_SpaceProperties_tab_search_results_getlength(PointerRNA *ptr,
+                                                            int length[RNA_MAX_ARRAY_DIMENSION])
+{
+  SpaceProperties *sbuts = ptr->data;
+
+  short context_tabs_array[BCONTEXT_TOT * 2]; /* Dummy variable. */
+  const int tabs_len = ED_buttons_tabs_list(sbuts, context_tabs_array);
+
+  length[0] = tabs_len;
+
+  return length[0];
+}
+
+static void rna_SpaceProperties_tab_search_results_get(PointerRNA *ptr, bool *values)
+{
+  SpaceProperties *sbuts = ptr->data;
+
+  short context_tabs_array[BCONTEXT_TOT * 2]; /* Dummy variable. */
+  const int tabs_len = ED_buttons_tabs_list(sbuts, context_tabs_array);
+
+  for (int i = 0; i < tabs_len; i++) {
+    values[i] = ED_buttons_tab_has_search_result(sbuts, i);
+  }
+}
+
+static void rna_SpaceProperties_search_filter_get(PointerRNA *ptr, char *value)
+{
+  SpaceProperties *sbuts = ptr->data;
+  const char *search_filter = ED_buttons_search_string_get(sbuts);
+
+  strcpy(value, search_filter);
+}
+
+static int rna_SpaceProperties_search_filter_length(PointerRNA *ptr)
+{
+  SpaceProperties *sbuts = ptr->data;
+
+  return ED_buttons_search_string_length(sbuts);
+}
+
+static void rna_SpaceProperties_search_filter_set(struct PointerRNA *ptr, const char *value)
+{
+  SpaceProperties *sbuts = ptr->data;
+
+  ED_buttons_search_string_set(sbuts, value);
 }
 
 static void rna_SpaceProperties_search_filter_update(Main *UNUSED(bmain),
@@ -2009,12 +2064,6 @@ static void rna_SpaceDopeSheetEditor_mode_update(bContext *C, PointerRNA *ptr)
     else {
       saction->action = NULL;
     }
-
-    /* 2) enable 'show sliders' by default, since one of the main
-     *    points of the ShapeKey Editor is to provide a one-stop shop
-     *    for controlling the shapekeys, whose main control is the value
-     */
-    saction->flag |= SACTION_SLIDERS;
   }
   /* make sure action stored is valid */
   else if (saction->mode == SACTCONT_ACTION) {
@@ -4512,12 +4561,44 @@ static void rna_def_space_properties(BlenderRNA *brna)
   RNA_def_property_ui_text(prop, "Pin ID", "Use the pinned context");
 
   /* Property search. */
+
+  prop = RNA_def_property(srna, "tab_search_results", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_array(prop, 0); /* Dynamic length, see next line. */
+  RNA_def_property_flag(prop, PROP_DYNAMIC);
+  RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+  RNA_def_property_boolean_funcs(prop, "rna_SpaceProperties_tab_search_results_get", NULL);
+  RNA_def_property_dynamic_array_funcs(prop, "rna_SpaceProperties_tab_search_results_getlength");
+  RNA_def_property_ui_text(
+      prop, "Tab Search Results", "Whether or not each visible tab has a search result");
+
   prop = RNA_def_property(srna, "search_filter", PROP_STRING, PROP_NONE);
-  RNA_def_property_string_sdna(prop, NULL, "runtime->search_string");
+  /* The search filter is stored in the property editor's runtime struct which
+   * is only defined in an internal header, so use the getter / setter here. */
+  RNA_def_property_string_funcs(prop,
+                                "rna_SpaceProperties_search_filter_get",
+                                "rna_SpaceProperties_search_filter_length",
+                                "rna_SpaceProperties_search_filter_set");
   RNA_def_property_ui_text(prop, "Display Filter", "Live search filtering string");
   RNA_def_property_flag(prop, PROP_TEXTEDIT_UPDATE);
   RNA_def_property_update(
       prop, NC_SPACE | ND_SPACE_PROPERTIES, "rna_SpaceProperties_search_filter_update");
+}
+
+static void rna_def_space_image_overlay(BlenderRNA *brna)
+{
+  StructRNA *srna;
+  PropertyRNA *prop;
+
+  srna = RNA_def_struct(brna, "SpaceImageOverlay", NULL);
+  RNA_def_struct_sdna(srna, "SpaceImage");
+  RNA_def_struct_nested(brna, srna, "SpaceImageEditor");
+  RNA_def_struct_path_func(srna, "rna_SpaceImageOverlay_path");
+  RNA_def_struct_ui_text(
+      srna, "Overlay Settings", "Settings for display of overlays in the UV/Image editor");
+
+  prop = RNA_def_property(srna, "show_overlays", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "overlay.flag", SI_OVERLAY_SHOW_OVERLAYS);
+  RNA_def_property_ui_text(prop, "Show Overlays", "Display overlays like UV Maps and Metadata");
 }
 
 static void rna_def_space_image(BlenderRNA *brna)
@@ -4683,7 +4764,16 @@ static void rna_def_space_image(BlenderRNA *brna)
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
   RNA_def_property_ui_text(prop, "Show Mask Editor", "Show Mask editing related properties");
 
+  /* Overlays */
+  prop = RNA_def_property(srna, "overlay", PROP_POINTER, PROP_NONE);
+  RNA_def_property_flag(prop, PROP_NEVER_NULL);
+  RNA_def_property_struct_type(prop, "SpaceImageOverlay");
+  RNA_def_property_pointer_funcs(prop, "rna_SpaceImage_overlay_get", NULL, NULL, NULL);
+  RNA_def_property_ui_text(
+      prop, "Overlay Settings", "Settings for display of overlays in the UV/Image editor");
+
   rna_def_space_image_uv(brna);
+  rna_def_space_image_overlay(brna);
 
   /* mask */
   rna_def_space_mask_info(srna, NC_SPACE | ND_SPACE_IMAGE, "rna_SpaceImageEditor_mask_set");
@@ -4703,13 +4793,13 @@ static void rna_def_space_sequencer(BlenderRNA *brna)
   };
 
   static const EnumPropertyItem proxy_render_size_items[] = {
-      {SEQ_PROXY_RENDER_SIZE_NONE, "NONE", 0, "No display", ""},
-      {SEQ_PROXY_RENDER_SIZE_SCENE, "SCENE", 0, "Scene render size", ""},
-      {SEQ_PROXY_RENDER_SIZE_25, "PROXY_25", 0, "Proxy size 25%", ""},
-      {SEQ_PROXY_RENDER_SIZE_50, "PROXY_50", 0, "Proxy size 50%", ""},
-      {SEQ_PROXY_RENDER_SIZE_75, "PROXY_75", 0, "Proxy size 75%", ""},
-      {SEQ_PROXY_RENDER_SIZE_100, "PROXY_100", 0, "Proxy size 100%", ""},
-      {SEQ_PROXY_RENDER_SIZE_FULL, "FULL", 0, "No proxy, full render", ""},
+      {SEQ_RENDER_SIZE_NONE, "NONE", 0, "No display", ""},
+      {SEQ_RENDER_SIZE_SCENE, "SCENE", 0, "Scene render size", ""},
+      {SEQ_RENDER_SIZE_PROXY_25, "PROXY_25", 0, "Proxy size 25%", ""},
+      {SEQ_RENDER_SIZE_PROXY_50, "PROXY_50", 0, "Proxy size 50%", ""},
+      {SEQ_RENDER_SIZE_PROXY_75, "PROXY_75", 0, "Proxy size 75%", ""},
+      {SEQ_RENDER_SIZE_PROXY_100, "PROXY_100", 0, "Proxy size 100%", ""},
+      {SEQ_RENDER_SIZE_FULL, "FULL", 0, "No proxy, full render", ""},
       {0, NULL, 0, NULL, NULL},
   };
 

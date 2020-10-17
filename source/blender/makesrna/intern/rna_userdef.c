@@ -78,7 +78,7 @@ const EnumPropertyItem rna_enum_preference_section_items[] = {
     {USER_SECTION_ANIMATION, "ANIMATION", 0, "Animation", ""},
     {0, "", 0, NULL, NULL},
     {USER_SECTION_ADDONS, "ADDONS", 0, "Add-ons", ""},
-#if 0  // def WITH_USERDEF_WORKSPACES
+#if 0 /* def WITH_USERDEF_WORKSPACES */
     {0, "", 0, NULL, NULL},
     {USER_SECTION_WORKSPACE_CONFIG, "WORKSPACE_CONFIG", 0, "Configuration File", ""},
     {USER_SECTION_WORKSPACE_ADDONS, "WORKSPACE_ADDONS", 0, "Add-on Overrides", ""},
@@ -1893,6 +1893,11 @@ static void rna_def_userdef_theme_spaces_vertex(StructRNA *srna)
   prop = RNA_def_property(srna, "vertex_select", PROP_FLOAT, PROP_COLOR_GAMMA);
   RNA_def_property_array(prop, 3);
   RNA_def_property_ui_text(prop, "Vertex Select", "");
+  RNA_def_property_update(prop, 0, "rna_userdef_theme_update");
+
+  prop = RNA_def_property(srna, "vertex_active", PROP_FLOAT, PROP_COLOR_GAMMA);
+  RNA_def_property_array(prop, 3);
+  RNA_def_property_ui_text(prop, "Active Vertex", "");
   RNA_def_property_update(prop, 0, "rna_userdef_theme_update");
 
   prop = RNA_def_property(srna, "vertex_size", PROP_INT, PROP_PIXEL);
@@ -6173,6 +6178,11 @@ static void rna_def_userdef_experimental(BlenderRNA *brna)
   prop = RNA_def_property(srna, "use_tools_missing_icons", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "use_tools_missing_icons", 1);
   RNA_def_property_ui_text(prop, "Tools with Missing Icons", "Show tools with missing icons");
+
+  prop = RNA_def_property(srna, "use_sculpt_tools_tilt", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "use_sculpt_tools_tilt", 1);
+  RNA_def_property_ui_text(
+      prop, "Sculpt Mode Tilt Support", "Support for pen tablet tilt events in Sculpt Mode");
 }
 
 static void rna_def_userdef_addon_collection(BlenderRNA *brna, PropertyRNA *cprop)

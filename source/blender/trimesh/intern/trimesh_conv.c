@@ -1,41 +1,41 @@
 /*
-* This program is free software; you can redistribute it and/or
-* modify it under the terms of the GNU General Public License
-* as published by the Free Software Foundation; either version 2
-* of the License, or (at your option) any later version.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-* GNU General Public License for more details.
-*
-* You should have received a copy of the GNU General Public License
-* along with this program; if not, write to the Free Software Foundation,
-* Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-*
-* The Original Code is Copyright (C) 2008 by Blender Foundation.
-* All rights reserved.
-*/
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ *
+ * The Original Code is Copyright (C) 2008 by Blender Foundation.
+ * All rights reserved.
+ */
 
 /** \file
-* \ingroup trimesh
-*
-* optimized thread-safe triangle mesh library with topological info
-*
-*/
+ * \ingroup trimesh
+ *
+ * optimized thread-safe triangle mesh library with topological info
+ *
+ */
 
 #include <stdlib.h>
 #include <string.h>
 
 #include "BLI_listbase.h"
 
+#include "BLI_alloca.h"
+#include "BLI_array.h"
 #include "BLI_math.h"
 #include "BLI_threadsafe_mempool.h"
-#include "BLI_array.h"
-#include "BLI_alloca.h"
 
-#include "DNA_key_types.h"
 #include "DNA_customdata_types.h"
+#include "DNA_key_types.h"
 #include "DNA_mesh_types.h"
 #include "DNA_meshdata_types.h"
 #include "DNA_modifier_types.h"
@@ -43,8 +43,8 @@
 
 #include "atomic_ops.h"
 
-#include "BLI_utildefines.h"
 #include "BLI_ghash.h"
+#include "BLI_utildefines.h"
 
 #include "BKE_customdata.h"
 #include "BKE_mesh.h"
@@ -59,9 +59,9 @@
 #  include "valgrind/memcheck.h"
 #endif
 
-#include "trimesh_private.h"
-#include "trimesh.h"
 #include "bmesh.h"
+#include "trimesh.h"
+#include "trimesh_private.h"
 
 /* ME -> BM */
 char TM_vert_flag_from_mflag(const char meflag)
@@ -71,14 +71,14 @@ char TM_vert_flag_from_mflag(const char meflag)
 char TM_edge_flag_from_mflag(const short meflag)
 {
   return (((meflag & SELECT) ? SELECT : 0) | ((meflag & ME_SEAM) ? TRIMESH_SEAM : 0) |
-    ((meflag & ME_EDGEDRAW) ? TRIMESH_EDGEDRAW : 0) |
-    ((meflag & ME_SHARP) == 0 ? TRIMESH_SHARP : 0) | /* invert */
-    ((meflag & ME_HIDE) ? TM_ELEM_HIDDEN : 0));
+          ((meflag & ME_EDGEDRAW) ? TRIMESH_EDGEDRAW : 0) |
+          ((meflag & ME_SHARP) == 0 ? TRIMESH_SHARP : 0) | /* invert */
+          ((meflag & ME_HIDE) ? TM_ELEM_HIDDEN : 0));
 }
 char TM_face_flag_from_mflag(const char meflag)
 {
-  return (((meflag & ME_FACE_SEL) ? SELECT : 0) |
-    ((meflag & ME_SMOOTH) ? TRIMESH_SMOOTH : 0) | ((meflag & ME_HIDE) ? TM_ELEM_HIDDEN : 0));
+  return (((meflag & ME_FACE_SEL) ? SELECT : 0) | ((meflag & ME_SMOOTH) ? TRIMESH_SMOOTH : 0) |
+          ((meflag & ME_HIDE) ? TM_ELEM_HIDDEN : 0));
 }
 
 static void update_data_blocks(TM_TriMesh *tm, CustomData *olddata, CustomData *data)
@@ -116,9 +116,9 @@ static void update_data_blocks(TM_TriMesh *tm, CustomData *olddata, CustomData *
   else if (data == &tm->ldata) {
     TMFace *efa;
 
-    CustomData_trimesh_init_pool(tm, data, tm->tottri*3, TM_LOOP);
+    CustomData_trimesh_init_pool(tm, data, tm->tottri * 3, TM_LOOP);
     TM_ITER_MESH (efa, &iter, tm, TM_TRIS_OF_MESH) {
-      for (int i=0; i<3; i++) {
+      for (int i = 0; i < 3; i++) {
         TMLoopData *l = TM_GET_TRI_LOOP(efa, i);
         block = NULL;
         CustomData_bmesh_set_default(data, &block);
@@ -253,9 +253,10 @@ void TM_mesh_cd_flag_apply(TM_TriMesh *bm, const char cd_flag)
   }
 }
 
-void TM_mesh_tm_from_me(TM_TriMesh *bm, const Mesh *me, const struct TriMeshFromMeshParams *params) {
+void TM_mesh_tm_from_me(TM_TriMesh *bm, const Mesh *me, const struct TriMeshFromMeshParams *params)
+{
   const bool is_new = !(bm->totvert || (bm->vdata.totlayer || bm->edata.totlayer ||
-    bm->tdata.totlayer || bm->ldata.totlayer));
+                                        bm->tdata.totlayer || bm->ldata.totlayer));
   MVert *mvert;
   MEdge *medge;
   MLoop *mloop;
@@ -304,8 +305,8 @@ void TM_mesh_tm_from_me(TM_TriMesh *bm, const Mesh *me, const struct TriMeshFrom
     tot_shape_keys = min_ii(tot_shape_keys, CustomData_number_of_layers(&bm->vdata, CD_SHAPEKEY));
   }
   const float(**shape_key_table)[3] = tot_shape_keys ?
-    BLI_array_alloca(shape_key_table, tot_shape_keys) :
-    NULL;
+                                          BLI_array_alloca(shape_key_table, tot_shape_keys) :
+                                          NULL;
 
   if ((params->active_shapekey != 0) && (me->key != NULL)) {
     actkey = BLI_findlink(&me->key->block, params->active_shapekey - 1);
@@ -323,12 +324,12 @@ void TM_mesh_tm_from_me(TM_TriMesh *bm, const Mesh *me, const struct TriMeshFrom
   if (tot_shape_keys) {
     if (is_new) {
       /* Check if we need to generate unique ids for the shape-keys.
-      * This also exists in the file reading code, but is here for a sanity check. */
+       * This also exists in the file reading code, but is here for a sanity check. */
       if (!me->key->uidgen) {
         fprintf(stderr,
-          "%s had to generate shape key uid's in a situation we shouldn't need to! "
-          "(bmesh internal error)\n",
-          __func__);
+                "%s had to generate shape key uid's in a situation we shouldn't need to! "
+                "(bmesh internal error)\n",
+                __func__);
 
         me->key->uidgen = 1;
         for (block = me->key->block.first; block; block = block->next) {
@@ -368,8 +369,8 @@ void TM_mesh_tm_from_me(TM_TriMesh *bm, const Mesh *me, const struct TriMeshFrom
   const int cd_edge_crease_offset = CustomData_get_offset(&bm->edata, CD_CREASE);
   const int cd_shape_key_offset = me->key ? CustomData_get_offset(&bm->vdata, CD_SHAPEKEY) : -1;
   const int cd_shape_keyindex_offset = is_new && (tot_shape_keys || params->add_key_index) ?
-    CustomData_get_offset(&bm->vdata, CD_SHAPE_KEYINDEX) :
-    -1;
+                                           CustomData_get_offset(&bm->vdata, CD_SHAPE_KEYINDEX) :
+                                           -1;
 
   vtable = MEM_mallocN(sizeof(TMVert **) * me->totvert, __func__);
 
@@ -413,8 +414,7 @@ void TM_mesh_tm_from_me(TM_TriMesh *bm, const Mesh *me, const struct TriMeshFrom
 
   medge = me->medge;
   for (i = 0; i < me->totedge; i++, medge++) {
-    e = etable[i] = TM_get_edge(
-      bm, vtable[medge->v1], vtable[medge->v2], 0, true);
+    e = etable[i] = TM_get_edge(bm, vtable[medge->v1], vtable[medge->v2], 0, true);
     e->index = i;
 
     /* Transfer flags. */
@@ -436,18 +436,18 @@ void TM_mesh_tm_from_me(TM_TriMesh *bm, const Mesh *me, const struct TriMeshFrom
 
   mp = me->mpoly;
   mloop = me->mloop;
-  for (i=0; i<me->totpoly; i++, mp++) {
+  for (i = 0; i < me->totpoly; i++, mp++) {
     MLoop *ml = mloop + mp->loopstart;
 
-    for (int j=1; j<mp->totloop-1; j++) {
-      int i1 = 0, i2 = j, i3 = j+1;
+    for (int j = 1; j < mp->totloop - 1; j++) {
+      int i1 = 0, i2 = j, i3 = j + 1;
 
       TMVert *v1 = vtable[ml[i1].v];
       TMVert *v2 = vtable[ml[i2].v];
       TMVert *v3 = vtable[ml[i3].v];
 
       TMFace *tri = TM_make_tri(bm, v1, v2, v3, 0, true);
-      tri->index = bm->tottri-1;
+      tri->index = bm->tottri - 1;
 
       tri->flag = TM_face_flag_from_mflag(mp->flag & ~ME_FACE_SEL);
       tri->mat_nr = mp->mat_nr;
@@ -476,7 +476,6 @@ void TM_mesh_tm_from_me(TM_TriMesh *bm, const Mesh *me, const struct TriMeshFrom
   }
 }
 
-
 char BLI_trimesh_mesh_cd_flag_from_bmesh(TM_TriMesh *tm)
 {
   char cd_flag = 0;
@@ -495,9 +494,9 @@ char BLI_trimesh_mesh_cd_flag_from_bmesh(TM_TriMesh *tm)
 BLI_INLINE void tmesh_quick_edgedraw_flag(MEdge *med, TMEdge *e)
 {
   /* This is a cheap way to set the edge draw, its not precise and will
-  * pick the first 2 faces an edge uses.
-  * The dot comparison is a little arbitrary, but set so that a 5 subd
-  * IcoSphere won't vanish but subd 6 will (as with pre-bmesh Blender). */
+   * pick the first 2 faces an edge uses.
+   * The dot comparison is a little arbitrary, but set so that a 5 subd
+   * IcoSphere won't vanish but subd 6 will (as with pre-bmesh Blender). */
 
   if (e->tris.length > 1) {
     TMFace *t1 = e->tris.items[0];
@@ -505,16 +504,16 @@ BLI_INLINE void tmesh_quick_edgedraw_flag(MEdge *med, TMEdge *e)
 
     if (dot_v3v3(t1->no, t2->no) > 0.9995f) {
       med->flag &= ~ME_EDGEDRAW;
-    } else {
+    }
+    else {
       med->flag |= ME_EDGEDRAW;
     }
   }
 }
 
-
 /**
-* \brief BMesh -> Mesh
-*/
+ * \brief BMesh -> Mesh
+ */
 static TMVert **tm_to_mesh_vertex_map(TM_TriMesh *bm, int ototvert)
 {
   const int cd_shape_keyindex_offset = CustomData_get_offset(&bm->vdata, CD_SHAPE_KEYINDEX);
@@ -534,10 +533,10 @@ static TMVert **tm_to_mesh_vertex_map(TM_TriMesh *bm, int ototvert)
     for (; eve; eve = TM_iterstep(&iter), i++) {
       const int keyi = TM_ELEM_CD_GET_INT(eve, cd_shape_keyindex_offset);
       if ((keyi != ORIGINDEX_NONE) && (keyi < ototvert) &&
-        /* Not fool-proof, but chances are if we have many verts with the same index,
-        * we will want to use the first one,
-        * since the second is more likely to be a duplicate. */
-        (vertMap[keyi] == NULL)) {
+          /* Not fool-proof, but chances are if we have many verts with the same index,
+           * we will want to use the first one,
+           * since the second is more likely to be a duplicate. */
+          (vertMap[keyi] == NULL)) {
         vertMap[keyi] = eve;
       }
     }
@@ -560,9 +559,9 @@ static TMVert **tm_to_mesh_vertex_map(TM_TriMesh *bm, int ototvert)
 }
 
 void TM_mesh_bm_to_me(struct Main *bmain,
-  TM_TriMesh *tm,
-  struct Mesh *me,
-  const struct TMeshToMeshParams *params)
+                      TM_TriMesh *tm,
+                      struct Mesh *me,
+                      const struct TMeshToMeshParams *params)
 {
   TMVert *v;
   TMEdge *e;
@@ -600,7 +599,7 @@ void TM_mesh_bm_to_me(struct Main *bmain,
   /* Add new custom data. */
   me->totvert = tm->totvert;
   me->totedge = tm->totedge;
-  me->totloop = tm->tottri*3;
+  me->totloop = tm->tottri * 3;
   me->totpoly = tm->tottri;
   me->totface = tm->tottri;
   me->act_face = -1;
@@ -684,7 +683,7 @@ void TM_mesh_bm_to_me(struct Main *bmain,
     mpoly->totloop = 3;
     mpoly->mat_nr = f->mat_nr;
 
-    for (int k=0; k<3; k++, j++, mloop++) {
+    for (int k = 0; k < 3; k++, j++, mloop++) {
       TMLoopData *ld = TM_GET_TRI_LOOP(f, k);
 
       mloop->e = TM_GET_TRI_EDGE(f, k)->index;

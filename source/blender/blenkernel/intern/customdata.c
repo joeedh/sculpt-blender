@@ -257,15 +257,11 @@ static void layerInterp_mdeformvert(const void **sources,
   struct MDeformWeight_Link *node;
   int i, j, totweight;
 
-  if (count <= 0) {
-    return;
-  }
-
   /* build a list of unique def_nrs for dest */
   totweight = 0;
   for (i = 0; i < count; i++) {
     const MDeformVert *source = sources[i];
-    float interp_weight = weights ? weights[i] : 1.0f;
+    float interp_weight = weights[i];
 
     for (j = 0; j < source->totweight; j++) {
       MDeformWeight *dw = &source->dw[j];
@@ -426,23 +422,19 @@ static void layerInterp_tface(
   float uv[4][2] = {{0.0f}};
   const float *sub_weight;
 
-  if (count <= 0) {
-    return;
-  }
-
   sub_weight = sub_weights;
   for (i = 0; i < count; i++) {
-    float weight = weights ? weights[i] : 1;
+    const float interp_weight = weights[i];
     const MTFace *src = sources[i];
 
     for (j = 0; j < 4; j++) {
       if (sub_weights) {
         for (k = 0; k < 4; k++, sub_weight++) {
-          madd_v2_v2fl(uv[j], src->uv[k], (*sub_weight) * weight);
+          madd_v2_v2fl(uv[j], src->uv[k], (*sub_weight) * interp_weight);
         }
       }
       else {
-        madd_v2_v2fl(uv[j], src->uv[j], weight);
+        madd_v2_v2fl(uv[j], src->uv[j], interp_weight);
       }
     }
   }
@@ -531,23 +523,19 @@ static void layerInterp_origspace_face(
   float uv[4][2] = {{0.0f}};
   const float *sub_weight;
 
-  if (count <= 0) {
-    return;
-  }
-
   sub_weight = sub_weights;
   for (i = 0; i < count; i++) {
-    float weight = weights ? weights[i] : 1;
+    const float interp_weight = weights[i];
     const OrigSpaceFace *src = sources[i];
 
     for (j = 0; j < 4; j++) {
       if (sub_weights) {
         for (k = 0; k < 4; k++, sub_weight++) {
-          madd_v2_v2fl(uv[j], src->uv[k], (*sub_weight) * weight);
+          madd_v2_v2fl(uv[j], src->uv[k], (*sub_weight) * interp_weight);
         }
       }
       else {
-        madd_v2_v2fl(uv[j], src->uv[j], weight);
+        madd_v2_v2fl(uv[j], src->uv[j], interp_weight);
       }
     }
   }
@@ -692,21 +680,17 @@ static size_t layerFilesize_mdisps(CDataFile *UNUSED(cdf), const void *data, int
 
   return size;
 }
-static void layerInterp_paint_mask(
-    const void **sources, const float *weights, const float *sub_weights, int count, void *dest)
+static void layerInterp_paint_mask(const void **sources,
+                                   const float *weights,
+                                   const float *UNUSED(sub_weights),
+                                   int count,
+                                   void *dest)
 {
   float mask = 0.0f;
-  const float *sub_weight = sub_weights;
   for (int i = 0; i < count; i++) {
-    float weight = weights ? weights[i] : 1.0f;
+    const float interp_weight = weights[i];
     const float *src = sources[i];
-    if (sub_weights) {
-      mask += (*src) * (*sub_weight) * weight;
-      sub_weight++;
-    }
-    else {
-      mask += (*src) * weight;
-    }
+    mask += (*src) * interp_weight;
   }
   *(float *)dest = mask;
 }
@@ -887,8 +871,11 @@ static void layerDefault_mloopcol(void *data, int count)
   }
 }
 
-static void layerInterp_mloopcol(
-    const void **sources, const float *weights, const float *sub_weights, int count, void *dest)
+static void layerInterp_mloopcol(const void **sources,
+                                 const float *weights,
+                                 const float *UNUSED(sub_weights),
+                                 int count,
+                                 void *dest)
 {
   MLoopCol *mc = dest;
   struct {
@@ -898,23 +885,13 @@ static void layerInterp_mloopcol(
     float b;
   } col = {0};
 
-  const float *sub_weight = sub_weights;
   for (int i = 0; i < count; i++) {
-    float weight = weights ? weights[i] : 1;
+    const float interp_weight = weights[i];
     const MLoopCol *src = sources[i];
-    if (sub_weights) {
-      col.r += src->r * (*sub_weight) * weight;
-      col.g += src->g * (*sub_weight) * weight;
-      col.b += src->b * (*sub_weight) * weight;
-      col.a += src->a * (*sub_weight) * weight;
-      sub_weight++;
-    }
-    else {
-      col.r += src->r * weight;
-      col.g += src->g * weight;
-      col.b += src->b * weight;
-      col.a += src->a * weight;
-    }
+    col.r += src->r * interp_weight;
+    col.g += src->g * interp_weight;
+    col.b += src->b * interp_weight;
+    col.a += src->a * interp_weight;
   }
 
   /* Subdivide smooth or fractal can cause problems without clamping
@@ -988,34 +965,23 @@ static void layerAdd_mloopuv(void *data1, const void *data2)
   add_v2_v2(l1->uv, l2->uv);
 }
 
-static void layerInterp_mloopuv(
-    const void **sources, const float *weights, const float *sub_weights, int count, void *dest)
+static void layerInterp_mloopuv(const void **sources,
+                                const float *weights,
+                                const float *UNUSED(sub_weights),
+                                int count,
+                                void *dest)
 {
   float uv[2];
   int flag = 0;
 
   zero_v2(uv);
 
-  if (sub_weights) {
-    const float *sub_weight = sub_weights;
-    for (int i = 0; i < count; i++) {
-      float weight = (weights ? weights[i] : 1.0f) * (*sub_weight);
-      const MLoopUV *src = sources[i];
-      madd_v2_v2fl(uv, src->uv, weight);
-      if (weight > 0.0f) {
-        flag |= src->flag;
-      }
-      sub_weight++;
-    }
-  }
-  else {
-    for (int i = 0; i < count; i++) {
-      float weight = weights ? weights[i] : 1;
-      const MLoopUV *src = sources[i];
-      madd_v2_v2fl(uv, src->uv, weight);
-      if (weight > 0.0f) {
-        flag |= src->flag;
-      }
+  for (int i = 0; i < count; i++) {
+    const float interp_weight = weights[i];
+    const MLoopUV *src = sources[i];
+    madd_v2_v2fl(uv, src->uv, interp_weight);
+    if (interp_weight > 0.0f) {
+      flag |= src->flag;
     }
   }
 
@@ -1090,27 +1056,19 @@ static void layerAdd_mloop_origspace(void *data1, const void *data2)
   add_v2_v2(l1->uv, l2->uv);
 }
 
-static void layerInterp_mloop_origspace(
-    const void **sources, const float *weights, const float *sub_weights, int count, void *dest)
+static void layerInterp_mloop_origspace(const void **sources,
+                                        const float *weights,
+                                        const float *UNUSED(sub_weights),
+                                        int count,
+                                        void *dest)
 {
   float uv[2];
   zero_v2(uv);
 
-  if (sub_weights) {
-    const float *sub_weight = sub_weights;
-    for (int i = 0; i < count; i++) {
-      float weight = weights ? weights[i] : 1.0f;
-      const OrigSpaceLoop *src = sources[i];
-      madd_v2_v2fl(uv, src->uv, (*sub_weight) * weight);
-      sub_weight++;
-    }
-  }
-  else {
-    for (int i = 0; i < count; i++) {
-      float weight = weights ? weights[i] : 1.0f;
-      const OrigSpaceLoop *src = sources[i];
-      madd_v2_v2fl(uv, src->uv, weight);
-    }
+  for (int i = 0; i < count; i++) {
+    const float interp_weight = weights[i];
+    const OrigSpaceLoop *src = sources[i];
+    madd_v2_v2fl(uv, src->uv, interp_weight);
   }
 
   /* Delay writing to the destination in case dest is in sources. */
@@ -1129,19 +1087,15 @@ static void layerInterp_mcol(
     float b;
   } col[4] = {{0.0f}};
 
-  if (count <= 0) {
-    return;
-  }
-
   const float *sub_weight = sub_weights;
   for (int i = 0; i < count; i++) {
-    float weight = weights ? weights[i] : 1;
+    const float interp_weight = weights[i];
 
     for (int j = 0; j < 4; j++) {
       if (sub_weights) {
         const MCol *src = sources[i];
         for (int k = 0; k < 4; k++, sub_weight++, src++) {
-          const float w = (*sub_weight) * weight;
+          const float w = (*sub_weight) * interp_weight;
           col[j].a += src->a * w;
           col[j].r += src->r * w;
           col[j].g += src->g * w;
@@ -1150,10 +1104,10 @@ static void layerInterp_mcol(
       }
       else {
         const MCol *src = sources[i];
-        col[j].a += src[j].a * weight;
-        col[j].r += src[j].r * weight;
-        col[j].g += src[j].g * weight;
-        col[j].b += src[j].b * weight;
+        col[j].a += src[j].a * interp_weight;
+        col[j].r += src[j].r * interp_weight;
+        col[j].g += src[j].g * interp_weight;
+        col[j].b += src[j].b * interp_weight;
       }
     }
   }
@@ -1212,15 +1166,9 @@ static void layerInterp_bweight(const void **sources,
 
   float f = 0.0f;
 
-  if (weights) {
-    for (int i = 0; i < count; i++) {
-      f += *in[i] * weights[i];
-    }
-  }
-  else {
-    for (int i = 0; i < count; i++) {
-      f += *in[i];
-    }
+  for (int i = 0; i < count; i++) {
+    const float interp_weight = weights[i];
+    f += *in[i] * interp_weight;
   }
 
   /* Delay writing to the destination in case dest is in sources. */
@@ -1242,15 +1190,9 @@ static void layerInterp_shapekey(const void **sources,
   float co[3];
   zero_v3(co);
 
-  if (weights) {
-    for (int i = 0; i < count; i++) {
-      madd_v3_v3fl(co, in[i], weights[i]);
-    }
-  }
-  else {
-    for (int i = 0; i < count; i++) {
-      add_v3_v3(co, in[i]);
-    }
+  for (int i = 0; i < count; i++) {
+    const float interp_weight = weights[i];
+    madd_v3_v3fl(co, in[i], interp_weight);
   }
 
   /* Delay writing to the destination in case dest is in sources. */
@@ -1284,10 +1226,10 @@ static void layerInterp_mvert_skin(const void **sources,
   zero_v3(radius);
 
   for (int i = 0; i < count; i++) {
+    const float interp_weight = weights[i];
     const MVertSkin *vs_src = sources[i];
-    float w = weights ? weights[i] : 1.0f;
 
-    madd_v3_v3fl(radius, vs_src->radius, w);
+    madd_v3_v3fl(radius, vs_src->radius, interp_weight);
   }
 
   /* Delay writing to the destination in case dest is in sources. */
@@ -1417,22 +1359,18 @@ static void layerDefault_propcol(void *data, int count)
   }
 }
 
-static void layerInterp_propcol(
-    const void **sources, const float *weights, const float *sub_weights, int count, void *dest)
+static void layerInterp_propcol(const void **sources,
+                                const float *weights,
+                                const float *UNUSED(sub_weights),
+                                int count,
+                                void *dest)
 {
   MPropCol *mc = dest;
   float col[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-  const float *sub_weight = sub_weights;
   for (int i = 0; i < count; i++) {
-    float weight = weights ? weights[i] : 1.0f;
+    const float interp_weight = weights[i];
     const MPropCol *src = sources[i];
-    if (sub_weights) {
-      madd_v4_v4fl(col, src->color, (*sub_weight) * weight);
-      sub_weight++;
-    }
-    else {
-      madd_v4_v4fl(col, src->color, weight);
-    }
+    madd_v4_v4fl(col, src->color, interp_weight);
   }
   copy_v4_v4(mc->color, col);
 }
@@ -1442,19 +1380,17 @@ static int layerMaxNum_propcol(void)
   return MAX_MCOL;
 }
 
-static void layerInterp_propfloat3(
-    const void **sources, const float *weights, const float *sub_weights, int count, void *dest)
+static void layerInterp_propfloat3(const void **sources,
+                                   const float *weights,
+                                   const float *UNUSED(sub_weights),
+                                   int count,
+                                   void *dest)
 {
   vec3f result = {0.0f, 0.0f, 0.0f};
   for (int i = 0; i < count; i++) {
-    float weight = weights ? weights[i] : 1.0f;
+    const float interp_weight = weights[i];
     const vec3f *src = sources[i];
-    if (sub_weights) {
-      madd_v3_v3fl(&result.x, &src->x, sub_weights[i] * weight);
-    }
-    else {
-      madd_v3_v3fl(&result.x, &src->x, weight);
-    }
+    madd_v3_v3fl(&result.x, &src->x, interp_weight);
   }
   copy_v3_v3((float *)dest, &result.x);
 }
@@ -1491,19 +1427,17 @@ static bool layerValidate_propfloat3(void *data, const uint totitems, const bool
   return has_errors;
 }
 
-static void layerInterp_propfloat2(
-    const void **sources, const float *weights, const float *sub_weights, int count, void *dest)
+static void layerInterp_propfloat2(const void **sources,
+                                   const float *weights,
+                                   const float *UNUSED(sub_weights),
+                                   int count,
+                                   void *dest)
 {
   vec2f result = {0.0f, 0.0f};
   for (int i = 0; i < count; i++) {
-    float weight = weights ? weights[i] : 1.0f;
+    const float interp_weight = weights[i];
     const vec2f *src = sources[i];
-    if (sub_weights) {
-      madd_v2_v2fl(&result.x, &src->x, sub_weights[i] * weight);
-    }
-    else {
-      madd_v2_v2fl(&result.x, &src->x, weight);
-    }
+    madd_v2_v2fl(&result.x, &src->x, interp_weight);
   }
   copy_v2_v2((float *)dest, &result.x);
 }
@@ -3061,6 +2995,18 @@ void CustomData_free_elem(CustomData *data, int index, int count)
 
 #define SOURCE_BUF_SIZE 100
 
+/**
+ * Interpolate given custom data source items into a single destination one.
+ *
+ * \param src_indices Indices of every source items to interpolate into the destination one.
+ * \param weights: The weight to apply to each source value individually. If NULL, they will be
+ * averaged.
+ * \param sub_weights: The weights of sub-items, only used to affect each corners of a
+ * tessellated face data (should always be and array of four values).
+ * \param count: The number of source items to interpolate.
+ * \param dest_index: Index of the destination item, in which to put the result of the
+ * interpolation.
+ */
 void CustomData_interp(const CustomData *source,
                        CustomData *dest,
                        const int *src_indices,
@@ -3069,12 +3015,27 @@ void CustomData_interp(const CustomData *source,
                        int count,
                        int dest_index)
 {
+  if (count <= 0) {
+    return;
+  }
+
   const void *source_buf[SOURCE_BUF_SIZE];
   const void **sources = source_buf;
 
   /* Slow fallback in case we're interpolating a ridiculous number of elements. */
   if (count > SOURCE_BUF_SIZE) {
     sources = MEM_malloc_arrayN(count, sizeof(*sources), __func__);
+  }
+
+  /* If no weights are given, generate default ones to produce an average result. */
+  float default_weights_buf[SOURCE_BUF_SIZE];
+  float *default_weights = NULL;
+  if (weights == NULL) {
+    default_weights = (count > SOURCE_BUF_SIZE) ?
+                          MEM_mallocN(sizeof(*weights) * (size_t)count, __func__) :
+                          default_weights_buf;
+    copy_vn_fl(default_weights, count, 1.0f / count);
+    weights = default_weights;
   }
 
   /* interpolates a layer at a time */
@@ -3122,6 +3083,9 @@ void CustomData_interp(const CustomData *source,
 
   if (count > SOURCE_BUF_SIZE) {
     MEM_freeN((void *)sources);
+  }
+  if (!ELEM(default_weights, NULL, default_weights_buf)) {
+    MEM_freeN(default_weights);
   }
 }
 
@@ -4178,6 +4142,9 @@ void CustomData_bmesh_interp_n(CustomData *data,
                                void *dst_block_ofs,
                                int n)
 {
+  BLI_assert(weights != NULL);
+  BLI_assert(count > 0);
+
   CustomDataLayer *layer = &data->layers[n];
   const LayerTypeInfo *typeInfo = layerType_getInfo(layer->type);
 
@@ -4191,6 +4158,10 @@ void CustomData_bmesh_interp(CustomData *data,
                              int count,
                              void *dst_block)
 {
+  if (count <= 0) {
+    return;
+  }
+
   int i, j;
   void *source_buf[SOURCE_BUF_SIZE];
   const void **sources = (const void **)source_buf;
@@ -4198,6 +4169,17 @@ void CustomData_bmesh_interp(CustomData *data,
   /* Slow fallback in case we're interpolating a ridiculous number of elements. */
   if (count > SOURCE_BUF_SIZE) {
     sources = MEM_malloc_arrayN(count, sizeof(*sources), __func__);
+  }
+
+  /* If no weights are given, generate default ones to produce an average result. */
+  float default_weights_buf[SOURCE_BUF_SIZE];
+  float *default_weights = NULL;
+  if (weights == NULL) {
+    default_weights = (count > SOURCE_BUF_SIZE) ?
+                          MEM_mallocN(sizeof(*weights) * (size_t)count, __func__) :
+                          default_weights_buf;
+    copy_vn_fl(default_weights, count, 1.0f / count);
+    weights = default_weights;
   }
 
   /* interpolates a layer at a time */
@@ -4215,6 +4197,9 @@ void CustomData_bmesh_interp(CustomData *data,
 
   if (count > SOURCE_BUF_SIZE) {
     MEM_freeN((void *)sources);
+  }
+  if (!ELEM(default_weights, NULL, default_weights_buf)) {
+    MEM_freeN(default_weights);
   }
 }
 
@@ -4932,6 +4917,9 @@ static void customdata_data_transfer_interp_generic(const CustomDataTransferLaye
                                                     const int count,
                                                     const float mix_factor)
 {
+  BLI_assert(weights != NULL);
+  BLI_assert(count > 0);
+
   /* Fake interpolation, we actually copy highest weighted source to dest.
    * Note we also handle bitflags here,
    * in which case we rather choose to transfer value of elements totaling
@@ -5047,6 +5035,9 @@ void customdata_data_transfer_interp_normal_normals(const CustomDataTransferLaye
                                                     const int count,
                                                     const float mix_factor)
 {
+  BLI_assert(weights != NULL);
+  BLI_assert(count > 0);
+
   const int data_type = laymap->data_type;
   const int mix_mode = laymap->mix_mode;
 

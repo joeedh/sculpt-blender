@@ -9,8 +9,8 @@ enum {
   POOL_VERTEX = 0,
   POOL_EDGE = 1,
   POOL_TRI = 2,
-  POOL_ELIST = 3, //pool for lists of edges around vertices
-  POOL_TLIST = 4, //pool for lists of triangles around edges
+  POOL_ELIST = 3,  // pool for lists of edges around vertices
+  POOL_TLIST = 4,  // pool for lists of triangles around edges
 #ifdef WITH_TRIMESH_CUSTOMDATA
   POOL_LOOP = 5
 #endif
@@ -26,16 +26,17 @@ void trimesh_element_destroy(void *elem, int threadnr, struct CustomData *custom
 struct TM_TriMesh;
 struct optmesh_simplelist;
 
-static void trimesh_simplelist_remove(struct TM_TriMesh *tm, struct optmesh_simplelist *list, void *item, int pool, int threadnr)
+static void trimesh_simplelist_remove(
+    struct TM_TriMesh *tm, struct optmesh_simplelist *list, void *item, int pool, int threadnr)
 {
   if (list->length == 0) {
     return;
   }
 
-  for (int i=0; i<list->length; i++) {
+  for (int i = 0; i < list->length; i++) {
     if (list->items[i] == item) {
-      //swap with last
-      list->items[i] = list->items[list->length-1];
+      // swap with last
+      list->items[i] = list->items[list->length - 1];
 
       /*
       while (i < list->length-1) {
@@ -43,7 +44,7 @@ static void trimesh_simplelist_remove(struct TM_TriMesh *tm, struct optmesh_simp
         i++;
       }*/
 
-      list->items[list->length-1] = NULL;
+      list->items[list->length - 1] = NULL;
       list->length--;
 
       return;
@@ -51,41 +52,50 @@ static void trimesh_simplelist_remove(struct TM_TriMesh *tm, struct optmesh_simp
   }
 }
 
-static void trimesh_simplelist_free(TM_TriMesh *tm, optmesh_simplelist *list, int pool, int threadnr) {
+static void trimesh_simplelist_free(TM_TriMesh *tm,
+                                    optmesh_simplelist *list,
+                                    int pool,
+                                    int threadnr)
+{
   if (list->is_pool_allocd) {
     BLI_safepool_free(tm->pools[pool], list->items);
-  } else {
+  }
+  else {
     MEM_freeN(list->items);
   }
 }
 
-static void trilist_simplelist_init(TM_TriMesh *tm, optmesh_simplelist *list, int size, int pool) {
+static void trilist_simplelist_init(TM_TriMesh *tm, optmesh_simplelist *list, int size, int pool)
+{
   list->_size = size;
   list->items = BLI_safepool_alloc(tm->pools[pool]);
   list->length = 0;
   list->is_pool_allocd = true;
 }
 
-static void trilist_simplelist_append(TM_TriMesh* tm, optmesh_simplelist* list, void *item, int pool, int threadnr) {
+static void trilist_simplelist_append(
+    TM_TriMesh *tm, optmesh_simplelist *list, void *item, int pool, int threadnr)
+{
   list->length++;
 
   if (list->length > list->_size) {
     if (list->is_pool_allocd) {
       list->is_pool_allocd = false;
 
-      void **items = MEM_mallocN(sizeof(void*)*list->_size*2, "simplelist_append");
-      memcpy(items, list->items, sizeof(void*)*list->_size);
+      void **items = MEM_mallocN(sizeof(void *) * list->_size * 2, "simplelist_append");
+      memcpy(items, list->items, sizeof(void *) * list->_size);
 
       BLI_safepool_free(tm->pools[pool], list->items);
       list->items = items;
-    } else {
-      list->items = MEM_reallocN(list->items, sizeof(void*)*list->_size*2);
+    }
+    else {
+      list->items = MEM_reallocN(list->items, sizeof(void *) * list->_size * 2);
     }
 
     list->_size *= 2;
   }
 
-  list->items[list->length-1] = item;
+  list->items[list->length - 1] = item;
 }
 
 struct CustomData;

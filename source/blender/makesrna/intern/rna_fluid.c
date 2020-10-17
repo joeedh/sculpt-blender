@@ -62,7 +62,7 @@ static void rna_Fluid_update(Main *UNUSED(bmain), Scene *UNUSED(scene), PointerR
 {
   DEG_id_tag_update(ptr->owner_id, ID_RECALC_GEOMETRY);
 
-  // Needed for liquid domain objects
+  /* Needed for liquid domain objects */
   Object *ob = (Object *)ptr->owner_id;
   WM_main_add_notifier(NC_OBJECT | ND_DRAW, ob);
 }
@@ -490,7 +490,7 @@ static void rna_Fluid_combined_export_update(Main *bmain, Scene *scene, PointerR
     }
   }
   else {
-    // sanity check, should not occur
+    /* sanity check, should not occur */
     printf("ERROR: Unexpected combined export setting encountered!");
   }
 }
@@ -1264,8 +1264,13 @@ static void rna_def_fluid_domain_settings(BlenderRNA *brna)
       {0, NULL, 0, NULL, NULL}};
 
   static const EnumPropertyItem fluid_data_depth_items[] = {
-      {VDB_PRECISION_HALF_FLOAT, "16", 0, "Half", "Half float (16 bit data)"},
-      {VDB_PRECISION_FULL_FLOAT, "32", 0, "Full", "Full float (32 bit data)"},
+      {VDB_PRECISION_MINI_FLOAT,
+       "8",
+       0,
+       "Mini",
+       "Mini float (Use 8 bit where possible, otherwise 16 bit)"},
+      {VDB_PRECISION_HALF_FLOAT, "16", 0, "Half", "Half float (Use 16 bit for all data)"},
+      {VDB_PRECISION_FULL_FLOAT, "32", 0, "Full", "Full float (Use 32 bit for all data)"},
       {0, NULL, 0, NULL, NULL},
   };
 
@@ -1303,12 +1308,6 @@ static void rna_def_fluid_domain_settings(BlenderRNA *brna)
   /*  Cache type - generated dynamically based on domain type */
   static EnumPropertyItem cache_file_type_items[] = {
       {0, "NONE", 0, "", ""},
-      {0, NULL, 0, NULL, NULL},
-  };
-
-  static const EnumPropertyItem axis_slice_method_items[] = {
-      {AXIS_SLICE_FULL, "FULL", 0, "Full", "Slice the whole domain object"},
-      {AXIS_SLICE_SINGLE, "SINGLE", 0, "Single", "Perform a single slice of the domain object"},
       {0, NULL, 0, NULL, NULL},
   };
 
@@ -2439,10 +2438,9 @@ static void rna_def_fluid_domain_settings(BlenderRNA *brna)
 
   /* display settings */
 
-  prop = RNA_def_property(srna, "axis_slice_method", PROP_ENUM, PROP_NONE);
-  RNA_def_property_enum_sdna(prop, NULL, "axis_slice_method");
-  RNA_def_property_enum_items(prop, axis_slice_method_items);
-  RNA_def_property_ui_text(prop, "Method", "");
+  prop = RNA_def_property(srna, "use_slice", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "axis_slice_method", AXIS_SLICE_SINGLE);
+  RNA_def_property_ui_text(prop, "Slice", "Perform a single slice of the domain object");
   RNA_def_property_update(prop, NC_OBJECT | ND_DRAW, NULL);
 
   prop = RNA_def_property(srna, "slice_axis", PROP_ENUM, PROP_NONE);
@@ -2635,10 +2633,10 @@ static void rna_def_fluid_domain_settings(BlenderRNA *brna)
   prop = RNA_def_property(srna, "openvdb_data_depth", PROP_ENUM, PROP_NONE);
   RNA_def_property_enum_bitflag_sdna(prop, NULL, "openvdb_data_depth");
   RNA_def_property_enum_items(prop, fluid_data_depth_items);
-  RNA_def_property_ui_text(prop,
-                           "Data Depth",
-                           "Bit depth for writing all scalar (including vector) "
-                           "lower values reduce file size");
+  RNA_def_property_ui_text(
+      prop,
+      "Data Depth",
+      "Bit depth for fluid particles and grids (lower bit values reduce file size)");
   RNA_def_property_update(prop, NC_OBJECT | ND_MODIFIER, NULL);
 }
 

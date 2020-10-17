@@ -26,6 +26,7 @@ blender_include_dirs(
   ../../../../intern/atomic
   ../../../../intern/guardedalloc
   ../../blenlib
+  ../../imbuf
   ..
 )
 
@@ -142,6 +143,8 @@ set(SRC
   ../DNA_camera_defaults.h
   ../DNA_curve_defaults.h
   ../DNA_defaults.h
+  ../DNA_fluid_defaults.h
+  ../DNA_gpencil_modifier_defaults.h
   ../DNA_hair_defaults.h
   ../DNA_image_defaults.h
   ../DNA_lattice_defaults.h
@@ -151,6 +154,7 @@ set(SRC
   ../DNA_material_defaults.h
   ../DNA_mesh_defaults.h
   ../DNA_meta_defaults.h
+  ../DNA_modifier_defaults.h
   ../DNA_modifier_types.h
   ../DNA_object_defaults.h
   ../DNA_pointcloud_defaults.h

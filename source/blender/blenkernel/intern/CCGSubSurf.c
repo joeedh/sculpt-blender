@@ -22,7 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "BLI_sys_types.h"  // for intptr_t support
+#include "BLI_sys_types.h" /* for intptr_t support */
 #include "MEM_guardedalloc.h"
 
 #include "BLI_utildefines.h" /* for BLI_assert */
@@ -1039,6 +1039,7 @@ CCGError ccgSubSurf_updateToFaces(CCGSubSurf *ss, int lvl, CCGFace **effectedF, 
  * and vertices, for multires displacements */
 CCGError ccgSubSurf_stitchFaces(CCGSubSurf *ss, int lvl, CCGFace **effectedF, int numEffectedF)
 {
+  return eCCGError_None;
   CCGVert **effectedV;
   CCGEdge **effectedE;
   int numEffectedV, numEffectedE, freeF;

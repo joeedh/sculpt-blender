@@ -186,14 +186,13 @@ def liquid_adaptive_step_$ID$(framenr):\n\
         \n\
         mantaMsg('Initializing obstacle levelset')\n\
         phiObsIn_s$ID$.join(phiObsSIn_s$ID$) # Join static obstacle map\n\
-        phiObsIn_s$ID$.fillHoles(maxDepth=int(res_s$ID$), boundaryWidth=1)\n\
+        phiObsIn_s$ID$.floodFill(boundaryWidth=1)\n\
         extrapolateLsSimple(phi=phiObsIn_s$ID$, distance=6, inside=True)\n\
         extrapolateLsSimple(phi=phiObsIn_s$ID$, distance=3, inside=False)\n\
         phiObs_s$ID$.join(phiObsIn_s$ID$)\n\
         \n\
-        # Using boundaryWidth=2 to not search beginning from walls (just a performance optimization)\n\
         # Additional sanity check: fill holes in phiObs which can result after joining with phiObsIn\n\
-        phiObs_s$ID$.fillHoles(maxDepth=int(res_s$ID$), boundaryWidth=2 if using_fractions_s$ID$ else 1)\n\
+        phiObs_s$ID$.floodFill(boundaryWidth=2 if using_fractions_s$ID$ else 1)\n\
         extrapolateLsSimple(phi=phiObs_s$ID$, distance=6, inside=True)\n\
         extrapolateLsSimple(phi=phiObs_s$ID$, distance=3)\n\
     \n\
@@ -247,8 +246,10 @@ def liquid_step_$ID$():\n\
     pushOutofObs(parts=pp_s$ID$, flags=flags_s$ID$, phiObs=phiObs_s$ID$)\n\
     \n\
     # save original states for later (used during mesh / secondary particle creation)\n\
-    phiTmp_s$ID$.copyFrom(phi_s$ID$)\n\
-    velTmp_s$ID$.copyFrom(vel_s$ID$)\n\
+    # but only save the state at the beginning of an adaptive frame\n\
+    if not s$ID$.timePerFrame:\n\
+        phiTmp_s$ID$.copyFrom(phi_s$ID$)\n\
+        velTmp_s$ID$.copyFrom(vel_s$ID$)\n\
     \n\
     mantaMsg('Advecting phi')\n\
     advectSemiLagrange(flags=flags_s$ID$, vel=vel_s$ID$, grid=phi_s$ID$, order=1) # first order is usually enough\n\
@@ -303,7 +304,7 @@ def liquid_step_$ID$():\n\
         PD_fluid_guiding(vel=vel_s$ID$, velT=velT_s$ID$, flags=flags_s$ID$, phi=phi_s$ID$, curv=curvature_s$ID$, surfTens=surfaceTension_s$ID$, fractions=fractions_s$ID$, weight=weightGuide_s$ID$, blurRadius=beta_sg$ID$, pressure=pressure_s$ID$, tau=tau_sg$ID$, sigma=sigma_sg$ID$, theta=theta_sg$ID$, zeroPressureFixing=domainClosed_s$ID$)\n\
     else:\n\
         mantaMsg('Pressure')\n\
-        solvePressure(flags=flags_s$ID$, vel=vel_s$ID$, pressure=pressure_s$ID$, phi=phi_s$ID$, curv=curvature_s$ID$, surfTens=surfaceTension_s$ID$, fractions=fractions_s$ID$, obvel=obvel_s$ID$ if using_fractions_s$ID$ else None, zeroPressureFixing=domainClosed_s$ID$)\n\
+        solvePressure(flags=flags_s$ID$, vel=vel_s$ID$, pressure=pressure_s$ID$, curv=curvature_s$ID$, surfTens=surfaceTension_s$ID$, fractions=fractions_s$ID$, obvel=obvel_s$ID$ if using_fractions_s$ID$ else None, zeroPressureFixing=domainClosed_s$ID$)\n\
     \n\
     extrapolateMACSimple(flags=flags_s$ID$, vel=vel_s$ID$, distance=4, intoObs=True if using_fractions_s$ID$ else False)\n\
     setWallBcs(flags=flags_s$ID$, vel=vel_s$ID$, obvel=None if using_fractions_s$ID$ else obvel_s$ID$, phiObs=phiObs_s$ID$, fractions=fractions_s$ID$)\n\

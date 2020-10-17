@@ -66,6 +66,7 @@ static void OVERLAY_engine_init(void *vedata)
   pd->is_image_editor = sima != NULL;
 
   if (pd->is_image_editor) {
+    pd->hide_overlays = (sima->overlay.flag & SI_OVERLAY_SHOW_OVERLAYS) == 0;
     pd->clipping_state = 0;
     OVERLAY_grid_init(data);
     OVERLAY_edit_uv_init(data);
@@ -546,6 +547,7 @@ static void OVERLAY_draw_scene(void *vedata)
   OVERLAY_fade_draw(vedata);
   OVERLAY_facing_draw(vedata);
   OVERLAY_extra_blend_draw(vedata);
+  OVERLAY_volume_draw(vedata);
 
   if (DRW_state_is_fbo()) {
     GPU_framebuffer_bind(fbl->overlay_line_fb);
@@ -556,7 +558,6 @@ static void OVERLAY_draw_scene(void *vedata)
   OVERLAY_particle_draw(vedata);
   OVERLAY_metaball_draw(vedata);
   OVERLAY_gpencil_draw(vedata);
-  OVERLAY_volume_draw(vedata);
   OVERLAY_extra_draw(vedata);
 
   if (DRW_state_is_fbo()) {

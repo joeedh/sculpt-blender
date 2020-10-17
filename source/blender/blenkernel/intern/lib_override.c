@@ -189,9 +189,9 @@ void BKE_lib_override_library_free(struct IDOverrideLibrary **override, const bo
 
 static ID *lib_override_library_create_from(Main *bmain, ID *reference_id)
 {
-  ID *local_id;
+  ID *local_id = BKE_id_copy(bmain, reference_id);
 
-  if (!BKE_id_copy(bmain, reference_id, (ID **)&local_id)) {
+  if (local_id == NULL) {
     return NULL;
   }
   id_us_min(local_id);
@@ -597,32 +597,30 @@ static void lib_override_library_create_post_process(
             case ID_GR: {
               default_instantiating_collection = BKE_collection_add(
                   bmain, (Collection *)id_root, "OVERRIDE_HIDDEN");
+              /* Hide the collection from viewport and render. */
+              default_instantiating_collection->flag |= COLLECTION_RESTRICT_VIEWPORT |
+                                                        COLLECTION_RESTRICT_RENDER;
               break;
             }
             case ID_OB: {
-              /* Add the new container collection to one of the collections instantiating the
+              /* Add the other objects to one of the collections instantiating the
                * root object, or scene's master collection if none found. */
               Object *ob_root = (Object *)id_root;
               LISTBASE_FOREACH (Collection *, collection, &bmain->collections) {
                 if (BKE_collection_has_object(collection, ob_root) &&
                     BKE_view_layer_has_collection(view_layer, collection) &&
                     !ID_IS_LINKED(collection) && !ID_IS_OVERRIDE_LIBRARY(collection)) {
-                  default_instantiating_collection = BKE_collection_add(
-                      bmain, collection, "OVERRIDE_HIDDEN");
+                  default_instantiating_collection = collection;
                 }
               }
               if (default_instantiating_collection == NULL) {
-                default_instantiating_collection = BKE_collection_add(
-                    bmain, scene->master_collection, "OVERRIDE_HIDDEN");
+                default_instantiating_collection = scene->master_collection;
               }
               break;
             }
             default:
               BLI_assert(0);
           }
-          /* Hide the collection from viewport and render. */
-          default_instantiating_collection->flag |= COLLECTION_RESTRICT_VIEWPORT |
-                                                    COLLECTION_RESTRICT_RENDER;
         }
 
         BKE_collection_object_add(bmain, default_instantiating_collection, ob_new);
@@ -1699,8 +1697,7 @@ void BKE_lib_override_library_update(Main *bmain, ID *local)
    * Not impossible to do, but would rather see first if extra useless usual user handling
    * is actually a (performances) issue here. */
 
-  ID *tmp_id;
-  BKE_id_copy(bmain, local->override_library->reference, &tmp_id);
+  ID *tmp_id = BKE_id_copy(bmain, local->override_library->reference);
 
   if (tmp_id == NULL) {
     return;
@@ -1868,7 +1865,7 @@ ID *BKE_lib_override_library_operations_store_start(Main *bmain,
    * (and possibly all over Blender code).
    * Not impossible to do, but would rather see first is extra useless usual user handling is
    * actually a (performances) issue here, before doing it. */
-  BKE_id_copy((Main *)override_storage, local, &storage_id);
+  storage_id = BKE_id_copy((Main *)override_storage, local);
 
   if (storage_id != NULL) {
     PointerRNA rnaptr_reference, rnaptr_final, rnaptr_storage;

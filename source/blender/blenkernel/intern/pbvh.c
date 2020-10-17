@@ -41,8 +41,8 @@
 
 #include "GPU_buffers.h"
 
-#include "trimesh.h"
 #include "bmesh.h"
+#include "trimesh.h"
 
 #include "atomic_ops.h"
 
@@ -595,6 +595,16 @@ void BKE_pbvh_build_mesh(PBVH *pbvh,
   pbvh->face_sets_color_default = mesh->face_sets_color_default;
 
   BB_reset(&cb);
+
+  for (int i = 0; i < totvert; i++) {
+    MVert *mv = verts + i;
+
+    for (int j = 0; j < 3; j++) {
+      if (isnan(mv->co[j])) {
+        mv->co[j] = 0.0f;
+      }
+    }
+  }
 
   /* For each face, store the AABB and the AABB centroid */
   prim_bbc = MEM_mallocN(sizeof(BBC) * looptri_num, "prim_bbc");
@@ -1316,7 +1326,7 @@ static void pbvh_update_draw_buffer_cb(void *__restrict userdata,
         break;
       case PBVH_TRIMESH:
         node->draw_buffers = GPU_pbvh_trimesh_buffers_build(pbvh->flags &
-          PBVH_DYNTOPO_SMOOTH_SHADING);
+                                                            PBVH_DYNTOPO_SMOOTH_SHADING);
         break;
     }
   }
@@ -1371,7 +1381,8 @@ static void pbvh_update_draw_buffer_cb(void *__restrict userdata,
 
 static void pbvh_update_draw_buffers(PBVH *pbvh, PBVHNode **nodes, int totnode, int update_flag)
 {
-  if ((update_flag & PBVH_RebuildDrawBuffers) || ELEM(pbvh->type, PBVH_GRIDS, PBVH_TRIMESH, PBVH_BMESH)) {
+  if ((update_flag & PBVH_RebuildDrawBuffers) ||
+      ELEM(pbvh->type, PBVH_GRIDS, PBVH_TRIMESH, PBVH_BMESH)) {
     /* Free buffers uses OpenGL, so not in parallel. */
     for (int n = 0; n < totnode; n++) {
       PBVHNode *node = nodes[n];
@@ -1391,7 +1402,8 @@ static void pbvh_update_draw_buffers(PBVH *pbvh, PBVHNode **nodes, int totnode, 
         }
         else if (pbvh->type == PBVH_BMESH) {
           GPU_pbvh_bmesh_buffers_update_free(node->draw_buffers);
-        } else if (pbvh->type == PBVH_TRIMESH) {
+        }
+        else if (pbvh->type == PBVH_TRIMESH) {
           GPU_pbvh_trimesh_buffers_update_free(node->draw_buffers);
         }
       }
@@ -1582,14 +1594,16 @@ static void pbvh_trimesh_node_visibility_update(PBVHNode *node)
       BKE_pbvh_node_fully_hidden_set(node, false);
       return;
     }
-  } TMS_ITER_END
+  }
+  TMS_ITER_END
 
-  TMS_ITER(v, other) {
+  TMS_ITER (v, other) {
     if (!TM_elem_flag_test(v, TM_ELEM_HIDDEN)) {
       BKE_pbvh_node_fully_hidden_set(node, false);
       return;
     }
-  } TMS_ITER_END;
+  }
+  TMS_ITER_END;
 
   BKE_pbvh_node_fully_hidden_set(node, true);
 }
@@ -1729,7 +1743,8 @@ bool BKE_pbvh_has_faces(const PBVH *pbvh)
 {
   if (pbvh->type == PBVH_BMESH) {
     return (pbvh->bm->totface != 0);
-  } else if (pbvh->type == PBVH_TRIMESH) {
+  }
+  else if (pbvh->type == PBVH_TRIMESH) {
     return pbvh->tm->tottri > 0;
   }
 
@@ -2438,13 +2453,13 @@ bool BKE_pbvh_node_raycast(PBVH *pbvh,
     case PBVH_TRIMESH:
       TM_mesh_elem_index_ensure(pbvh->tm, TM_VERTEX);
       hit = pbvh_trimesh_node_raycast(node,
-        ray_start,
-        ray_normal,
-        isect_precalc,
-        depth,
-        use_origco,
-        active_vertex_index,
-        face_normal);
+                                      ray_start,
+                                      ray_normal,
+                                      isect_precalc,
+                                      depth,
+                                      use_origco,
+                                      active_vertex_index,
+                                      face_normal);
       break;
   }
 
@@ -2682,7 +2697,7 @@ bool BKE_pbvh_node_find_nearest_to_ray(PBVH *pbvh,
       break;
     case PBVH_TRIMESH:
       hit = pbvh_trimesh_node_nearest_to_ray(
-        node, ray_start, ray_normal, depth, dist_sq, use_origco);
+          node, ray_start, ray_normal, depth, dist_sq, use_origco);
       break;
   }
 
