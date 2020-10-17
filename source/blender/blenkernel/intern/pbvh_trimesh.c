@@ -1341,7 +1341,7 @@ static void pbvh_trimesh_split_edge(EdgeQueueContext *eq_ctx, PBVH *bvh, TMEdge 
     tm_edges_from_tri(bvh->tm, v_tri, e_tri, 0, false);
     f_new = pbvh_trimesh_face_create(bvh, ni, v_tri, e_tri, f_adj);
 
-    long_edge_queue_face_add(eq_ctx, f_new);
+    //long_edge_queue_face_add(eq_ctx, f_new);
 
     v_tri[0] = v_new;
     v_tri[1] = v2;
@@ -1350,7 +1350,8 @@ static void pbvh_trimesh_split_edge(EdgeQueueContext *eq_ctx, PBVH *bvh, TMEdge 
     e_tri[2] = e_tri[1]; /* switched */
     e_tri[1] = TM_get_edge(bvh->tm, v_tri[1], v_tri[2], 0, false);
     f_new = pbvh_trimesh_face_create(bvh, ni, v_tri, e_tri, f_adj);
-    long_edge_queue_face_add(eq_ctx, f_new);
+
+    //long_edge_queue_face_add(eq_ctx, f_new);
 
     /* Delete original */
     pbvh_trimesh_face_remove(bvh, f_adj);
@@ -1369,7 +1370,7 @@ static void pbvh_trimesh_split_edge(EdgeQueueContext *eq_ctx, PBVH *bvh, TMEdge 
         TMEdge *e2 = v_opp->edges.items[i];
 
         if (e2 != e) {
-          long_edge_queue_edge_add(eq_ctx, e2);
+          //long_edge_queue_edge_add(eq_ctx, e2);
         }
         else {
           printf("eek! %s %d\n", __FILE__, __LINE__);

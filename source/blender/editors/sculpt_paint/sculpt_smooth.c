@@ -418,7 +418,9 @@ void SCULPT_smooth(Sculpt *sd,
     return;
   }
 
-  SCULPT_vertex_random_access_ensure(ss);
+  if (type != PBVH_TRIMESH) {
+    SCULPT_vertex_random_access_ensure(ss);
+  }
   SCULPT_boundary_info_ensure(ob);
 
   for (iteration = 0; iteration <= count; iteration++) {

@@ -2451,7 +2451,7 @@ bool BKE_pbvh_node_raycast(PBVH *pbvh,
                                     face_normal);
       break;
     case PBVH_TRIMESH:
-      TM_mesh_elem_index_ensure(pbvh->tm, TM_VERTEX);
+      //TM_mesh_elem_index_ensure(pbvh->tm, TM_VERTEX);
       hit = pbvh_trimesh_node_raycast(node,
                                       ray_start,
                                       ray_normal,

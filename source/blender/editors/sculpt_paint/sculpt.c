@@ -7445,7 +7445,10 @@ bool SCULPT_cursor_geometry_info_update(bContext *C,
 
   /* Update the active vertex of the SculptSession. */
   ss->active_vertex_index = srd.active_vertex_index;
-  SCULPT_vertex_random_access_ensure(ss);
+  if (BKE_pbvh_type(ss->pbvh) != PBVH_TRIMESH) {
+    SCULPT_vertex_random_access_ensure(ss);
+  }
+
   copy_v3_v3(out->active_vertex_co, SCULPT_active_vertex_co_get(ss));
 
   switch (BKE_pbvh_type(ss->pbvh)) {
@@ -7546,10 +7549,10 @@ bool SCULPT_stroke_get_location(bContext *C, float out[3], const float mouse[2])
 
   depth = SCULPT_raycast_init(&vc, mouse, ray_start, ray_end, ray_normal, original);
 
-  if (BKE_pbvh_type(ss->pbvh) == PBVH_TRIMESH) {
+  /*if (BKE_pbvh_type(ss->pbvh) == PBVH_TRIMESH) {
     TM_mesh_elem_table_ensure(ss->tm, TM_VERTEX);
     TM_mesh_elem_index_ensure(ss->tm, TM_VERTEX);
-  }
+  }*/
 
   bool hit = false;
   {
