@@ -8679,6 +8679,7 @@ void SCULPT_geometry_preview_lines_update(bContext *C, SculptSession *ss, float 
   ss->preview_vert_index_count = totpoints;
 }
 
+
 static int vertex_to_loop_colors_exec(bContext *C, wmOperator *UNUSED(op))
 {
   Object *ob = CTX_data_active_object(C);

@@ -124,6 +124,7 @@ typedef struct SculptVertexNeighborIter {
   int size;
   int capacity;
   SculptIdx neighbors_fixed[SCULPT_VERTEX_NEIGHBOR_FIXED_CAPACITY];
+  int neighbors_nindex[SCULPT_VERTEX_NEIGHBOR_FIXED_CAPACITY];
 
   /* Internal iterator. */
   int num_duplicates;

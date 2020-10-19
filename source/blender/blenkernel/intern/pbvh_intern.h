@@ -111,6 +111,7 @@ struct PBVHNode {
 
   /* trimesh */
   GSet *tm_faces;
+  
   TMElemSet *tm_unique_verts;
   TMElemSet *tm_other_verts;
   float (*tm_orco)[3];
@@ -119,9 +120,11 @@ struct PBVHNode {
   int tm_tot_orco;
 
   int tm_subtree_tottri;
-
+  
   /* Used to store the brush color during a stroke and composite it over the original color */
   PBVHColorBufferNode color_buffer;
+
+  ProxyVertArray proxyverts;
 };
 
 typedef enum {
