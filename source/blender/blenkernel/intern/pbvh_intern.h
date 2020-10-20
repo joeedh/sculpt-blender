@@ -111,7 +111,7 @@ struct PBVHNode {
 
   /* trimesh */
   GSet *tm_faces;
-  
+
   TMElemSet *tm_unique_verts;
   TMElemSet *tm_other_verts;
   float (*tm_orco)[3];
@@ -120,11 +120,13 @@ struct PBVHNode {
   int tm_tot_orco;
 
   int tm_subtree_tottri;
-  
+
   /* Used to store the brush color during a stroke and composite it over the original color */
   PBVHColorBufferNode color_buffer;
 
+#ifdef PROXY_ADVANCED
   ProxyVertArray proxyverts;
+#endif
 };
 
 typedef enum {
@@ -261,22 +263,21 @@ bool pbvh_bmesh_node_nearest_to_ray(PBVHNode *node,
 
 void pbvh_bmesh_normals_update(PBVHNode **nodes, int totnode);
 
-
 /* pbvh_bmesh.c */
 bool pbvh_trimesh_node_raycast(PBVHNode *node,
-  const float ray_start[3],
-  const float ray_normal[3],
-  struct IsectRayPrecalc *isect_precalc,
-  float *dist,
-  bool use_original,
-  SculptIdx *r_active_vertex_index,
-  float *r_face_normal);
+                               const float ray_start[3],
+                               const float ray_normal[3],
+                               struct IsectRayPrecalc *isect_precalc,
+                               float *dist,
+                               bool use_original,
+                               SculptIdx *r_active_vertex_index,
+                               float *r_face_normal);
 bool pbvh_trimesh_node_nearest_to_ray(PBVHNode *node,
-  const float ray_start[3],
-  const float ray_normal[3],
-  float *depth,
-  float *dist_sq,
-  bool use_original);
+                                      const float ray_start[3],
+                                      const float ray_normal[3],
+                                      float *depth,
+                                      float *dist_sq,
+                                      bool use_original);
 
 void pbvh_trimesh_normals_update(PBVHNode **nodes, int totnode);
 

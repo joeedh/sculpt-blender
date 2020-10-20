@@ -3003,7 +3003,7 @@ PBVHProxyNode *BKE_pbvh_node_add_proxy(PBVH *pbvh, PBVHNode *node)
   return node->proxies + index;
 }
 
-void BKE_pbvh_node_free_proxies(PBVH *pbvh, PBVHNode *node)
+void BKE_pbvh_node_free_proxies(PBVHNode *node)
 {
   for (int p = 0; p < node->proxy_count; p++) {
     MEM_freeN(node->proxies[p].co);
@@ -3025,6 +3025,7 @@ void BKE_pbvh_gather_proxies(PBVH *pbvh, PBVHNode ***r_array, int *r_tot)
 
   for (int n = 0; n < pbvh->totnode; n++) {
     PBVHNode *node = pbvh->nodes + n;
+
 
     if (node->proxy_count > 0) {
       if (tot == space) {

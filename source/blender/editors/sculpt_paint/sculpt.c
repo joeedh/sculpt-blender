@@ -2047,6 +2047,8 @@ static void calc_area_normal_and_center_task_cb(void *__restrict userdata,
     area_test.radius_squared = test_radius * test_radius;
   }
 
+  //TODO
+
   /* When the mesh is edited we can't rely on original coords
    * (original mesh may not even have verts in brush radius). */
   if (use_original && data->has_bm_orco) {
