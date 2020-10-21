@@ -58,7 +58,7 @@ struct TaskParallelTLS;
 typedef struct PBVH PBVH;
 typedef struct PBVHNode PBVHNode;
 
-#define PROXY_ADVANCED
+//#define PROXY_ADVANCED
 
 // experimental performance test of "data-based programming" approach
 #ifdef PROXY_ADVANCED
@@ -76,7 +76,7 @@ typedef struct ProxyVertArray {
   float (*fno)[3];
   short (*no)[3];
   float *mask, **ownermask;
-  int *index;
+  SculptIdx *index;
   float **ownercolor, (*color)[4];
 
   ProxyKey (*neighbors)[MAX_PROXY_NEIGHBORS];

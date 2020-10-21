@@ -206,11 +206,6 @@ CUSTOMALLOC void* BLI_safepool_alloc(BLI_ThreadSafePool *pool) {
     return NULL;
   }
 
-  if (thread != 1) {
-    printf("eek\n");
-    fflush(stdout);
-  }
-
   pool_thread_data *tdata = pool->threadchunks + thread;
 
   BLI_rw_mutex_lock(&tdata->lock, THREAD_LOCK_WRITE);

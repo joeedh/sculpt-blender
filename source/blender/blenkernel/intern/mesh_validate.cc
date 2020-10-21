@@ -91,16 +91,16 @@ static void reserve_hash_maps(const Mesh *mesh,
   const int totedge_guess = std::max(keep_existing_edges ? mesh->totedge : 0, mesh->totpoly * 2);
 
 #ifndef __clang__
-  parallel_for_each(
-      edge_maps, [&](EdgeMap &edge_map) {
+  parallel_for_each(edge_maps,
+                    [&](EdgeMap &edge_map) {
 #else
   int ilen = edge_maps.size();
 
   for (int i = 0; i < ilen; i++) {
     EdgeMap &edge_map = edge_maps[i];
 #endif
-    edge_map.reserve(totedge_guess / edge_maps.size());
-  }
+                      edge_map.reserve(totedge_guess / edge_maps.size());
+                    }
 #ifndef __clang__
   );
 #endif
@@ -112,22 +112,23 @@ static void add_existing_edges_to_hash_maps(Mesh *mesh,
 {
 #ifndef __clang__
   /* Assume existing edges are valid. */
-  parallel_for_each(edge_maps, [&](EdgeMap &edge_map) {
+  parallel_for_each(edge_maps,
+                    [&](EdgeMap &edge_map) {
 #else
   int ilen = edge_maps.size();
 
   for (int i = 0; i < ilen; i++) {
     EdgeMap &edge_map = edge_maps[i];
 #endif
-    const int task_index = &edge_map - &edge_maps[0];
-    for (const MEdge &edge : Span(mesh->medge, mesh->totedge)) {
-      OrderedEdge ordered_edge{edge.v1, edge.v2};
-      /* Only add the edge when it belongs into this map. */
-      if (task_index == (parallel_mask & ordered_edge.hash2())) {
-        edge_map.add_new(ordered_edge, {&edge});
-      }
-    }
-  }
+                      const int task_index = &edge_map - &edge_maps[0];
+                      for (const MEdge &edge : Span(mesh->medge, mesh->totedge)) {
+                        OrderedEdge ordered_edge{edge.v1, edge.v2};
+                        /* Only add the edge when it belongs into this map. */
+                        if (task_index == (parallel_mask & ordered_edge.hash2())) {
+                          edge_map.add_new(ordered_edge, {&edge});
+                        }
+                      }
+                    }
 
 #ifndef __clang__
   );
@@ -140,7 +141,8 @@ static void add_polygon_edges_to_hash_maps(Mesh *mesh,
 {
   const Span<MLoop> loops{mesh->mloop, mesh->totloop};
 #ifndef __clang__
-  parallel_for_each(edge_maps, [&](EdgeMap &edge_map) {
+  parallel_for_each(edge_maps,
+                    [&](EdgeMap &edge_map) {
 #else
   int ilen = edge_maps.size();
 
@@ -148,23 +150,23 @@ static void add_polygon_edges_to_hash_maps(Mesh *mesh,
     EdgeMap &edge_map = edge_maps[i];
 
 #endif
-    const int task_index = &edge_map - &edge_maps[0];
-    for (const MPoly &poly : Span(mesh->mpoly, mesh->totpoly)) {
-      Span<MLoop> poly_loops = loops.slice(poly.loopstart, poly.totloop);
-      const MLoop *prev_loop = &poly_loops.last();
-      for (const MLoop &next_loop : poly_loops) {
-        /* Can only be the same when the mesh data is invalid. */
-        if (prev_loop->v != next_loop.v) {
-          OrderedEdge ordered_edge{prev_loop->v, next_loop.v};
-          /* Only add the edge when it belongs into this map. */
-          if (task_index == (parallel_mask & ordered_edge.hash2())) {
-            edge_map.lookup_or_add(ordered_edge, {nullptr});
-          }
-        }
-        prev_loop = &next_loop;
-      }
-    }
-  }
+                      const int task_index = &edge_map - &edge_maps[0];
+                      for (const MPoly &poly : Span(mesh->mpoly, mesh->totpoly)) {
+                        Span<MLoop> poly_loops = loops.slice(poly.loopstart, poly.totloop);
+                        const MLoop *prev_loop = &poly_loops.last();
+                        for (const MLoop &next_loop : poly_loops) {
+                          /* Can only be the same when the mesh data is invalid. */
+                          if (prev_loop->v != next_loop.v) {
+                            OrderedEdge ordered_edge{prev_loop->v, next_loop.v};
+                            /* Only add the edge when it belongs into this map. */
+                            if (task_index == (parallel_mask & ordered_edge.hash2())) {
+                              edge_map.lookup_or_add(ordered_edge, {nullptr});
+                            }
+                          }
+                          prev_loop = &next_loop;
+                        }
+                      }
+                    }
 #ifndef __clang__
   );
 #endif
@@ -184,33 +186,34 @@ static void serialize_and_initialize_deduplicated_edges(MutableSpan<EdgeMap> edg
   }
 
 #ifndef __clang__
-  parallel_for_each(edge_maps, [&](EdgeMap &edge_map) {
+  parallel_for_each(edge_maps,
+                    [&](EdgeMap &edge_map) {
 #else
   int ilen = edge_maps.size();
 
   for (int i = 0; i < ilen; i++) {
     EdgeMap &edge_map = edge_maps[i];
 #endif
-    const int task_index = &edge_map - &edge_maps[0];
+                      const int task_index = &edge_map - &edge_maps[0];
 
-    int new_edge_index = edge_index_offsets[task_index];
-    for (EdgeMap::MutableItem item : edge_map.items()) {
-      MEdge &new_edge = new_edges[new_edge_index];
-      const MEdge *orig_edge = item.value.original_edge;
-      if (orig_edge != nullptr) {
-        /* Copy values from original edge. */
-        new_edge = *orig_edge;
-      }
-      else {
-        /* Initialize new edge. */
-        new_edge.v1 = item.key.v_low;
-        new_edge.v2 = item.key.v_high;
-        new_edge.flag = new_edge_flag;
-      }
-      item.value.index = new_edge_index;
-      new_edge_index++;
-    }
-  }
+                      int new_edge_index = edge_index_offsets[task_index];
+                      for (EdgeMap::MutableItem item : edge_map.items()) {
+                        MEdge &new_edge = new_edges[new_edge_index];
+                        const MEdge *orig_edge = item.value.original_edge;
+                        if (orig_edge != nullptr) {
+                          /* Copy values from original edge. */
+                          new_edge = *orig_edge;
+                        }
+                        else {
+                          /* Initialize new edge. */
+                          new_edge.v1 = item.key.v_low;
+                          new_edge.v2 = item.key.v_high;
+                          new_edge.flag = new_edge_flag;
+                        }
+                        item.value.index = new_edge_index;
+                        new_edge_index++;
+                      }
+                    }
 #ifndef __clang__
   );
 #endif
@@ -222,7 +225,9 @@ static void update_edge_indices_in_poly_loops(Mesh *mesh,
 {
   const MutableSpan<MLoop> loops{mesh->mloop, mesh->totloop};
 #ifndef __clang__
-  parallel_for(IndexRange(mesh->totpoly), 100, [&](IndexRange range) {
+  parallel_for(IndexRange(mesh->totpoly),
+               100,
+               [&](IndexRange range) {
 #else
   int ilen = edge_maps.size();
 
@@ -231,31 +236,31 @@ static void update_edge_indices_in_poly_loops(Mesh *mesh,
     IndexRange range(i);
 
 #endif
+                 for (const int poly_index : range) {
+                   MPoly &poly = mesh->mpoly[poly_index];
+                   MutableSpan<MLoop> poly_loops = loops.slice(poly.loopstart, poly.totloop);
 
-    for (const int poly_index : range) {
-      MPoly &poly = mesh->mpoly[poly_index];
-      MutableSpan<MLoop> poly_loops = loops.slice(poly.loopstart, poly.totloop);
-
-      MLoop *prev_loop = &poly_loops.last();
-      for (MLoop &next_loop : poly_loops) {
-        int edge_index;
-        if (prev_loop->v != next_loop.v) {
-          OrderedEdge ordered_edge{prev_loop->v, next_loop.v};
-          /* Double lookup: First find the map that contains the edge, then lookup the edge. */
-          const EdgeMap &edge_map = edge_maps[parallel_mask & ordered_edge.hash2()];
-          edge_index = edge_map.lookup(ordered_edge).index;
-        }
-        else {
-          /* This is an invalid edge; normally this does not happen in Blender,
-           * but it can be part of an imported mesh with invalid geometry. See
-           * T76514. */
-          edge_index = 0;
-        }
-        prev_loop->e = edge_index;
-        prev_loop = &next_loop;
-      }
-    }
-  }
+                   MLoop *prev_loop = &poly_loops.last();
+                   for (MLoop &next_loop : poly_loops) {
+                     int edge_index;
+                     if (prev_loop->v != next_loop.v) {
+                       OrderedEdge ordered_edge{prev_loop->v, next_loop.v};
+                       /* Double lookup: First find the map that contains the edge, then lookup the
+                        * edge. */
+                       const EdgeMap &edge_map = edge_maps[parallel_mask & ordered_edge.hash2()];
+                       edge_index = edge_map.lookup(ordered_edge).index;
+                     }
+                     else {
+                       /* This is an invalid edge; normally this does not happen in Blender,
+                        * but it can be part of an imported mesh with invalid geometry. See
+                        * T76514. */
+                       edge_index = 0;
+                     }
+                     prev_loop->e = edge_index;
+                     prev_loop = &next_loop;
+                   }
+                 }
+               }
 #ifndef __clang__
   );
 #endif
@@ -276,15 +281,16 @@ static int get_parallel_maps_count(const Mesh *mesh)
 static void clear_hash_tables(MutableSpan<EdgeMap> edge_maps)
 {
 #ifndef __clang__
-  parallel_for_each(edge_maps, [](EdgeMap &edge_map) {
+  parallel_for_each(edge_maps,
+                    [](EdgeMap &edge_map) {
 #else
   int ilen = edge_maps.size();
 
   for (int i = 0; i < ilen; i++) {
     EdgeMap &edge_map = edge_maps[i];
 #endif
-    edge_map.clear();
-  }
+                      edge_map.clear();
+                    }
 #ifndef __clang__
   );
 #endif

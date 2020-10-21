@@ -31,6 +31,7 @@
 
 #include "BLI_array.h"
 #include "BLI_math.h"
+#include "BLI_task.h"
 #include "BLI_threadsafe_mempool.h"
 #include "trimesh.h"
 
@@ -146,7 +147,8 @@ void TM_thread_tag(TM_TriMesh *tm, TMFace **tris, int tottri)
     return;
   }
 
-  int maxelem = tottri;
+  int maxelem = tottri / tm->maxthread;
+  maxelem = MIN2(MAX2(maxelem, 512), tottri);
   int maxtag = tm->maxthread;
   int tag = 0;
   maxelem = MAX2(maxelem, 1);
@@ -161,7 +163,7 @@ void TM_thread_tag(TM_TriMesh *tm, TMFace **tris, int tottri)
   }
 
   bool stop = false;
-  while (1) {
+  while (!stop) {
     stop = true;
 
     for (int i = 0; i < tottri; i++) {
@@ -269,6 +271,7 @@ void TM_build_islands(
 
     TMFace **list = island->tris;
     BLI_array_declare(list);
+    BLI_array_len_set(list, island->tottri);
 
     BLI_array_append(list, tri);
 
@@ -307,29 +310,25 @@ typedef struct threadjob {
   bool done;
 } threadjob;
 
-typedef struct meshthread {
-  ThreadQueue *queue;
-  int threadnr;
-} meshthread;
+static void thread_job(void *__restrict userdata, const int n, const TaskParallelTLS *__restrict tls) {
+  threadjob *job = ((threadjob*)userdata) + n;
 
-static void *thread_job(meshthread *thread)
-{
-  BLI_safepool_threadnr_set(thread->threadnr);
-
-  while (!BLI_thread_queue_is_empty(thread->queue)) {
-    threadjob *job = BLI_thread_queue_pop(thread->queue);
-
-    job->job(job->tm, job->elems, job->totelem, thread->threadnr, job->userdata);
+  if (job->totelem == 0) {
     job->done = true;
+    return;
   }
 
-  return NULL;
+  //XXX remove threadnr argument
+  job->job(job->tm, job->elems, job->totelem, 0, job->userdata);
+  job->done = true;
 }
 
 void TM_foreach_tris(
     TM_TriMesh *tm, TMFace **tris, int tottri, OptTriMeshJob job, int maxthread, void *userdata)
 {
-  tm->maxthread = maxthread;
+  //XXX remove maxthread parameter
+  maxthread = tm->maxthread;
+  //tm->maxthread = maxthread;
 
   TMTriIsland *islands;
   int totisland;
@@ -338,20 +337,11 @@ void TM_foreach_tris(
   TM_build_islands(tm, tris, tottri, &islands, &totisland);
   TM_tag_thread_boundaries(tm, tris, tottri);
 
-  meshthread *threads = MEM_callocN(sizeof(meshthread) * maxthread, "meshthread");
   threadjob *jobs = MEM_callocN(sizeof(threadjob) * totisland, "threadjob");
-  ThreadQueue *queue = BLI_thread_queue_init();
 
   for (int i = 0; i < totisland; i++) {
     islands[i].tag = 0;
   }
-
-  for (int i = 0; i < maxthread; i++) {
-    threads[i].queue = queue;
-    threads[i].threadnr = i;
-  }
-
-  ListBase threadpool = {NULL, NULL};
 
   for (int i = 0; i < totisland; i++) {
     jobs[i].elems = islands[i].tris;
@@ -361,23 +351,13 @@ void TM_foreach_tris(
     jobs[i].job = job;
     jobs[i].done = false;
     jobs[i].tm = tm;
-
-    // save boundary triangles for main thread
-    if (i < totisland - 1) {
-      BLI_thread_queue_push(queue, jobs + i);
-    }
   }
 
-  BLI_threadpool_init(&threadpool, thread_job, maxthread);
-
-  for (int i = 0; i < maxthread; i++) {
-    BLI_threadpool_insert(&threadpool, threads + i);
+  if (totisland > 1) {
+    TaskParallelSettings settings;
+    BLI_parallel_range_settings_defaults(&settings);
+    BLI_task_parallel_range(0, totisland - 1, jobs, thread_job, &settings);
   }
-
-  BLI_thread_queue_wait_finish(queue);
-  BLI_thread_queue_free(queue);
-
-  BLI_threadpool_end(&threadpool);
 
   // do triangles on thread island boundaries last
   if (totisland > 0) {

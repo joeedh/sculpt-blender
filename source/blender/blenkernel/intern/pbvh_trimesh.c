@@ -26,6 +26,7 @@
 #include "BLI_heap_simple.h"
 #include "BLI_math.h"
 #include "BLI_memarena.h"
+#include "BLI_task.h"
 #include "BLI_utildefines.h"
 
 #include "BLI_rand.h"
@@ -44,6 +45,9 @@
 #include "pbvh_intern.h"
 
 #include <assert.h>
+
+struct EdgeQueueContext;
+static bool pbvh_trimesh_subdivide_long_edges(struct EdgeQueueContext *eq_ctx, PBVH *bvh);
 
 /* Avoid skinny faces */
 #define USE_EDGEQUEUE_EVEN_SUBDIV
@@ -523,7 +527,7 @@ BLI_INLINE PBVHNode *pbvh_trimesh_node_from_face(PBVH *bvh, const TMFace *key)
 {
   int ni = pbvh_trimesh_node_index_from_face(bvh, key);
 
-  if (ni <= 0) {
+  if (ni < 0) {
     return NULL;
   }
 
@@ -768,7 +772,7 @@ static void pbvh_trimesh_face_remove(PBVH *bvh, TMFace *f)
   }
 
   /* Remove face from node and top level */
-  if (TM_ELEM_CD_GET_INT(f, bvh->cd_face_node_offset) != DYNTOPO_NODE_NONE) {
+  if (f_node && TM_ELEM_CD_GET_INT(f, bvh->cd_face_node_offset) != DYNTOPO_NODE_NONE) {
     BLI_gset_remove(f_node->tm_faces, f, NULL);
     TM_ELEM_CD_SET_INT(f, bvh->cd_face_node_offset, DYNTOPO_NODE_NONE);
   }
@@ -820,7 +824,7 @@ typedef struct EdgeQueue {
 #endif
 } EdgeQueue;
 
-typedef struct {
+typedef struct EdgeQueueContext {
   EdgeQueue *q;
   BLI_mempool *pool;
   TM_TriMesh *tm;
@@ -1180,6 +1184,290 @@ static void long_edge_queue_create(EdgeQueueContext *eq_ctx,
   }
 }
 
+static void long_edge_queue_create3(EdgeQueueContext *eq_ctx,
+                                    PBVH *bvh,
+                                    TMFace **tris,
+                                    int tottri,
+                                    const float center[3],
+                                    const float view_normal[3],
+                                    float radius,
+                                    const bool use_frontface,
+                                    const bool use_projected)
+{
+
+  eq_ctx->q->elems = eq_ctx->q->totelems = 0;
+  eq_ctx->q->heap = BLI_heapsimple_new();
+  eq_ctx->q->center = center;
+  eq_ctx->q->radius_squared = radius * radius;
+  eq_ctx->q->limit_len_squared = bvh->bm_max_edge_len * bvh->bm_max_edge_len;
+#ifdef USE_EDGEQUEUE_EVEN_SUBDIV
+  eq_ctx->q->limit_len = bvh->bm_max_edge_len;
+#endif
+
+  eq_ctx->q->view_normal = view_normal;
+
+#ifdef USE_EDGEQUEUE_FRONTFACE
+  eq_ctx->q->use_view_normal = use_frontface;
+#else
+  UNUSED_VARS(use_frontface);
+#endif
+
+  if (use_projected) {
+    eq_ctx->q->edge_queue_tri_in_range = edge_queue_tri_in_circle;
+    project_plane_normalized_v3_v3v3(eq_ctx->q->center_proj, center, view_normal);
+  }
+  else {
+    eq_ctx->q->edge_queue_tri_in_range = edge_queue_tri_in_sphere;
+  }
+
+#ifdef USE_EDGEQUEUE_TAG_VERIFY
+  pbvh_trimesh_edge_tag_verify(bvh);
+#endif
+
+  for (int i = 0; i < tottri; i++) {
+    long_edge_queue_face_add(eq_ctx, tris[i]);
+  }
+}
+
+typedef struct ThreadSplitData {
+  int flag;
+  BLI_ThreadSafePool *pool;
+  int cd_face_node_offset;
+  int cd_vert_node_offset;
+  TMTriIsland *islands;
+  int cd_vert_mask_offset;
+  PBVH *pbvh;
+  float center[3], view_normal[3], radius;
+  bool use_frontface, use_projected;
+} ThreadSplitData;
+
+void longqueue_job(void *__restrict userdata, int n, const TaskParallelTLS *__restrict tls)
+{
+  ThreadSplitData *data = userdata;
+  TMTriIsland *island = data->islands + n;
+  TMFace **tris = island->tris;
+  int tottri = island->tottri;
+  EdgeQueue q;
+  EdgeQueueContext eq_ctx;
+
+  memset(&q, 0, sizeof(q));
+
+  eq_ctx.cd_face_node_offset = data->cd_face_node_offset;
+  eq_ctx.cd_vert_mask_offset = data->cd_vert_mask_offset;
+  eq_ctx.cd_vert_node_offset = data->cd_vert_node_offset;
+  eq_ctx.pool = BLI_mempool_create(sizeof(void *) * 2, 0, 512, 0);
+  eq_ctx.q = &q;
+  eq_ctx.tm = data->pbvh->tm;
+
+  long_edge_queue_create3(&eq_ctx,
+                          data->pbvh,
+                          tris,
+                          tottri,
+                          data->center,
+                          data->view_normal,
+                          data->radius,
+                          data->use_frontface,
+                          data->use_projected);
+  pbvh_trimesh_subdivide_long_edges(&eq_ctx, data->pbvh);
+
+  BLI_mempool_destroy(eq_ctx.pool);
+
+  if (q.heap) {
+    BLI_heapsimple_free(q.heap, NULL);
+  }
+  if (q.elems) {
+    MEM_freeN(q.elems);
+  }
+
+  /*
+static void long_edge_queue_create3(EdgeQueueContext * eq_ctx,
+                                      PBVH * bvh,
+                                      TMFace * *tris,
+                                      int tottri,
+                                      const float center[3],
+                                      const float view_normal[3],
+                                      float radius,
+                                      const bool use_frontface,
+                                      const bool use_projected)
+                                      */
+}
+
+static bool face_on_node_boundary(PBVH *pbvh, TMFace *f, int n, int maxdepth)
+{
+  for (int i = 0; i < 3; i++) {
+    TMVert *v = TM_GET_TRI_VERT(f, i);
+    for (int j = 0; j < v->edges.length; j++) {
+      TMEdge *e = v->edges.items[j];
+
+      for (int k = 0; k < e->tris.length; k++) {
+        TMFace *f2 = e->tris.items[k];
+
+        int ni = TM_ELEM_CD_GET_INT(f2, pbvh->cd_face_node_offset);
+        if (ni != n) {
+          return true;
+        }
+
+        if (maxdepth > 0) {
+          bool ret = face_on_node_boundary(pbvh, f2, n, maxdepth - 1);
+          if (ret) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+/* Create a priority queue containing vertex pairs connected by a long
+ * edge as defined by PBVH.bm_max_edge_len.
+ *
+ * Only nodes marked for topology update are checked, and in those
+ * nodes only edges used by a face intersecting the (center, radius)
+ * sphere are checked.
+ *
+ * The highest priority (lowest number) is given to the longest edge.
+ */
+static bool long_edge_queue_create2(PBVH *pbvh,
+                                    const float center[3],
+                                    const float view_normal[3],
+                                    float radius,
+                                    const bool use_frontface,
+                                    const bool use_projected)
+{
+  TM_TriMesh *tm = pbvh->tm;
+  TMTriIsland *islands = NULL;
+  TMFace **boundary = NULL;
+  BLI_array_declare(islands);
+  BLI_array_declare(boundary);
+
+  for (int n = 0; n < pbvh->totnode; n++) {
+    PBVHNode *node = &pbvh->nodes[n];
+
+    /* Check leaf nodes marked for topology update */
+    if ((node->flag & PBVH_Leaf) && (node->flag & PBVH_UpdateTopology) &&
+        !(node->flag & PBVH_FullyHidden)) {
+      GSetIterator gs_iter;
+
+      GSET_ITER (gs_iter, node->tm_faces) {
+        TMFace *f = BLI_gsetIterator_getKey(&gs_iter);
+
+        f->threadtag = face_on_node_boundary(pbvh, f, n, 0) ? 1 : 0;
+      }
+    }
+  }
+
+  for (int step=0; step<3; step++) {
+  for (int n = 0; n < pbvh->totnode; n++) {
+    PBVHNode *node = &pbvh->nodes[n];
+
+    /* Check leaf nodes marked for topology update */
+    if ((node->flag & PBVH_Leaf) && (node->flag & PBVH_UpdateTopology) &&
+        !(node->flag & PBVH_FullyHidden)) {
+      GSetIterator gs_iter;
+
+      GSET_ITER (gs_iter, node->tm_faces) {
+        TMFace *f = BLI_gsetIterator_getKey(&gs_iter);
+
+        if (f->threadtag == step+1) {
+          for (int i = 0; i < 3; i++) {
+            TMEdge *e = TM_GET_TRI_EDGE(f, i);
+
+            for (int j = 0; j < e->tris.length; j++) {
+              TMFace *f2 = e->tris.items[j];
+
+              f2->threadtag = !f2->threadtag ? step+2 : f2->threadtag;
+            }
+          }
+        }
+      }
+    }
+  }
+  }
+  for (int n = 0; n < pbvh->totnode; n++) {
+    PBVHNode *node = &pbvh->nodes[n];
+
+    /* Check leaf nodes marked for topology update */
+    if ((node->flag & PBVH_Leaf) && (node->flag & PBVH_UpdateTopology) &&
+        !(node->flag & PBVH_FullyHidden)) {
+      GSetIterator gs_iter;
+
+      TMFace **tris = NULL;
+      BLI_array_declare(tris);
+
+      /* Check each face */
+      GSET_ITER (gs_iter, node->tm_faces) {
+        TMFace *f = BLI_gsetIterator_getKey(&gs_iter);
+        if (f->threadtag) {
+          BLI_array_append(boundary, f);
+        }
+        else {
+          BLI_array_append(tris, f);
+        }
+      }
+
+      if (BLI_array_len(tris) > 0) {
+        TMTriIsland island;
+        island.tottri = BLI_array_len(tris);
+        island.tris = tris;
+
+        BLI_array_append(islands, island);
+      }
+    }
+  }
+
+  ThreadSplitData tdata = {.pool = BLI_safepool_create(sizeof(TMVert *) * 2, 512, tm->maxthread)};
+  tdata.pbvh = pbvh;
+  tdata.cd_face_node_offset = pbvh->cd_face_node_offset;
+  tdata.cd_vert_node_offset = pbvh->cd_vert_node_offset;
+  tdata.use_frontface = use_frontface;
+  tdata.use_projected = use_projected;
+  copy_v3_v3(tdata.center, center);
+  copy_v3_v3(tdata.view_normal, view_normal);
+  tdata.radius = radius;
+
+  if (CustomData_has_layer(&tm->vdata, CD_PAINT_MASK)) {
+    tdata.cd_vert_mask_offset = CustomData_get_offset(&tm->vdata, CD_PAINT_MASK);
+  }
+  else {
+    tdata.cd_vert_mask_offset = -1;
+  }
+  tdata.islands = islands;
+
+  if (BLI_array_len(islands) > 0) {
+    TaskParallelSettings settings;
+    BLI_parallel_range_settings_defaults(&settings);
+    settings.use_threading = false;
+
+    printf("Total islands: %d\n", BLI_array_len(islands));
+    BLI_task_parallel_range(0, BLI_array_len(islands), &tdata, longqueue_job, &settings);
+  }
+
+  if (boundary) {
+    TMTriIsland island;
+    island.tris = boundary;
+    island.tottri = BLI_array_len(boundary);
+
+    BLI_array_append(islands, island);
+
+    tdata.islands = islands;
+
+    longqueue_job(&tdata, BLI_array_len(islands)-1, NULL);
+  }
+
+  for (int i = 0; i < BLI_array_len(islands) - 1; i++) {
+    MEM_freeN(islands[i].tris);
+  }
+
+  BLI_array_free(islands);
+  BLI_array_free(boundary);
+
+  BLI_safepool_destroy(tdata.pool);
+
+  return true;
+}
+
 /* Create a priority queue containing vertex pairs connected by a
  * short edge as defined by PBVH.bm_min_edge_len.
  *
@@ -1286,7 +1574,7 @@ static void pbvh_trimesh_split_edge(EdgeQueueContext *eq_ctx, PBVH *bvh, TMEdge 
     BLI_assert(f_adj->len == 3);
     int ni = TM_ELEM_CD_GET_INT(f_adj, eq_ctx->cd_face_node_offset);
 
-    if (!ni || ni < 0) {
+    if (ni < 0) {
       i++;
       continue;
     }
@@ -1341,7 +1629,7 @@ static void pbvh_trimesh_split_edge(EdgeQueueContext *eq_ctx, PBVH *bvh, TMEdge 
     tm_edges_from_tri(bvh->tm, v_tri, e_tri, 0, false);
     f_new = pbvh_trimesh_face_create(bvh, ni, v_tri, e_tri, f_adj);
 
-    //long_edge_queue_face_add(eq_ctx, f_new);
+    // long_edge_queue_face_add(eq_ctx, f_new);
 
     v_tri[0] = v_new;
     v_tri[1] = v2;
@@ -1351,7 +1639,7 @@ static void pbvh_trimesh_split_edge(EdgeQueueContext *eq_ctx, PBVH *bvh, TMEdge 
     e_tri[1] = TM_get_edge(bvh->tm, v_tri[1], v_tri[2], 0, false);
     f_new = pbvh_trimesh_face_create(bvh, ni, v_tri, e_tri, f_adj);
 
-    //long_edge_queue_face_add(eq_ctx, f_new);
+    // long_edge_queue_face_add(eq_ctx, f_new);
 
     /* Delete original */
     pbvh_trimesh_face_remove(bvh, f_adj);
@@ -1370,7 +1658,7 @@ static void pbvh_trimesh_split_edge(EdgeQueueContext *eq_ctx, PBVH *bvh, TMEdge 
         TMEdge *e2 = v_opp->edges.items[i];
 
         if (e2 != e) {
-          //long_edge_queue_edge_add(eq_ctx, e2);
+          // long_edge_queue_edge_add(eq_ctx, e2);
         }
         else {
           printf("eek! %s %d\n", __FILE__, __LINE__);
@@ -2099,7 +2387,7 @@ void BKE_pbvh_build_trimesh(PBVH *bvh,
   bvh->tm_log = log;
 
   /* TODO: choose leaf limit better */
-  bvh->leaf_limit = 5000;
+  bvh->leaf_limit = 1000;
 
   if (smooth_shading) {
     bvh->flags |= PBVH_DYNTOPO_SMOOTH_SHADING;
@@ -2196,7 +2484,7 @@ bool BKE_pbvh_trimesh_update_topology(PBVH *bvh,
     BLI_assert(len_squared_v3(view_normal) != 0.0f);
   }
 
-  if (mode & PBVH_Collapse) {
+  if (1 && (mode & PBVH_Collapse)) {
     EdgeQueue q;
     BLI_mempool *queue_pool = BLI_mempool_create(sizeof(TMVert *) * 2, 0, 128, BLI_MEMPOOL_NOP);
     EdgeQueueContext eq_ctx = {
@@ -2222,6 +2510,7 @@ bool BKE_pbvh_trimesh_update_topology(PBVH *bvh,
 
   if (mode & PBVH_Subdivide) {
     EdgeQueue q;
+    /*
     BLI_mempool *queue_pool = BLI_mempool_create(sizeof(TMVert *) * 2, 0, 128, BLI_MEMPOOL_NOP);
     EdgeQueueContext eq_ctx = {
         &q,
@@ -2230,18 +2519,18 @@ bool BKE_pbvh_trimesh_update_topology(PBVH *bvh,
         cd_vert_mask_offset,
         cd_vert_node_offset,
         cd_face_node_offset,
-    };
+    };*/
 
-    long_edge_queue_create(
-        &eq_ctx, bvh, center, view_normal, radius, use_frontface, use_projected);
+    modified |= long_edge_queue_create2(
+        bvh, center, view_normal, radius, use_frontface, use_projected);
 
-    modified |= pbvh_trimesh_subdivide_long_edges(&eq_ctx, bvh);
+    // modified |= pbvh_trimesh_subdivide_long_edges(&eq_ctx, bvh);
 
-    BLI_heapsimple_free(q.heap, NULL);
-    BLI_mempool_destroy(queue_pool);
-    if (q.elems) {
-      MEM_freeN(q.elems);
-    }
+    // BLI_heapsimple_free(q.heap, NULL);
+    // BLI_mempool_destroy(queue_pool);
+    // if (q.elems) {
+    //  MEM_freeN(q.elems);
+    //}
   }
 
   /* Unmark nodes */
