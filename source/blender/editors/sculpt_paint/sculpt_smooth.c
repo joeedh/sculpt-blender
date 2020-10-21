@@ -389,28 +389,44 @@ static void do_smooth_brush_task_cb_ex(void *__restrict userdata,
       const float fade = 1.0;
 #  endif
 
-      while (ni < MAX_PROXY_NEIGHBORS && p->neighbors[i][ni].node >= 0) {
+      while (/*ni < MAX_PROXY_NEIGHBORS &&*/ p->neighbors[i][ni].node >= 0) {
         ProxyKey *key = p->neighbors[i] + ni;
         PBVHNode *n2 = ss->pbvh->nodes + key->node;
 
         // printf("%d %d %d %p\n", key->node, key->pindex, ss->pbvh->totnode, n2);
+        float *co2 = n2->proxyverts.co[key->pindex];
 
-        add_v3_v3(co, n2->proxyverts.co[key->pindex]);
+        co[0] += co2[0];
+        co[1] += co2[1];
+        co[2] += co2[2];
+
+        //add_v3_v3(co, n2->proxyverts.co[key->pindex]);
         ni++;
       }
 
       // printf("ni %d\n", ni);
 
       if (ni > 2) {
-        mul_v3_fl(co, 1.0f / (float)ni);
+        float mul = 1.0 / (float) ni;
+
+        co[0] *= mul;
+        co[1] *= mul;
+        co[2] *= mul;
+       // mul_v3_fl(co, 1.0f / (float)ni);
       }
       else {
-        copy_v3_v3(co, p->co[i]);
+        co[0] = p->co[i][0];
+        co[1] = p->co[i][1];
+        co[2] = p->co[i][2];
+        //copy_v3_v3(co, p->co[i]);
+        
       }
 
       // printf("%f %f %f   ", co[0], co[1], co[2]);
-
-      interp_v3_v3v3(p->co[i], p->co[i], co, fade);
+      p->co[i][0] += (co[0] - p->co[i][0]) * fade;
+      p->co[i][1] += (co[1] - p->co[i][1]) * fade;
+      p->co[i][2] += (co[2] - p->co[i][2]) * fade;
+      //interp_v3_v3v3(p->co[i], p->co[i], co, fade);
     }
   }
 }

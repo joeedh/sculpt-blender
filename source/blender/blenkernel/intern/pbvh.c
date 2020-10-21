@@ -50,7 +50,7 @@
 
 #include <limits.h>
 
-#define LEAF_LIMIT 10000
+#define LEAF_LIMIT 600
 
 //#define PERFCNTRS
 
@@ -3418,8 +3418,17 @@ void BKE_pbvh_ensure_proxyarray(SculptSession *ss,
       p->ownerno[i] = vd.no;
     }
     if (updatemask & PV_NO) {
-      copy_v3_v3_short(p->no[i], vd.no);
-      normal_short_to_float_v3(p->fno[i], vd.no);
+      if (vd.no) {
+        copy_v3_v3_short(p->no[i], vd.no);
+        normal_short_to_float_v3(p->fno[i], vd.no);
+      } else if (vd.fno) {
+        copy_v3_v3(p->fno[i], vd.fno);
+        normal_float_to_short_v3(p->no[i], p->fno[i]);
+      } else {
+        zero_v3(p->fno[i]);
+        p->fno[i][2] = 1.0f;
+        normal_float_to_short_v3(p->no[i], p->fno[i]);
+      }
     }
     if (updatemask & PV_CO) {
       copy_v3_v3(p->co[i], vd.co);
