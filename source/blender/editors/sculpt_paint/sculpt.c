@@ -1289,7 +1289,7 @@ static bool sculpt_tool_is_proxy_used(const char sculpt_tool)
 static bool sculpt_brush_use_topology_rake(const SculptSession *ss, const Brush *brush)
 {
   return SCULPT_TOOL_HAS_TOPOLOGY_RAKE(brush->sculpt_tool) &&
-         (brush->topology_rake_factor > 0.0f) && (ss->bm != NULL);
+         (brush->topology_rake_factor > 0.0f) && (ss->tm != NULL);
 }
 
 /**

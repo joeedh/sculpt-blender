@@ -955,13 +955,46 @@ static void edge_queue_insert(EdgeQueueContext *eq_ctx, TMEdge *e, float priorit
   }
 }
 
+static float calc_weighted_edge(EdgeQueueContext *eq_ctx, TMEdge *e)
+{
+#if 0
+  float avg = 0.0;
+  float tot = 0.0;
+
+  for (int i = 0; i < 2; i++) {
+    TMVert *v = i ? e->v2 : e->v1;
+    for (int j = 0; j < v->edges.length; j++) {
+      TMEdge *e = v->edges.items[j];
+      TMVert *v2 = TM_other_vert(e, v);
+
+      avg += len_squared_v3v3(v->co, v2->co);
+      tot += 1.0f;
+    }
+  }
+
+  avg /= tot;
+  if (tot == 0.0f) {
+    //return l;
+  }
+  //float ratio = avg / eq_ctx->q->limit_len_squared;
+  float ratio = eq_ctx->q->limit_len / avg;
+  ratio = powf(ratio, 10.0);
+#endif
+  float l = TM_edge_calc_length_squared(e);
+  float n = ((float)e->v1->edges.length + (float)e->v2->edges.length) * 0.5f;
+  n = MAX2(n - 5.0f, 1.0f);
+
+  return l*powf(n, 5.0f);
+}
+
 static void long_edge_queue_edge_add(EdgeQueueContext *eq_ctx, TMEdge *e)
 {
 #ifdef USE_EDGEQUEUE_TAG
   if (EDGE_QUEUE_TEST(e) == false)
 #endif
   {
-    const float len_sq = TM_edge_calc_length_squared(e);
+    float len_sq = TM_edge_calc_length_squared(e);
+
     if (len_sq > eq_ctx->q->limit_len_squared) {
       edge_queue_insert(eq_ctx, e, -len_sq);
     }
@@ -1061,7 +1094,7 @@ static void short_edge_queue_edge_add(EdgeQueueContext *eq_ctx, TMEdge *e)
   if (EDGE_QUEUE_TEST(e) == false)
 #endif
   {
-    const float len_sq = TM_edge_calc_length_squared(e);
+    const float len_sq = calc_weighted_edge(eq_ctx, e);
     if (len_sq < eq_ctx->q->limit_len_squared) {
       edge_queue_insert(eq_ctx, e, len_sq);
     }
@@ -1358,32 +1391,32 @@ static bool long_edge_queue_create2(PBVH *pbvh,
     }
   }
 
-  for (int step=0; step<3; step++) {
-  for (int n = 0; n < pbvh->totnode; n++) {
-    PBVHNode *node = &pbvh->nodes[n];
+  for (int step = 0; step < 3; step++) {
+    for (int n = 0; n < pbvh->totnode; n++) {
+      PBVHNode *node = &pbvh->nodes[n];
 
-    /* Check leaf nodes marked for topology update */
-    if ((node->flag & PBVH_Leaf) && (node->flag & PBVH_UpdateTopology) &&
-        !(node->flag & PBVH_FullyHidden)) {
-      GSetIterator gs_iter;
+      /* Check leaf nodes marked for topology update */
+      if ((node->flag & PBVH_Leaf) && (node->flag & PBVH_UpdateTopology) &&
+          !(node->flag & PBVH_FullyHidden)) {
+        GSetIterator gs_iter;
 
-      GSET_ITER (gs_iter, node->tm_faces) {
-        TMFace *f = BLI_gsetIterator_getKey(&gs_iter);
+        GSET_ITER (gs_iter, node->tm_faces) {
+          TMFace *f = BLI_gsetIterator_getKey(&gs_iter);
 
-        if (f->threadtag == step+1) {
-          for (int i = 0; i < 3; i++) {
-            TMEdge *e = TM_GET_TRI_EDGE(f, i);
+          if (f->threadtag == step + 1) {
+            for (int i = 0; i < 3; i++) {
+              TMEdge *e = TM_GET_TRI_EDGE(f, i);
 
-            for (int j = 0; j < e->tris.length; j++) {
-              TMFace *f2 = e->tris.items[j];
+              for (int j = 0; j < e->tris.length; j++) {
+                TMFace *f2 = e->tris.items[j];
 
-              f2->threadtag = !f2->threadtag ? step+2 : f2->threadtag;
+                f2->threadtag = !f2->threadtag ? step + 2 : f2->threadtag;
+              }
             }
           }
         }
       }
     }
-  }
   }
   for (int n = 0; n < pbvh->totnode; n++) {
     PBVHNode *node = &pbvh->nodes[n];
@@ -1440,7 +1473,7 @@ static bool long_edge_queue_create2(PBVH *pbvh,
     BLI_parallel_range_settings_defaults(&settings);
     settings.use_threading = false;
 
-    printf("Total islands: %d\n", BLI_array_len(islands));
+    //printf("Total islands: %d\n", BLI_array_len(islands));
     BLI_task_parallel_range(0, BLI_array_len(islands), &tdata, longqueue_job, &settings);
   }
 
@@ -1453,7 +1486,7 @@ static bool long_edge_queue_create2(PBVH *pbvh,
 
     tdata.islands = islands;
 
-    longqueue_job(&tdata, BLI_array_len(islands)-1, NULL);
+    longqueue_job(&tdata, BLI_array_len(islands) - 1, NULL);
   }
 
   for (int i = 0; i < BLI_array_len(islands) - 1; i++) {
@@ -1953,9 +1986,33 @@ static bool pbvh_trimesh_collapse_short_edges(EdgeQueueContext *eq_ctx,
 
   double time = PIL_check_seconds_timer();
 
+  struct RNG *rng = BLI_rng_new(PIL_check_seconds_timer_i());
+
   //}
+  int step = 0;
+#if 1
   while (!BLI_heapsimple_is_empty(eq_ctx->q->heap)) {
+    step++;
+    //if (step++ > 100) {
+    //  break;
+    //}
     TMVert **pair = BLI_heapsimple_pop_min(eq_ctx->q->heap);
+
+#else
+  int ilen = eq_ctx->q->totelems;
+
+  for (int i = 0; i < ilen; i++) {
+    if (i >= eq_ctx->q->totelems) {
+      break;
+    }
+
+    int ri = i;
+    // ri = BLI_rng_get_int(rng) % eq_ctx->q->totelems;
+    TMVert **pair = eq_ctx->q->elems[ri];
+
+    // eq_ctx->q->elems[ri] = eq_ctx->q->elems[eq_ctx->q->totelems-1];
+    // eq_ctx->q->totelems--;
+#endif
     TMVert *v1 = pair[0], *v2 = pair[1];
 
     BLI_mempool_free(eq_ctx->pool, pair);
@@ -1973,11 +2030,33 @@ static bool pbvh_trimesh_collapse_short_edges(EdgeQueueContext *eq_ctx,
       continue;
     }
 
+#if 0
+    for (int i = 0; i < 2; i++) {
+      float co[3], tot = 0.0f;
+      TMVert *v = i ? v2 : v1;
+      co[0] = co[1] = co[2] = 0.0f;
+
+      for (int j = 0; j < v->edges.length; j++) {
+        TMEdge *e2 = v->edges.items[j];
+        TMVert *v3 = TM_other_vert(e2, v);
+
+        add_v3_v3(co, v3->co);
+        tot += 1.0;
+      }
+
+      if (tot == 0.0f)
+        continue;
+
+      mul_v3_fl(co, 1.0f / tot);
+      interp_v3_v3v3(v->co, v->co, co, 0.75);
+    }
+#endif
+
 #ifdef USE_EDGEQUEUE_TAG
     EDGE_QUEUE_DISABLE(e);
 #endif
 
-    if (len_squared_v3v3(v1->co, v2->co) >= min_len_squared) {
+    if (calc_weighted_edge(eq_ctx, e) >= min_len_squared) {
       continue;
     }
 
@@ -1995,7 +2074,10 @@ static bool pbvh_trimesh_collapse_short_edges(EdgeQueueContext *eq_ctx,
     pbvh_trimesh_collapse_edge(bvh, e, v1, v2, deleted_verts, deleted_faces, eq_ctx);
   }
 
+  printf("collapse steps: %d\n", step);
+
   BLI_ghash_free(deleted_verts, NULL, NULL);
+  BLI_rng_free(rng);
 
   return any_collapsed;
 }
@@ -2387,7 +2469,7 @@ void BKE_pbvh_build_trimesh(PBVH *bvh,
   bvh->tm_log = log;
 
   /* TODO: choose leaf limit better */
-  bvh->leaf_limit = 1000;
+  bvh->leaf_limit = 2000;
 
   if (smooth_shading) {
     bvh->flags |= PBVH_DYNTOPO_SMOOTH_SHADING;
