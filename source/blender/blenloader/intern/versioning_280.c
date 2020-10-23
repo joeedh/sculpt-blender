@@ -4981,6 +4981,12 @@ void blo_do_versions_280(FileData *fd, Library *UNUSED(lib), Main *bmain)
   }
 
   if (!MAIN_VERSION_ATLEAST(bmain, 283, 12)) {
+    for (Scene* scene = bmain->scenes.first; scene; scene = scene->id.next) {
+      if (scene->r.hair_cyl_res == 0) {
+        scene->r.hair_cyl_res = 6;
+      }
+    }
+
     /* Activate f-curve drawing in the sequencer. */
     for (bScreen *screen = bmain->screens.first; screen; screen = screen->id.next) {
       for (ScrArea *area = screen->areabase.first; area; area = area->next) {

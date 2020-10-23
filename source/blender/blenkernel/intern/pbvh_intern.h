@@ -1,3 +1,6 @@
+#ifndef _PBVH_INTERN_H
+#define _PBVH_INTERN_H
+
 /*
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -30,6 +33,7 @@ typedef struct {
   float bmin[3], bmax[3], bcentroid[3];
 } BBC;
 
+struct GHash;
 /* Note: this structure is getting large, might want to split it into
  * union'd structs */
 struct PBVHNode {
@@ -86,7 +90,7 @@ struct PBVHNode {
 
   /* Indicates whether this node is a leaf or not; also used for
    * marking various updates that need to be applied. */
-  PBVHNodeFlags flag : 16;
+  PBVHNodeFlags flag : 32;
 
   /* Used for raycasting: how close bb is to the ray point. */
   float tmin;
@@ -105,8 +109,24 @@ struct PBVHNode {
   int (*bm_ortri)[3];
   int bm_tot_ortri;
 
+  /* trimesh */
+  GSet *tm_faces;
+
+  TMElemSet *tm_unique_verts;
+  TMElemSet *tm_other_verts;
+  float (*tm_orco)[3];
+  int (*tm_ortri)[3];
+  int tm_tot_ortri;
+  int tm_tot_orco;
+
+  int tm_subtree_tottri;
+
   /* Used to store the brush color during a stroke and composite it over the original color */
   PBVHColorBufferNode color_buffer;
+
+#ifdef PROXY_ADVANCED
+  ProxyVertArray proxyverts;
+#endif
 };
 
 typedef enum {
@@ -175,6 +195,14 @@ struct PBVH {
   int num_planes;
 
   struct BMLog *bm_log;
+
+  /* trimesh data */
+  struct TM_TriMesh *tm;
+  float tm_max_edge_len;
+  float tm_min_edge_len;
+
+  struct TriMeshLog *tm_log;
+
   struct SubdivCCG *subdiv_ccg;
 };
 
@@ -224,7 +252,7 @@ bool pbvh_bmesh_node_raycast(PBVHNode *node,
                              struct IsectRayPrecalc *isect_precalc,
                              float *dist,
                              bool use_original,
-                             int *r_active_vertex_index,
+                             SculptIdx *r_active_vertex_index,
                              float *r_face_normal);
 bool pbvh_bmesh_node_nearest_to_ray(PBVHNode *node,
                                     const float ray_start[3],
@@ -234,3 +262,23 @@ bool pbvh_bmesh_node_nearest_to_ray(PBVHNode *node,
                                     bool use_original);
 
 void pbvh_bmesh_normals_update(PBVHNode **nodes, int totnode);
+
+/* pbvh_bmesh.c */
+bool pbvh_trimesh_node_raycast(PBVHNode *node,
+                               const float ray_start[3],
+                               const float ray_normal[3],
+                               struct IsectRayPrecalc *isect_precalc,
+                               float *dist,
+                               bool use_original,
+                               SculptIdx *r_active_vertex_index,
+                               float *r_face_normal);
+bool pbvh_trimesh_node_nearest_to_ray(PBVHNode *node,
+                                      const float ray_start[3],
+                                      const float ray_normal[3],
+                                      float *depth,
+                                      float *dist_sq,
+                                      bool use_original);
+
+void pbvh_trimesh_normals_update(PBVHNode **nodes, int totnode);
+
+#endif /* _PBVH_INTERN_H */

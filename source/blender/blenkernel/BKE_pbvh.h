@@ -23,6 +23,11 @@
 
 #include "BLI_bitmap.h"
 #include "BLI_ghash.h"
+#include "BLI_threadsafe_mempool.h"
+
+#include "stdint.h"
+
+typedef intptr_t SculptIdx;
 
 /* For embedding CCGKey in iterator. */
 #include "BKE_ccg.h"
@@ -53,6 +58,79 @@ struct TaskParallelTLS;
 typedef struct PBVH PBVH;
 typedef struct PBVHNode PBVHNode;
 
+//#define WITH_TRIMESH
+
+//#define PROXY_ADVANCED
+
+// experimental performance test of "data-based programming" approach
+#ifdef PROXY_ADVANCED
+typedef struct ProxyKey {
+  int node;
+  int pindex;
+} ProxyKey;
+
+#  define MAX_PROXY_NEIGHBORS 12
+
+typedef struct ProxyVertArray {
+  float **ownerco;
+  short **ownerno;
+  float (*co)[3];
+  float (*fno)[3];
+  short (*no)[3];
+  float *mask, **ownermask;
+  SculptIdx *index;
+  float **ownercolor, (*color)[4];
+
+  ProxyKey (*neighbors)[MAX_PROXY_NEIGHBORS];
+
+  int size;
+  int datamask;
+
+  GHash *indexmap;
+} ProxyVertArray;
+
+typedef enum {
+  PV_OWNERCO = 1,
+  PV_OWNERNO = 2,
+  PV_CO = 4,
+  PV_NO = 8,
+  PV_MASK = 16,
+  PV_OWNERMASK = 32,
+  PV_INDEX = 64,
+  PV_OWNERCOLOR = 128,
+  PV_COLOR = 256,
+  PV_NEIGHBORS = 512
+} ProxyVertField;
+
+typedef struct ProxyVertUpdateRec {
+  float *co, *no, *mask, *color;
+  int index, newindex;
+} ProxyVertUpdateRec;
+
+#  define PBVH_PROXY_DEFAULT CO | INDEX | MASK
+
+struct SculptSession;
+
+void BKE_pbvh_ensure_proxyarrays(struct SculptSession *ss, PBVH *pbvh, int mask);
+void BKE_pbvh_load_proxyarrays(PBVH *pbvh, PBVHNode **nodes, int totnode, int mask);
+
+void BKE_pbvh_ensure_proxyarray(
+    struct SculptSession *ss,
+    struct PBVH *pbvh,
+    struct PBVHNode *node,
+    int mask,
+    struct GHash
+        *vert_node_map,  // vert_node_map maps vertex SculptIdxs to PBVHNode indices; optional
+    bool check_indexmap,
+    bool force_update);
+void BKE_pbvh_gather_proxyarray(PBVH *pbvh, PBVHNode **nodes, int totnode);
+
+void BKE_pbvh_free_proxyarray(struct PBVH *pbvh, struct PBVHNode *node);
+void BKE_pbvh_update_proxyvert(struct PBVH *pbvh, struct PBVHNode *node, ProxyVertUpdateRec *rec);
+ProxyVertArray *BKE_pbvh_get_proxyarrays(struct PBVH *pbvh, struct PBVHNode *node);
+
+#endif
+
 typedef struct {
   float (*co)[3];
 } PBVHProxyNode;
@@ -79,12 +157,39 @@ typedef enum {
 
   PBVH_UpdateTopology = 1 << 13,
   PBVH_UpdateColor = 1 << 14,
+  PBVH_Delete = 1 << 15,
 } PBVHNodeFlags;
 
 typedef struct PBVHFrustumPlanes {
   float (*planes)[4];
   int num_planes;
 } PBVHFrustumPlanes;
+
+typedef struct TMElemSet {
+  struct GHash *ptr_to_idx;
+  void **elems;
+  int size, length;
+  int cur;
+} TMElemSet;
+
+TMElemSet *TMElemSet_new();
+void TMElemSet_free(TMElemSet *ts);
+void TMElemSet_insert(TMElemSet *ts, void *elem);
+bool TMElemSet_add(TMElemSet *ts, void *elem);
+void TMElemSet_remove(TMElemSet *ts, void *elem, bool ignoreExist);
+bool TMElemSet_has(TMElemSet *ts, void *elem);
+
+#define TMS_ITER(v, ts) \
+  { \
+    int _i1; \
+    for (_i1 = 0; _i1 < ts->cur; _i1++) { \
+      if (!ts->elems[_i1]) \
+        continue; \
+      v = ts->elems[_i1];
+
+#define TMS_ITER_END \
+  } \
+  }
 
 void BKE_pbvh_set_frustum_planes(PBVH *pbvh, PBVHFrustumPlanes *planes);
 void BKE_pbvh_get_frustum_planes(PBVH *pbvh, PBVHFrustumPlanes *planes);
@@ -126,7 +231,15 @@ void BKE_pbvh_build_bmesh(PBVH *pbvh,
                           struct BMLog *log,
                           const int cd_vert_node_offset,
                           const int cd_face_node_offset);
-void BKE_pbvh_free(PBVH *pbvh);
+void BKE_pbvh_build_trimesh(PBVH *bvh,
+                            struct TM_TriMesh *bm,
+                            bool smooth_shading,
+                            struct TriMeshLog *log,
+                            const int cd_vert_node_offset,
+                            const int cd_face_node_offset);
+
+void BKE_pbvh_free(PBVH *bvh);
+// void BKE_pbvh_free_layer_disp(PBVH *bvh);
 
 /* Hierarchical Search in the BVH, two methods:
  * - for each hit calling a callback
@@ -161,7 +274,7 @@ bool BKE_pbvh_node_raycast(PBVH *pbvh,
                            const float ray_normal[3],
                            struct IsectRayPrecalc *isect_precalc,
                            float *depth,
-                           int *active_vertex_index,
+                           SculptIdx *active_vertex_index,
                            int *active_face_grid_index,
                            float *face_normal);
 
@@ -170,6 +283,11 @@ bool BKE_pbvh_bmesh_node_raycast_detail(PBVHNode *node,
                                         struct IsectRayPrecalc *isect_precalc,
                                         float *depth,
                                         float *r_edge_length);
+bool BKE_pbvh_trimesh_node_raycast_detail(PBVHNode *node,
+                                          const float ray_start[3],
+                                          struct IsectRayPrecalc *isect_precalc,
+                                          float *depth,
+                                          float *r_edge_length);
 
 /* for orthographic cameras, project the far away ray segment points to the root node so
  * we can have better precision. */
@@ -207,11 +325,7 @@ void BKE_pbvh_draw_debug_cb(
     void *user_data);
 
 /* PBVH Access */
-typedef enum {
-  PBVH_FACES,
-  PBVH_GRIDS,
-  PBVH_BMESH,
-} PBVHType;
+typedef enum { PBVH_FACES, PBVH_GRIDS, PBVH_BMESH, PBVH_TRIMESH } PBVHType;
 
 PBVHType BKE_pbvh_type(const PBVH *pbvh);
 bool BKE_pbvh_has_faces(const PBVH *pbvh);
@@ -238,6 +352,8 @@ int BKE_pbvh_get_grid_num_vertices(const PBVH *pbvh);
 
 /* Only valid for type == PBVH_BMESH */
 struct BMesh *BKE_pbvh_get_bmesh(PBVH *pbvh);
+struct TM_TriMesh *BKE_pbvh_get_trimesh(PBVH *pbvh);
+void BKE_pbvh_topology_detail_size_set(PBVH *pbvh, float detail_size);
 void BKE_pbvh_bmesh_detail_size_set(PBVH *pbvh, float detail_size);
 
 typedef enum {
@@ -252,6 +368,14 @@ bool BKE_pbvh_bmesh_update_topology(PBVH *pbvh,
                                     const bool use_frontface,
                                     const bool use_projected);
 
+bool BKE_pbvh_trimesh_update_topology(PBVH *bvh,
+                                      PBVHTopologyUpdateMode mode,
+                                      const float center[3],
+                                      const float view_normal[3],
+                                      float radius,
+                                      const bool use_frontface,
+                                      const bool use_projected,
+                                      int sym_axis);
 /* Node Access */
 
 void BKE_pbvh_node_mark_update(PBVHNode *node);
@@ -298,6 +422,12 @@ struct GSet *BKE_pbvh_bmesh_node_faces(PBVHNode *node);
 void BKE_pbvh_bmesh_node_save_orig(struct BMesh *bm, PBVHNode *node);
 void BKE_pbvh_bmesh_after_stroke(PBVH *pbvh);
 
+struct TMElemSet *BKE_pbvh_trimesh_node_unique_verts(PBVHNode *node);
+struct TMElemSet *BKE_pbvh_trimesh_node_other_verts(PBVHNode *node);
+struct GSet *BKE_pbvh_trimesh_node_faces(PBVHNode *node);
+void BKE_pbvh_trimesh_node_save_orig(struct TM_TriMesh *tm, PBVHNode *node);
+void BKE_pbvh_trimesh_after_stroke(PBVH *bvh);
+
 /* Update Bounding Box/Redraw and clear flags */
 
 void BKE_pbvh_update_bounds(PBVH *pbvh, int flags);
@@ -334,6 +464,8 @@ bool BKE_pbvh_is_deformed(struct PBVH *pbvh);
 #define PBVH_ITER_ALL 0
 #define PBVH_ITER_UNIQUE 1
 
+struct TMVert;
+
 typedef struct PBVHVertexIter {
   /* iteration */
   int g;
@@ -342,7 +474,7 @@ typedef struct PBVHVertexIter {
   int gx;
   int gy;
   int i;
-  int index;
+  SculptIdx index;
   bool respect_hide;
 
   /* grid */
@@ -365,12 +497,20 @@ typedef struct PBVHVertexIter {
   struct GSetIterator bm_unique_verts;
   struct GSetIterator bm_other_verts;
   struct CustomData *bm_vdata;
+
+  int ti;
+  struct TMElemSet *tm_cur_set;
+  struct TMElemSet *tm_unique_verts;
+  struct TMElemSet *tm_other_verts;
+  struct CustomData *tm_vdata;
+
   int cd_vert_mask_offset;
 
   /* result: these are all computed in the macro, but we assume
    * that compiler optimization's will skip the ones we don't use */
   struct MVert *mvert;
   struct BMVert *bm_vert;
+  struct TMVert *tm_vert;
   float *co;
   short *no;
   float *fno;
@@ -434,6 +574,42 @@ void pbvh_vertex_iter_init(PBVH *pbvh, PBVHNode *node, PBVHVertexIter *vi, int m
           if (vi.vcol) { \
             vi.col = vi.vcol[vi.index].color; \
           } \
+        } \
+        else if (vi.tm_vdata) { \
+          TMVert *tv = NULL; \
+          while (!tv) { \
+            if (!vi.tm_cur_set->elems || vi.ti >= vi.tm_cur_set->cur) { \
+              if (vi.tm_cur_set != vi.tm_other_verts) { \
+                vi.tm_cur_set = vi.tm_other_verts; \
+                vi.ti = 0; \
+                if (!vi.tm_cur_set->elems || vi.ti >= vi.tm_other_verts->cur) { \
+                  break; \
+                } \
+              } \
+              else { \
+                break; \
+              } \
+            } \
+            else { \
+              tv = vi.tm_cur_set->elems[vi.ti++]; \
+              if (tv && BLI_safepool_elem_is_dead(tv)) { \
+                printf("dead vert: %p\n", tv); \
+                tv = NULL; \
+              } \
+            } \
+          } \
+          if (!tv) { \
+            continue; \
+          } \
+          vi.tm_vert = tv; \
+          vi.visible = !TM_elem_flag_test_bool(vi.tm_vert, TM_ELEM_HIDDEN); \
+          if (mode == PBVH_ITER_UNIQUE && !vi.visible) { \
+            continue; \
+          } \
+          vi.co = vi.tm_vert->co; \
+          vi.fno = vi.tm_vert->no; \
+          vi.index = (SculptIdx)vi.tm_vert; \
+          vi.mask = TM_ELEM_CD_GET_VOID_P(vi.tm_vert, vi.cd_vert_mask_offset); \
         } \
         else { \
           if (!BLI_gsetIterator_done(&vi.bm_unique_verts)) { \

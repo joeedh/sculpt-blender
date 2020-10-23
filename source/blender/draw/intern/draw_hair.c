@@ -177,7 +177,19 @@ GPUVertBuf *DRW_hair_pos_buffer_get(Object *object, ParticleSystem *psys, Modifi
   Scene *scene = draw_ctx->scene;
 
   int subdiv = scene->r.hair_subdiv;
-  int thickness_res = (scene->r.hair_type == SCE_HAIR_SHAPE_STRAND) ? 1 : 2;
+  int thickness_res = 1;
+
+  switch (scene->r.hair_type) {
+    case SCE_HAIR_SHAPE_STRAND:
+      thickness_res = 1;
+      break;
+    case SCE_HAIR_SHAPE_STRIP:
+      thickness_res = 2;
+      break;
+    case SCE_HAIR_SHAPE_CYLINDER:
+      thickness_res = MAX2(scene->r.hair_cyl_res, 3)*2;
+      break;
+  }
 
   ParticleHairCache *cache = drw_hair_particle_cache_get(object, psys, md, subdiv, thickness_res);
 

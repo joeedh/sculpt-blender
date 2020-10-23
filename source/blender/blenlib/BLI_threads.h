@@ -122,9 +122,16 @@ void BLI_spin_end(SpinLock *spin);
 #define THREAD_LOCK_READ 1
 #define THREAD_LOCK_WRITE 2
 
-#define BLI_RWLOCK_INITIALIZER PTHREAD_RWLOCK_INITIALIZER
-
+#ifndef WIN32
 typedef pthread_rwlock_t ThreadRWMutex;
+#define BLI_RWLOCK_INITIALIZER PTHREAD_RWLOCK_INITIALIZER
+#else
+typedef struct {
+  void *data[4]; //stupid, to avoid windows.h here in the header
+  int have_exclusive;
+} ThreadRWMutex;
+#define BLI_RWLOCK_INITIALIZER {0} //just do what windows does
+#endif
 
 void BLI_rw_mutex_init(ThreadRWMutex *mutex);
 void BLI_rw_mutex_end(ThreadRWMutex *mutex);

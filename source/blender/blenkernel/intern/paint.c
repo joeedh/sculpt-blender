@@ -76,6 +76,7 @@
 #include "BLO_read_write.h"
 
 #include "bmesh.h"
+#include "trimesh.h"
 
 static void palette_init_data(ID *id)
 {
@@ -1083,7 +1084,9 @@ bool BKE_paint_ensure(ToolSettings *ts, struct Paint **r_paint)
     paint = &ts->imapaint.paint;
   }
 
-  paint->flags |= PAINT_SHOW_BRUSH;
+  if (paint) {
+    paint->flags |= PAINT_SHOW_BRUSH;
+  }
 
   *r_paint = paint;
 
@@ -1199,6 +1202,17 @@ bool paint_is_bmesh_face_hidden(BMFace *f)
   return false;
 }
 
+
+/* Return true if all vertices in the face are visible, false otherwise */
+bool paint_is_trimesh_face_hidden(TMFace *f)
+{
+  bool ret = f->v1->flag & TM_ELEM_HIDDEN;
+  ret = ret || (f->v2->flag & TM_ELEM_HIDDEN);
+  ret = ret || (f->v3->flag & TM_ELEM_HIDDEN);
+
+  return ret;
+}
+
 float paint_grid_paint_mask(const GridPaintMask *gpm, uint level, uint x, uint y)
 {
   int factor = BKE_ccg_factor(level, gpm->level);
@@ -1298,6 +1312,34 @@ void BKE_sculptsession_free_vwpaint_data(struct SculptSession *ss)
   MEM_SAFE_FREE(gmap->poly_map_mem);
 }
 
+/* Write out the sculpt dynamic-topology BMesh to the Mesh */
+static void sculptsession_tm_to_me_update_data_only(Object *ob, bool reorder)
+{
+  SculptSession *ss = ob->sculpt;
+
+  if (ss->tm) {
+    if (ob->data) {
+      TM_TriMeshIter iter;
+      TMFace *f;
+
+      TM_tri_iternew(ss->tm, &iter);
+      f = TM_iterstep(&iter);
+      for (; f; f = TM_iterstep(&iter)) {
+        TM_elem_flag_set(f, TRIMESH_SMOOTH, ss->bm_smooth_shading);
+      }
+      //if (reorder) {
+      //  BM_log_mesh_elems_reorder(ss->tm, ss->tm_log);
+      //}
+      TM_mesh_bm_to_me(NULL,
+        ss->tm,
+        ob->data,
+        (&(struct TMeshToMeshParams){
+        .calc_object_remap = false,
+      }));
+    }
+  }
+}
+
 /**
  * Write out the sculpt dynamic-topology #BMesh to the #Mesh.
  */
@@ -1332,6 +1374,17 @@ void BKE_sculptsession_bm_to_me(Object *ob, bool reorder)
 
     /* Ensure the objects evaluated mesh doesn't hold onto arrays
      * now realloc'd in the mesh T34473. */
+    DEG_id_tag_update(&ob->id, ID_RECALC_GEOMETRY);
+  }
+}
+
+void BKE_sculptsession_tm_to_me(Object *ob, bool reorder)
+{
+  if (ob && ob->sculpt) {
+    sculptsession_tm_to_me_update_data_only(ob, reorder);
+
+    /* Ensure the objects evaluated mesh doesn't hold onto arrays
+    * now realloc'd in the mesh T34473. */
     DEG_id_tag_update(&ob->id, ID_RECALC_GEOMETRY);
   }
 }
@@ -1387,14 +1440,36 @@ void BKE_sculptsession_bm_to_me_for_render(Object *object)
   }
 }
 
+void BKE_sculptsession_tm_to_me_for_render(Object *object)
+{
+  if (object && object->sculpt) {
+    if (object->sculpt->tm) {
+      /* Ensure no points to old arrays are stored in DM
+      *
+      * Apparently, we could not use DEG_id_tag_update
+      * here because this will lead to the while object
+      * surface to disappear, so we'll release DM in place.
+      */
+      BKE_object_free_derived_caches(object);
+
+      sculptsession_tm_to_me_update_data_only(object, false);
+
+      /* In contrast with sculptsession_bm_to_me no need in
+      * DAG tag update here - derived mesh was freed and
+      * old pointers are nowhere stored.
+      */
+    }
+  }
+}
+
 void BKE_sculptsession_free(Object *ob)
 {
   if (ob && ob->sculpt) {
     SculptSession *ss = ob->sculpt;
 
-    if (ss->bm) {
-      BKE_sculptsession_bm_to_me(ob, true);
-      BM_mesh_free(ss->bm);
+    if (ss->tm) {
+      BKE_sculptsession_tm_to_me(ob, true);
+      TMesh_free(ss->tm);
     }
 
     sculptsession_free_pbvh(ob);
@@ -1439,7 +1514,7 @@ MultiresModifierData *BKE_sculpt_multires_active(Scene *scene, Object *ob)
   ModifierData *md;
   VirtualModifierData virtualModifierData;
 
-  if (ob->sculpt && ob->sculpt->bm) {
+  if (ob->sculpt && (ob->sculpt->bm || ob->sculpt->tm)) {
     /* can't combine multires and dynamic topology */
     return NULL;
   }
@@ -1481,7 +1556,7 @@ static bool sculpt_modifiers_active(Scene *scene, Sculpt *sd, Object *ob)
   Mesh *me = (Mesh *)ob->data;
   VirtualModifierData virtualModifierData;
 
-  if (ob->sculpt->bm || BKE_sculpt_multires_active(scene, ob)) {
+  if (BKE_sculpt_multires_active(scene, ob) || ob->sculpt->bm || ob->sculpt->tm) {
     return false;
   }
 
@@ -1969,10 +2044,10 @@ void BKE_sculpt_sync_face_set_visibility(struct Mesh *mesh, struct SubdivCCG *su
 static PBVH *build_pbvh_for_dynamic_topology(Object *ob)
 {
   PBVH *pbvh = BKE_pbvh_new();
-  BKE_pbvh_build_bmesh(pbvh,
-                       ob->sculpt->bm,
+  BKE_pbvh_build_trimesh(pbvh,
+                       ob->sculpt->tm,
                        ob->sculpt->bm_smooth_shading,
-                       ob->sculpt->bm_log,
+                       ob->sculpt->tm_log,
                        ob->sculpt->cd_vert_node_offset,
                        ob->sculpt->cd_face_node_offset);
   pbvh_show_mask_set(pbvh, ob->sculpt->show_mask);
@@ -2069,8 +2144,8 @@ PBVH *BKE_sculpt_object_pbvh_ensure(Depsgraph *depsgraph, Object *ob)
     return pbvh;
   }
 
-  if (ob->sculpt->bm != NULL) {
-    /* Sculpting on a BMesh (dynamic-topology) gets a special PBVH. */
+  if (ob->sculpt->tm != NULL) {
+    /* Sculpting on a TriMesh (dynamic-topology) gets a special PBVH. */
     pbvh = build_pbvh_for_dynamic_topology(ob);
   }
   else {

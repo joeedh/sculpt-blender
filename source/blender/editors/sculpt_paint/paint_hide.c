@@ -53,6 +53,7 @@
 #include "RNA_define.h"
 
 #include "bmesh.h"
+#include "trimesh.h"
 
 #include "paint_intern.h"
 
@@ -286,6 +287,94 @@ static void partialvis_update_bmesh(Object *ob,
   }
 }
 
+static void partialvis_update_trimesh_verts(TM_TriMesh *bm,
+  TMElemSet *verts,
+  PartialVisAction action,
+  PartialVisArea area,
+  float planes[4][4],
+  bool *any_changed,
+  bool *any_visible)
+{
+  TMVert *v;
+
+  TMS_ITER (v, verts) {
+    float *vmask = CustomData_bmesh_get(&bm->vdata, v->customdata, CD_PAINT_MASK);
+
+    /* Hide vertex if in the hide volume. */
+    if (is_effected(area, planes, v->co, *vmask)) {
+      if (action == PARTIALVIS_HIDE) {
+        TM_elem_flag_enable(v, TM_ELEM_HIDDEN);
+      }
+      else {
+        TM_elem_flag_disable(v, TM_ELEM_HIDDEN);
+      }
+      (*any_changed) = true;
+    }
+
+    if (!TM_elem_flag_test(v, TM_ELEM_HIDDEN)) {
+      (*any_visible) = true;
+    }
+  } TMS_ITER_END
+}
+
+/* Return true if all vertices in the face are visible, false otherwise */
+static bool paint_is_trimesh_face_hidden(TMFace *f)
+{
+  bool ret = f->v1->flag & TM_ELEM_HIDDEN;
+  ret = ret || (f->v2->flag & TM_ELEM_HIDDEN);
+  ret = ret || (f->v3->flag & TM_ELEM_HIDDEN);
+
+  return ret;
+}
+
+static void partialvis_update_trimesh_faces(GSet *faces)
+{
+  GSetIterator gs_iter;
+
+  GSET_ITER (gs_iter, faces) {
+    TMFace *f = BLI_gsetIterator_getKey(&gs_iter);
+
+    if (paint_is_trimesh_face_hidden(f)) {
+      TM_elem_flag_enable(f, TM_ELEM_HIDDEN);
+    }
+    else {
+      TM_elem_flag_disable(f, TM_ELEM_HIDDEN);
+    }
+  }
+}
+
+static void partialvis_update_trimesh(Object *ob,
+  PBVH *pbvh,
+  PBVHNode *node,
+  PartialVisAction action,
+  PartialVisArea area,
+  float planes[4][4])
+{
+  TM_TriMesh *bm;
+  TMElemSet *unique, *other;
+  GSet *faces;
+  bool any_changed = false, any_visible = false;
+
+  bm = BKE_pbvh_get_trimesh(pbvh);
+  unique = BKE_pbvh_trimesh_node_unique_verts(node);
+  other = BKE_pbvh_trimesh_node_other_verts(node);
+  faces = BKE_pbvh_trimesh_node_faces(node);
+
+  SCULPT_undo_push_node(ob, node, SCULPT_UNDO_HIDDEN);
+
+  partialvis_update_trimesh_verts(bm, unique, action, area, planes, &any_changed, &any_visible);
+
+  partialvis_update_trimesh_verts(bm, other, action, area, planes, &any_changed, &any_visible);
+
+  /* Finally loop over node faces and tag the ones that are fully hidden. */
+  partialvis_update_trimesh_faces(faces);
+
+  if (any_changed) {
+    BKE_pbvh_node_mark_rebuild_draw(node);
+    BKE_pbvh_node_fully_hidden_set(node, !any_visible);
+  }
+}
+
 static void rect_from_props(rcti *rect, PointerRNA *ptr)
 {
   rect->xmin = RNA_int_get(ptr, "xmin");
@@ -383,6 +472,9 @@ static int hide_show_exec(bContext *C, wmOperator *op)
         break;
       case PBVH_BMESH:
         partialvis_update_bmesh(ob, pbvh, nodes[i], action, area, clip_planes);
+        break;
+      case PBVH_TRIMESH:
+        partialvis_update_trimesh(ob, pbvh, nodes[i], action, area, clip_planes);
         break;
     }
   }

@@ -771,7 +771,7 @@ typedef struct RenderData {
   short views_format;
 
   /* Hair Display */
-  short hair_type, hair_subdiv;
+  short hair_type, hair_subdiv, hair_cyl_res, _pad10[3];
 
   /* Motion blur shutter */
   struct CurveMapping mblur_shutter_curve;
@@ -786,6 +786,7 @@ typedef enum eQualityOption {
 typedef enum eHairType {
   SCE_HAIR_SHAPE_STRAND = 0,
   SCE_HAIR_SHAPE_STRIP = 1,
+  SCE_HAIR_SHAPE_CYLINDER = 2,
 } eHairType;
 
 /* *************************************************************** */

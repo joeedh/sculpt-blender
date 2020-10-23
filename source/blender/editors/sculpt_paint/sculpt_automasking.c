@@ -127,7 +127,7 @@ static bool SCULPT_automasking_needs_factors_cache(const Sculpt *sd, const Brush
   return false;
 }
 
-float SCULPT_automasking_factor_get(AutomaskingCache *automasking, SculptSession *ss, int vert)
+float SCULPT_automasking_factor_get(AutomaskingCache *automasking, SculptSession *ss, SculptIdx vert)
 {
   if (!automasking) {
     return 1.0f;
@@ -192,7 +192,7 @@ typedef struct AutomaskFloodFillData {
 } AutomaskFloodFillData;
 
 static bool automask_floodfill_cb(
-    SculptSession *ss, int from_v, int to_v, bool UNUSED(is_duplicate), void *userdata)
+    SculptSession *ss, SculptIdx from_v, SculptIdx to_v, bool UNUSED(is_duplicate), void *userdata)
 {
   AutomaskFloodFillData *data = userdata;
 

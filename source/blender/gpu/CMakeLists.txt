@@ -33,6 +33,7 @@ set(INC
   ../blenkernel
   ../blenlib
   ../bmesh
+  ../trimesh
   ../draw
   ../imbuf
   ../makesdna

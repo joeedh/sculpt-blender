@@ -509,29 +509,54 @@ void BLI_spin_end(SpinLock *spin)
 
 /* Read/Write Mutex Lock */
 
+#define GET_RW_LOCK(mutex) reinterpret_cast<SRWLOCK*>(&mutex->data[0])
+
 void BLI_rw_mutex_init(ThreadRWMutex *mutex)
 {
+#ifndef WIN32
   pthread_rwlock_init(mutex, nullptr);
+#else
+  InitializeSRWLock(GET_RW_LOCK(mutex));
+#endif
 }
 
 void BLI_rw_mutex_lock(ThreadRWMutex *mutex, int mode)
 {
+#ifndef WIN32
   if (mode == THREAD_LOCK_READ) {
     pthread_rwlock_rdlock(mutex);
   }
   else {
     pthread_rwlock_wrlock(mutex);
   }
+#else
+  if (mode == THREAD_LOCK_READ) {
+    AcquireSRWLockShared(GET_RW_LOCK(mutex));
+  } else {
+    AcquireSRWLockExclusive(GET_RW_LOCK(mutex));
+    mutex->have_exclusive = 1;
+  }
+#endif
 }
 
 void BLI_rw_mutex_unlock(ThreadRWMutex *mutex)
 {
+#ifndef WIN32
   pthread_rwlock_unlock(mutex);
+#else
+  if (!mutex->have_exclusive) {
+    ReleaseSRWLockShared(GET_RW_LOCK(mutex));
+  } else {
+    mutex->have_exclusive = 0;
+    ReleaseSRWLockExclusive(GET_RW_LOCK(mutex));
+  }
+#endif
+
 }
 
 void BLI_rw_mutex_end(ThreadRWMutex *mutex)
 {
-  pthread_rwlock_destroy(mutex);
+  
 }
 
 ThreadRWMutex *BLI_rw_mutex_alloc(void)

@@ -86,7 +86,7 @@
 #  define ASSERT_IS_VALID_MESH(mesh)
 #endif
 
-static ThreadRWMutex loops_cache_lock = PTHREAD_RWLOCK_INITIALIZER;
+static ThreadRWMutex loops_cache_lock = BLI_RWLOCK_INITIALIZER;
 
 static void mesh_init_origspace(Mesh *mesh);
 static void editbmesh_calc_modifier_final_normals(Mesh *mesh_final,
@@ -912,7 +912,7 @@ static void mesh_calc_modifiers(struct Depsgraph *depsgraph,
   const bool has_multires = BKE_sculpt_multires_active(scene, ob) != NULL;
   bool multires_applied = false;
   const bool sculpt_mode = ob->mode & OB_MODE_SCULPT && ob->sculpt && !use_render;
-  const bool sculpt_dyntopo = (sculpt_mode && ob->sculpt->bm) && !use_render;
+  const bool sculpt_dyntopo = (sculpt_mode && (ob->sculpt->bm || ob->sculpt->tm)) && !use_render;
 
   /* Modifier evaluation contexts for different types of modifiers. */
   ModifierApplyFlag apply_render = use_render ? MOD_APPLY_RENDER : 0;

@@ -64,6 +64,7 @@
 #include "sculpt_intern.h"
 
 #include "bmesh.h"
+#include "trimesh.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -116,7 +117,7 @@ static void sculpt_expand_task_cb(void *__restrict userdata,
 
   BKE_pbvh_vertex_iter_begin(ss->pbvh, node, vd, PBVH_ITER_ALL)
   {
-    int vi = vd.index;
+    SculptIdx vi = vd.index;
     float final_mask = *vd.mask;
     if (data->mask_expand_use_normals) {
       if (ss->filter_cache->normal_factor[SCULPT_active_vertex_get(ss)] <
@@ -312,7 +313,7 @@ typedef struct MaskExpandFloodFillData {
 } MaskExpandFloodFillData;
 
 static bool mask_expand_floodfill_cb(
-    SculptSession *ss, int from_v, int to_v, bool is_duplicate, void *userdata)
+    SculptSession *ss, SculptIdx from_v, SculptIdx to_v, bool is_duplicate, void *userdata)
 {
   MaskExpandFloodFillData *data = userdata;
 
@@ -393,7 +394,7 @@ static int sculpt_mask_expand_invoke(bContext *C, wmOperator *op, const wmEvent 
     }
   }
 
-  ss->filter_cache->mask_update_it = MEM_callocN(sizeof(int) * vertex_count,
+  ss->filter_cache->mask_update_it = MEM_callocN(sizeof(SculptIdx) * vertex_count,
                                                  "mask update iteration");
   if (use_normals) {
     ss->filter_cache->normal_factor = MEM_callocN(sizeof(float) * vertex_count,

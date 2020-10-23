@@ -25,6 +25,7 @@ set(INC
   ../../bmesh
   ../../depsgraph
   ../../gpu
+  ../../trimesh
   ../../imbuf
   ../../makesdna
   ../../makesrna

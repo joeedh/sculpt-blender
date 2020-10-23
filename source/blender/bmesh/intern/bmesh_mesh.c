@@ -32,6 +32,7 @@
 #include "BLI_stack.h"
 #include "BLI_task.h"
 #include "BLI_utildefines.h"
+#include "BLI_threadsafe_mempool.h"
 
 #include "BKE_editmesh.h"
 #include "BKE_global.h"
@@ -222,16 +223,16 @@ void BM_mesh_data_free(BMesh *bm)
 
   /* Free custom data pools, This should probably go in CustomData_free? */
   if (bm->vdata.totlayer) {
-    BLI_mempool_destroy(bm->vdata.pool);
+    BLI_safepool_destroy(bm->vdata.tpool);
   }
   if (bm->edata.totlayer) {
-    BLI_mempool_destroy(bm->edata.pool);
+    BLI_safepool_destroy(bm->edata.tpool);
   }
   if (bm->ldata.totlayer) {
-    BLI_mempool_destroy(bm->ldata.pool);
+    BLI_safepool_destroy(bm->ldata.tpool);
   }
   if (bm->pdata.totlayer) {
-    BLI_mempool_destroy(bm->pdata.pool);
+    BLI_safepool_destroy(bm->pdata.tpool);
   }
 
   /* free custom data */

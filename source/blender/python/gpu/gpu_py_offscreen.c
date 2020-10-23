@@ -85,22 +85,17 @@ static PyObject *bpygpu_offscreen_new(PyTypeObject *UNUSED(self), PyObject *args
 {
   BPYGPU_IS_INIT_OR_ERROR_OBJ;
 
-  GPUOffScreen *ofs = NULL;
-  int width, height;
+  GPUOffScreen *ofs;
+  int width, height, high_bitdepth=0, samples = 0;
   char err_out[256];
 
-  static const char *_keywords[] = {"width", "height", NULL};
-  static _PyArg_Parser _parser = {"ii|i:GPUOffScreen.__new__", _keywords, 0};
-  if (!_PyArg_ParseTupleAndKeywordsFast(args, kwds, &_parser, &width, &height)) {
+  static const char *_keywords[] = {"width", "height", "samples", "high_bitdepth", NULL};
+  static _PyArg_Parser _parser = {"ii|ii:GPUOffScreen.__new__", _keywords, 0};
+  if (!_PyArg_ParseTupleAndKeywordsFast(args, kwds, &_parser, &width, &height, &samples, &high_bitdepth)) {
     return NULL;
   }
 
-  if (GPU_context_active_get()) {
-    ofs = GPU_offscreen_create(width, height, true, false, err_out);
-  }
-  else {
-    strncpy(err_out, "No active GPU context found", 256);
-  }
+  ofs = GPU_offscreen_create(width, height, true, high_bitdepth, err_out);
 
   if (ofs == NULL) {
     PyErr_Format(PyExc_RuntimeError,

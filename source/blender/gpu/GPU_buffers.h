@@ -61,9 +61,11 @@ GPU_PBVH_Buffers *GPU_pbvh_mesh_buffers_build(const struct MPoly *mpoly,
 GPU_PBVH_Buffers *GPU_pbvh_grid_buffers_build(int totgrid, unsigned int **grid_hidden);
 
 GPU_PBVH_Buffers *GPU_pbvh_bmesh_buffers_build(bool smooth_shading);
+GPU_PBVH_Buffers *GPU_pbvh_trimesh_buffers_build(bool smooth_shading);
 
 /* Free part of data for update. Not thread safe, must run in OpenGL main thread. */
 void GPU_pbvh_bmesh_buffers_update_free(GPU_PBVH_Buffers *buffers);
+void GPU_pbvh_trimesh_buffers_update_free(GPU_PBVH_Buffers *buffers);
 void GPU_pbvh_grid_buffers_update_free(GPU_PBVH_Buffers *buffers,
                                        const struct DMFlagMat *grid_flag_mats,
                                        const int *grid_indices);
@@ -91,6 +93,14 @@ void GPU_pbvh_bmesh_buffers_update(GPU_PBVH_Buffers *buffers,
                                    struct GSet *bm_unique_verts,
                                    struct GSet *bm_other_verts,
                                    const int update_flags);
+
+struct TM_TriMesh;
+void GPU_pbvh_trimesh_buffers_update(GPU_PBVH_Buffers *buffers,
+                                   struct TM_TriMesh *bm,
+                                   struct GSet *bm_faces,
+                                   struct TMElemSet *bm_unique_verts,
+                                   struct TMElemSet *bm_other_verts,
+                                   const int update_flags, const int cd_vert_node_offset);
 
 void GPU_pbvh_grid_buffers_update(GPU_PBVH_Buffers *buffers,
                                   struct SubdivCCG *subdiv_ccg,

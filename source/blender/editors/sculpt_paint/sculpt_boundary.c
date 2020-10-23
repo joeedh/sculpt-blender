@@ -54,6 +54,7 @@
 #include "GPU_state.h"
 
 #include "bmesh.h"
+#include "trimesh.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -62,15 +63,15 @@
 #define BOUNDARY_STEPS_NONE -1
 
 typedef struct BoundaryInitialVertexFloodFillData {
-  int initial_vertex;
+  SculptIdx initial_vertex;
   int boundary_initial_vertex_steps;
-  int boundary_initial_vertex;
+  SculptIdx boundary_initial_vertex;
   int *floodfill_steps;
   float radius_sq;
 } BoundaryInitialVertexFloodFillData;
 
 static bool boundary_initial_vertex_floodfill_cb(
-    SculptSession *ss, int from_v, int to_v, bool is_duplicate, void *userdata)
+    SculptSession *ss, SculptIdx from_v, SculptIdx to_v, bool is_duplicate, void *userdata)
 {
   BoundaryInitialVertexFloodFillData *data = userdata;
 
@@ -99,8 +100,8 @@ static bool boundary_initial_vertex_floodfill_cb(
 
 /* From a vertex index anywhere in the mesh, returns the closest vertex in a mesh boundary inside
  * the given radius, if it exists. */
-static int sculpt_boundary_get_closest_boundary_vertex(SculptSession *ss,
-                                                       const int initial_vertex,
+static SculptIdx sculpt_boundary_get_closest_boundary_vertex(SculptSession *ss,
+                                                       const SculptIdx initial_vertex,
                                                        const float radius)
 {
 
@@ -120,7 +121,7 @@ static int sculpt_boundary_get_closest_boundary_vertex(SculptSession *ss,
   };
 
   fdata.floodfill_steps = MEM_calloc_arrayN(
-      SCULPT_vertex_count_get(ss), sizeof(int), "floodfill steps");
+      SCULPT_vertex_count_get(ss), sizeof(SculptIdx), "floodfill steps");
 
   SCULPT_floodfill_execute(ss, &flood, boundary_initial_vertex_floodfill_cb, &fdata);
   SCULPT_floodfill_free(&flood);
@@ -135,7 +136,7 @@ static int sculpt_boundary_get_closest_boundary_vertex(SculptSession *ss,
 static int BOUNDARY_INDICES_BLOCK_SIZE = 300;
 
 static void sculpt_boundary_index_add(SculptBoundary *boundary,
-                                      const int new_index,
+                                      const SculptIdx new_index,
                                       const float distance,
                                       GSet *included_vertices)
 {
@@ -151,11 +152,11 @@ static void sculpt_boundary_index_add(SculptBoundary *boundary,
   if (boundary->num_vertices >= boundary->vertices_capacity) {
     boundary->vertices_capacity += BOUNDARY_INDICES_BLOCK_SIZE;
     boundary->vertices = MEM_reallocN_id(
-        boundary->vertices, boundary->vertices_capacity * sizeof(int), "boundary indices");
+        boundary->vertices, boundary->vertices_capacity * sizeof(SculptIdx), "boundary indices");
   }
 };
 
-static void sculpt_boundary_preview_edge_add(SculptBoundary *boundary, const int v1, const int v2)
+static void sculpt_boundary_preview_edge_add(SculptBoundary *boundary, const SculptIdx v1, const SculptIdx v2)
 {
 
   boundary->edges[boundary->num_edges].v1 = v1;
@@ -175,7 +176,7 @@ static void sculpt_boundary_preview_edge_add(SculptBoundary *boundary, const int
  * as well as to check if the initial vertex is valid.
  */
 static bool sculpt_boundary_is_vertex_in_editable_boundary(SculptSession *ss,
-                                                           const int initial_vertex)
+                                                           const SculptIdx initial_vertex)
 {
 
   if (!SCULPT_vertex_visible_get(ss, initial_vertex)) {
@@ -223,7 +224,7 @@ typedef struct BoundaryFloodFillData {
 } BoundaryFloodFillData;
 
 static bool boundary_floodfill_cb(
-    SculptSession *ss, int from_v, int to_v, bool is_duplicate, void *userdata)
+    SculptSession *ss, SculptIdx from_v, SculptIdx to_v, bool is_duplicate, void *userdata)
 {
   BoundaryFloodFillData *data = userdata;
   SculptBoundary *boundary = data->boundary;
@@ -245,12 +246,12 @@ static bool boundary_floodfill_cb(
 static void sculpt_boundary_indices_init(SculptSession *ss,
                                          SculptBoundary *boundary,
                                          const bool init_boundary_distances,
-                                         const int initial_boundary_index)
+                                         const SculptIdx initial_boundary_index)
 {
 
   const int totvert = SCULPT_vertex_count_get(ss);
   boundary->vertices = MEM_malloc_arrayN(
-      BOUNDARY_INDICES_BLOCK_SIZE, sizeof(int), "boundary indices");
+      BOUNDARY_INDICES_BLOCK_SIZE, sizeof(SculptIdx), "boundary indices");
   if (init_boundary_distances) {
     boundary->distance = MEM_calloc_arrayN(totvert, sizeof(float), "boundary distances");
   }
@@ -302,7 +303,7 @@ static void sculpt_boundary_indices_init(SculptSession *ss,
  */
 static void sculpt_boundary_edit_data_init(SculptSession *ss,
                                            SculptBoundary *boundary,
-                                           const int initial_vertex,
+                                           const SculptIdx initial_vertex,
                                            const float radius)
 {
   const int totvert = SCULPT_vertex_count_get(ss);
@@ -317,8 +318,8 @@ static void sculpt_boundary_edit_data_init(SculptSession *ss,
     boundary->edit_info[i].num_propagation_steps = BOUNDARY_STEPS_NONE;
   }
 
-  GSQueue *current_iteration = BLI_gsqueue_new(sizeof(int));
-  GSQueue *next_iteration = BLI_gsqueue_new(sizeof(int));
+  GSQueue *current_iteration = BLI_gsqueue_new(sizeof(SculptIdx));
+  GSQueue *next_iteration = BLI_gsqueue_new(sizeof(SculptIdx));
 
   /* Initialized the first iteration with the vertices already in the boundary. This is propagation
    * step 0. */
@@ -496,7 +497,7 @@ static void sculpt_boundary_falloff_factor_init(SculptSession *ss,
  * return NULL if there is no boundary from the given vertex using the given radius. */
 SculptBoundary *SCULPT_boundary_data_init(Object *object,
                                           Brush *brush,
-                                          const int initial_vertex,
+                                          const SculptIdx initial_vertex,
                                           const float radius)
 {
   SculptSession *ss = object->sculpt;
@@ -508,7 +509,7 @@ SculptBoundary *SCULPT_boundary_data_init(Object *object,
   SCULPT_vertex_random_access_ensure(ss);
   SCULPT_boundary_info_ensure(object);
 
-  const int boundary_initial_vertex = sculpt_boundary_get_closest_boundary_vertex(
+  const SculptIdx boundary_initial_vertex = sculpt_boundary_get_closest_boundary_vertex(
       ss, initial_vertex, radius);
 
   if (boundary_initial_vertex == BOUNDARY_VERTEX_NONE) {
@@ -877,7 +878,7 @@ void SCULPT_do_boundary_brush(Sculpt *sd, Object *ob, PBVHNode **nodes, int totn
   const int symm_area = ss->cache->mirror_symmetry_pass;
   if (SCULPT_stroke_is_first_brush_step_of_symmetry_pass(ss->cache)) {
 
-    int initial_vertex;
+    SculptIdx initial_vertex;
     if (ss->cache->mirror_symmetry_pass == 0) {
       initial_vertex = SCULPT_active_vertex_get(ss);
     }

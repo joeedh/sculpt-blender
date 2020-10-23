@@ -62,6 +62,7 @@
 
 #include "bmesh.h"
 #include "bmesh_tools.h"
+#include "trimesh.h"
 #include "tools/bmesh_boolean.h"
 
 #include "paint_intern.h"

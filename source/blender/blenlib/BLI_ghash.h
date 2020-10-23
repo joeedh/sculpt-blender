@@ -53,6 +53,42 @@ typedef void *(*GHashValCopyFP)(const void *val);
 
 typedef struct GHash GHash;
 
+#define GHASH_USE_MODULO_BUCKETS
+/* WARNING! Keep in sync with ugly _gh_Entry in header!!! */
+typedef struct Entry {
+  struct Entry *next;
+
+  void *key;
+} Entry;
+
+typedef struct GHashEntry {
+  Entry e;
+
+  void *val;
+} GHashEntry;
+
+typedef Entry GSetEntry;
+
+#define GHASH_ENTRY_SIZE(_is_gset) ((_is_gset) ? sizeof(GSetEntry) : sizeof(GHashEntry))
+
+struct GHash {
+  GHashHashFP hashfp;
+  GHashCmpFP cmpfp;
+
+  Entry **buckets;
+  struct BLI_mempool *entrypool;
+  uint nbuckets;
+  uint limit_grow, limit_shrink;
+#ifdef GHASH_USE_MODULO_BUCKETS
+  uint cursize, size_min;
+#else
+  uint bucket_mask, bucket_bit, bucket_bit_min;
+#endif
+
+  uint nentries;
+  uint flag;
+};
+
 typedef struct GHashIterator {
   GHash *gh;
   struct Entry *curEntry;
@@ -131,7 +167,26 @@ GHashIterator *BLI_ghashIterator_new(GHash *gh) ATTR_MALLOC ATTR_WARN_UNUSED_RES
 
 void BLI_ghashIterator_init(GHashIterator *ghi, GHash *gh);
 void BLI_ghashIterator_free(GHashIterator *ghi);
-void BLI_ghashIterator_step(GHashIterator *ghi);
+//void BLI_ghashIterator_step(GHashIterator *ghi);
+
+/**
+* Steps the iterator to the next index.
+*
+* \param ghi: The iterator.
+*/
+BLI_INLINE void BLI_ghashIterator_step(GHashIterator *ghi)
+{
+  if (ghi->curEntry) {
+    ghi->curEntry = ghi->curEntry->next;
+    while (!ghi->curEntry) {
+      ghi->curBucket++;
+      if (ghi->curBucket == ghi->gh->nbuckets) {
+        break;
+      }
+      ghi->curEntry = ghi->gh->buckets[ghi->curBucket];
+    }
+  }
+}
 
 BLI_INLINE void *BLI_ghashIterator_getKey(GHashIterator *ghi) ATTR_WARN_UNUSED_RESULT;
 BLI_INLINE void *BLI_ghashIterator_getValue(GHashIterator *ghi) ATTR_WARN_UNUSED_RESULT;

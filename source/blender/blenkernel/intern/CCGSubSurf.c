@@ -1039,6 +1039,7 @@ CCGError ccgSubSurf_updateToFaces(CCGSubSurf *ss, int lvl, CCGFace **effectedF, 
  * and vertices, for multires displacements */
 CCGError ccgSubSurf_stitchFaces(CCGSubSurf *ss, int lvl, CCGFace **effectedF, int numEffectedF)
 {
+  return eCCGError_None;
   CCGVert **effectedV;
   CCGEdge **effectedE;
   int numEffectedV, numEffectedE, freeF;

@@ -23,6 +23,8 @@
  * \ingroup bke
  */
 
+#include "BKE_pbvh.h"
+
 #include "BLI_bitmap.h"
 #include "BLI_utildefines.h"
 #include "DNA_object_enums.h"
@@ -286,10 +288,10 @@ typedef struct SculptClothLengthConstraint {
    * point, position for a previous state). In that case, elem_index_a and elem_index_b should be
    * the same to avoid affecting two different vertices when solving the constraints.
    * *elem_position points to the position which is owned by the element. */
-  int elem_index_a;
+  SculptIdx elem_index_a;
   float *elem_position_a;
 
-  int elem_index_b;
+  SculptIdx elem_index_b;
   float *elem_position_b;
 
   float length;
@@ -342,7 +344,7 @@ typedef struct SculptPersistentBase {
 
 typedef struct SculptVertexInfo {
   /* Indexed by vertex, stores and ID of its topologically connected component. */
-  int *connected_component;
+  SculptIdx *connected_component;
 
   /* Indexed by base mesh vertex index, stores if that vertex is a boundary. */
   BLI_bitmap *boundary;
@@ -350,7 +352,7 @@ typedef struct SculptVertexInfo {
 
 typedef struct SculptBoundaryEditInfo {
   /* Vertex index from where the topology propagation reached this vertex. */
-  int original_vertex;
+  SculptIdx original_vertex;
 
   /* How many steps were needed to reach this vertex from the boundary. */
   int num_propagation_steps;
@@ -361,13 +363,13 @@ typedef struct SculptBoundaryEditInfo {
 
 /* Edge for drawing the boundary preview in the cursor. */
 typedef struct SculptBoundaryPreviewEdge {
-  int v1;
-  int v2;
+  SculptIdx v1;
+  SculptIdx v2;
 } SculptBoundaryPreviewEdge;
 
 typedef struct SculptBoundary {
   /* Vertex indices of the active boundary. */
-  int *vertices;
+  SculptIdx *vertices;
   int vertices_capacity;
   int num_vertices;
 
@@ -385,12 +387,12 @@ typedef struct SculptBoundary {
   bool forms_loop;
 
   /* Initial vertex in the boundary which is closest to the current sculpt active vertex. */
-  int initial_vertex;
+  SculptIdx initial_vertex;
 
   /* Vertex that at max_propagation_steps from the boundary and closest to the original active
    * vertex that was used to initialize the boundary. This is used as a reference to check how much
    * the deformation will go into the mesh and to calculate the strength of the brushes. */
-  int pivot_vertex;
+  SculptIdx pivot_vertex;
 
   /* Stores the initial positions of the pivot and boundary initial vertex as they may be deformed
    * during the brush action. This allows to use them as a reference positions and vectors for some
@@ -430,8 +432,7 @@ typedef struct SculptFakeNeighbors {
   float current_max_distance;
 
   /* Indexed by vertex, stores the vertex index of its fake neighbor if available. */
-  int *fake_neighbor_index;
-
+  SculptIdx *fake_neighbor_index;
 } SculptFakeNeighbors;
 
 /* Session data (mode-specific) */
@@ -470,6 +471,9 @@ typedef struct SculptSession {
    * Face Set ID. Positive IDs are visible, negative IDs are hidden. */
   int *face_sets;
 
+  struct TM_TriMesh *tm;
+  struct TriMeshLog *tm_log;
+
   /* BMesh for dynamic topology sculpting */
   struct BMesh *bm;
   int cd_vert_node_offset;
@@ -500,7 +504,7 @@ typedef struct SculptSession {
   struct FilterCache *filter_cache;
 
   /* Cursor data and active vertex for tools */
-  int active_vertex_index;
+  SculptIdx active_vertex_index;
 
   int active_face_index;
   int active_grid_index;
@@ -522,7 +526,7 @@ typedef struct SculptSession {
   struct Scene *scene;
 
   /* Dynamic mesh preview */
-  int *preview_vert_index_list;
+  SculptIdx *preview_vert_index_list;
   int preview_vert_index_count;
 
   /* Pose Brush Preview */
@@ -579,7 +583,6 @@ typedef struct SculptSession {
    * Set #Main.is_memfile_undo_flush_needed when enabling.
    */
   char needs_flush_to_id;
-
 } SculptSession;
 
 void BKE_sculptsession_free(struct Object *ob);
@@ -587,6 +590,10 @@ void BKE_sculptsession_free_deformMats(struct SculptSession *ss);
 void BKE_sculptsession_free_vwpaint_data(struct SculptSession *ss);
 void BKE_sculptsession_bm_to_me(struct Object *ob, bool reorder);
 void BKE_sculptsession_bm_to_me_for_render(struct Object *object);
+
+void BKE_sculptsession_tm_to_me(struct Object *ob, bool reorder);
+void BKE_sculptsession_tm_to_me_for_render(struct Object *object);
+
 
 /* Create new color layer on object if it doesn't have one and if experimental feature set has
  * sculpt vertex color enabled. Returns truth if new layer has been added, false otherwise. */

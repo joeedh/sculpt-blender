@@ -48,6 +48,7 @@
 #include "sculpt_intern.h"
 
 #include "bmesh.h"
+#include "trimesh.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -384,7 +385,7 @@ typedef struct PoseFloodFillData {
   int current_face_set;
   int next_face_set;
   int prev_face_set;
-  int next_vertex;
+  SculptIdx next_vertex;
 
   bool next_face_set_found;
 
@@ -406,7 +407,7 @@ typedef struct PoseFloodFillData {
   int fallback_count;
 
   /* Face Set FK mode. */
-  int *floodfill_it;
+  SculptIdx *floodfill_it;
   float *fk_weights;
   int initial_face_set;
   int masked_face_set_it;
@@ -415,7 +416,7 @@ typedef struct PoseFloodFillData {
 } PoseFloodFillData;
 
 static bool pose_topology_floodfill_cb(
-    SculptSession *ss, int UNUSED(from_v), int to_v, bool is_duplicate, void *userdata)
+    SculptSession *ss, SculptIdx UNUSED(from_v), SculptIdx to_v, bool is_duplicate, void *userdata)
 {
   PoseFloodFillData *data = userdata;
   const float *co = SCULPT_vertex_co_get(ss, to_v);
@@ -444,11 +445,11 @@ static bool pose_topology_floodfill_cb(
 }
 
 static bool pose_face_sets_floodfill_cb(
-    SculptSession *ss, int UNUSED(from_v), int to_v, bool is_duplicate, void *userdata)
+    SculptSession *ss, SculptIdx UNUSED(from_v), SculptIdx to_v, bool is_duplicate, void *userdata)
 {
   PoseFloodFillData *data = userdata;
 
-  const int index = to_v;
+  const SculptIdx index = to_v;
   bool visit_next = false;
 
   const float *co = SCULPT_vertex_co_get(ss, index);
@@ -683,7 +684,7 @@ static SculptPoseIKChain *pose_ik_chain_init_topology(Sculpt *sd,
   float next_chain_segment_target[3];
 
   int totvert = SCULPT_vertex_count_get(ss);
-  int nearest_vertex_index = SCULPT_nearest_vertex_get(sd, ob, initial_location, FLT_MAX, true);
+  SculptIdx nearest_vertex_index = SCULPT_nearest_vertex_get(sd, ob, initial_location, FLT_MAX, true);
 
   /* Init the buffers used to keep track of the changes in the pose factors as more segments are
    * added to the IK chain. */
@@ -768,7 +769,7 @@ static SculptPoseIKChain *pose_ik_chain_init_face_sets(
   int current_face_set = SCULPT_FACE_SET_NONE;
   int prev_face_set = SCULPT_FACE_SET_NONE;
 
-  int current_vertex = SCULPT_active_vertex_get(ss);
+  SculptIdx current_vertex = SCULPT_active_vertex_get(ss);
 
   for (int s = 0; s < ik_chain->tot_segments; s++) {
 
@@ -824,7 +825,7 @@ static SculptPoseIKChain *pose_ik_chain_init_face_sets(
 }
 
 static bool pose_face_sets_fk_find_masked_floodfill_cb(
-    SculptSession *ss, int from_v, int to_v, bool is_duplicate, void *userdata)
+    SculptSession *ss, SculptIdx from_v, SculptIdx to_v, bool is_duplicate, void *userdata)
 {
   PoseFloodFillData *data = userdata;
 
@@ -858,7 +859,7 @@ static bool pose_face_sets_fk_find_masked_floodfill_cb(
 }
 
 static bool pose_face_sets_fk_set_weights_floodfill_cb(
-    SculptSession *ss, int UNUSED(from_v), int to_v, bool UNUSED(is_duplicate), void *userdata)
+    SculptSession *ss, SculptIdx UNUSED(from_v), SculptIdx to_v, bool UNUSED(is_duplicate), void *userdata)
 {
   PoseFloodFillData *data = userdata;
   data->fk_weights[to_v] = 1.0f;
@@ -872,14 +873,14 @@ static SculptPoseIKChain *pose_ik_chain_init_face_sets_fk(
 
   SculptPoseIKChain *ik_chain = pose_ik_chain_new(1, totvert);
 
-  const int active_vertex = SCULPT_active_vertex_get(ss);
-  const int active_face_set = SCULPT_active_face_set_get(ss);
+  const SculptIdx active_vertex = SCULPT_active_vertex_get(ss);
+  const SculptIdx active_face_set = SCULPT_active_face_set_get(ss);
 
   SculptFloodFill flood;
   SCULPT_floodfill_init(ss, &flood);
   SCULPT_floodfill_add_initial(&flood, active_vertex);
   PoseFloodFillData fdata;
-  fdata.floodfill_it = MEM_calloc_arrayN(totvert, sizeof(int), "floodfill iteration");
+  fdata.floodfill_it = MEM_calloc_arrayN(totvert, sizeof(SculptIdx), "floodfill iteration");
   fdata.floodfill_it[active_vertex] = 1;
   fdata.initial_face_set = active_face_set;
   fdata.masked_face_set = SCULPT_FACE_SET_NONE;

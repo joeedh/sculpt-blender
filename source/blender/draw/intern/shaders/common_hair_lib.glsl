@@ -12,6 +12,13 @@
  */
 uniform int hairStrandsRes = 8;
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846     /* pi */
+#endif
+#ifndef M_2PI
+#define M_2PI 6.28318530717958647692    /* 2*pi */
+#endif
+
 /**
  * hairThicknessRes : Subdiv around the hair.
  * 1 - Wire Hair: Only one pixel thick, independent of view distance.
@@ -170,7 +177,7 @@ void hair_get_pos_tan_binor_time(bool is_persp,
 
   thickness = hair_shaperadius(hairRadShape, hairRadRoot, hairRadTip, time);
 
-  if (hairThicknessRes > 1) {
+  if (hairThicknessRes == 2) {
     thick_time = float(gl_VertexID % hairThicknessRes) / float(hairThicknessRes - 1);
     thick_time = thickness * (thick_time * 2.0 - 1.0);
 
@@ -179,6 +186,72 @@ void hair_get_pos_tan_binor_time(bool is_persp,
     float scale = 1.0 / length(mat3(invmodel_mat) * wbinor);
 
     wpos += wbinor * thick_time * scale;
+  } else if (hairThicknessRes > 2) { //cylinder
+    vec4 data2;
+    vec4 data3;
+    vec3 wpos2;
+    vec3 wtan2;
+
+    int id2 = time > 0.0 ? id - 1 : id;
+    data2 = texelFetch(hairPointBuffer, id2);
+
+    int id3 = data2.point_time > 0.0 ? id2 - 1 : id2;
+    data3 = texelFetch(hairPointBuffer, id3);
+
+    wtan = data.point_position - data2.point_position;
+    wtan2 = data2.point_position - data3.point_position;
+
+    wtan = -normalize(mat3(obmat) * wtan);
+    wtan2 = -normalize(mat3(obmat) * wtan2);
+
+    wpos2 = data2.point_position;
+    wpos2 = (obmat * vec4(wpos2, 1.0)).xyz;
+
+    //as a triangle strip, we alternative between current and next ring every other vert
+    if (gl_VertexID % 2 == 0) {
+      thickness = hair_shaperadius(hairRadShape, hairRadRoot, hairRadTip, data2.point_time);
+      wtan = wtan2;
+      time = data2.point_time;
+    }
+
+    thick_time = float((gl_VertexID/2) % (hairThicknessRes/2)) / float((hairThicknessRes/2) - 1);
+    thick_time *= M_2PI;
+
+    //build reference frame
+
+    //find compatible world axis
+    vec3 axis;
+    if (abs(wtan[0]) >= abs(wtan[1]) && abs(wtan[0]) >= abs(wtan[2])) {
+      axis = vec3(0.0, 1.0, 0.0);
+    } else if (abs(wtan[1]) >= abs(wtan[0]) && abs(wtan[1]) >= abs(wtan[2])) {
+      axis = vec3(0.0, 0.0, 1.0);
+    } else {
+      axis = vec3(1.0, 0.0, 0.0);
+    }
+
+    //make frame
+    vec3 dx = normalize(cross(axis, wtan));
+    vec3 dy = normalize(cross(wtan, dx));
+
+    float x = sin(thick_time);
+    float y = cos(thick_time);
+
+    wbinor = dx*x + dy*y;
+    wbinor = normalize(mat3(obmat) * wbinor);
+    
+
+    /* Take object scale into account.
+     * NOTE: This only works fine with uniform scaling. */
+    float scale = 1.0 / length(mat3(invmodel_mat) * wbinor);
+
+    x *= scale * thickness;
+    y *= scale * thickness;
+
+    if (gl_VertexID % 2 == 1) {
+      wpos += dx*x + dy*y;
+    } else {
+      wpos = wpos2 + (dx*x + dy*y);
+    }
   }
 }
 

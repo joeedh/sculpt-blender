@@ -624,6 +624,7 @@ void ED_region_do_draw(bContext *C, ARegion *region)
       SpaceLink *sl = area->spacedata.first;
 
       PointerRNA ptr;
+
       RNA_pointer_create(&screen->id, &RNA_Space, sl, &ptr);
 
       wmMsgSubscribeValue msg_sub_value_region_tag_redraw = {

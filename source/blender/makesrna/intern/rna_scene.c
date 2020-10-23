@@ -5781,6 +5781,7 @@ static void rna_def_scene_render_data(BlenderRNA *brna)
   static const EnumPropertyItem hair_shape_type_items[] = {
       {SCE_HAIR_SHAPE_STRAND, "STRAND", 0, "Strand", ""},
       {SCE_HAIR_SHAPE_STRIP, "STRIP", 0, "Strip", ""},
+      {SCE_HAIR_SHAPE_CYLINDER, "CYLINDER", 0, "Cylinder", ""},
       {0, NULL, 0, NULL, NULL},
   };
 
@@ -6000,6 +6001,11 @@ static void rna_def_scene_render_data(BlenderRNA *brna)
   prop = RNA_def_property(srna, "hair_subdiv", PROP_INT, PROP_NONE);
   RNA_def_property_range(prop, 0, 3);
   RNA_def_property_ui_text(prop, "Additional Subdiv", "Additional subdivision along the hair");
+  RNA_def_property_update(prop, NC_SCENE | ND_RENDER_OPTIONS, "rna_Scene_glsl_update");
+
+  prop = RNA_def_property(srna, "hair_cyl_res", PROP_INT, PROP_NONE);
+  RNA_def_property_range(prop, 0, 64);
+  RNA_def_property_ui_text(prop, "Resolution", "Hair Cylinder Resolution");
   RNA_def_property_update(prop, NC_SCENE | ND_RENDER_OPTIONS, "rna_Scene_glsl_update");
 
   /* Performance */

@@ -45,6 +45,22 @@ int orient2d(const mpq2 &a, const mpq2 &b, const mpq2 &c)
   return sgn(det);
 }
 
+extern "C" int orient2d_exact(const float v1[2],  const float v2[2], const float v3[2]) {
+  mpq2 a(v1[0], v1[1]);
+  mpq2 b(v2[0], v2[1]);
+  mpq2 c(v3[0], v3[1]);
+
+  return orient2d(a, b, c);
+}
+
+extern "C" int dorient2d_exact(const double v1[2],  const double v2[2], const double v3[2]) {
+  mpq2 a(v1[0], v1[1]);
+  mpq2 b(v2[0], v2[1]);
+  mpq2 c(v3[0], v3[1]);
+
+  return orient2d(a, b, c);
+}
+
 /**
    Return +1 if d is in the oriented circle through a, b, and c.
  * The oriented circle goes CCW through a, b, and c.

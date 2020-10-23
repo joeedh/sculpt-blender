@@ -300,6 +300,70 @@ template<typename T> class Span {
     return counter;
   }
 
+#ifdef _clang__
+  class iterator {
+   private:
+    int i_;
+
+   public:
+    explicit iterator(int i_ = 0) : i_(i_)
+    {
+    }
+    typedef T value_type;
+    typedef std::ptrdiff_t difference_type;
+    typedef T *pointer_type;
+    typedef T &reference_type;
+
+    iterator &operator++()
+    {
+      i_++;
+
+      return *this;
+    }
+
+    iterator operator++(int) const {
+      iterator ret = *this;
+
+      ++(*this);
+
+      return ret;
+    }
+
+    bool operator==(iterator other)
+    {
+      return i_ == other.i_;
+    }
+    bool operator!=(iterator other)
+    {
+      return i_ != other.i_;
+    }
+
+    iterator begin()
+    {
+      return iterator(span, 0);
+    }
+
+    iterator end()
+    {
+      return iterator(span, span.size_);
+    }
+
+    T &operator*() const
+    {
+      return data_[i_];
+    }
+  };
+
+  friend class iterator;
+  const iterator first() const
+  {
+    return iterator(0);
+  }
+
+  const iterator last() const {
+    return iterator(size_ - 1);
+  }
+#else
   /**
    * Return a reference to the first element in the array. This invokes undefined behavior when the
    * array is empty.
@@ -319,6 +383,7 @@ template<typename T> class Span {
     BLI_assert(size_ > 0);
     return data_[size_ - 1];
   }
+#endif
 
   /**
    * Returns the element at the given index. If the index is out of range, return the fallback

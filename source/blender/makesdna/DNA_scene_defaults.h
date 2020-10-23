@@ -141,6 +141,7 @@
     .unit_line_thickness = 1.0f, \
  \
     .ffcodecdata = _DNA_DEFAULT_FFMpegCodecData, \
+    .hair_cyl_res = 6, \
   }
 
 #define _DNA_DEFAULT_AudioData \

@@ -58,11 +58,17 @@
 #include "RNA_define.h"
 
 #include "bmesh.h"
+#include "trimesh.h"
+
+#ifdef PROXY_ADVANCED
+#include "BKE_DerivedMesh.h"
+#include "../../blenkernel/intern/pbvh_intern.h"
+#endif
 
 #include <math.h>
 #include <stdlib.h>
 
-void SCULPT_neighbor_coords_average_interior(SculptSession *ss, float result[3], int index)
+void SCULPT_neighbor_coords_average_interior(SculptSession *ss, float result[3], SculptIdx index)
 {
   float avg[3] = {0.0f, 0.0f, 0.0f};
   int total = 0;
@@ -149,10 +155,57 @@ void SCULPT_bmesh_four_neighbor_average(float avg[3], float direction[3], BMVert
   }
 }
 
+/* For bmesh: Average surrounding verts based on an orthogonality measure.
+* Naturally converges to a quad-like structure. */
+void SCULPT_trimesh_four_neighbor_average(float avg[3], float direction[3], TMVert *v)
+{
+
+  float avg_co[3] = {0.0f, 0.0f, 0.0f};
+  float tot_co = 0.0f;
+
+  for (int i=0; i<v->edges.length; i++) {
+    TMEdge *e = v->edges.items[i];
+
+    if (TM_edge_is_boundary(e)) {
+      copy_v3_v3(avg, v->co);
+      return;
+    }
+
+    TMVert *v_other = (e->v1 == v) ? e->v2 : e->v1;
+    float vec[3];
+    sub_v3_v3v3(vec, v_other->co, v->co);
+    madd_v3_v3fl(vec, v->no, -dot_v3v3(vec, v->no));
+    normalize_v3(vec);
+
+    /* fac is a measure of how orthogonal or parallel the edge is
+    * relative to the direction. */
+    float fac = dot_v3v3(vec, direction);
+    fac = fac * fac - 0.5f;
+    fac *= fac;
+    madd_v3_v3fl(avg_co, v_other->co, fac);
+    tot_co += fac;
+  }
+
+  /* In case vert has no Edge s. */
+  if (tot_co > 0.0f) {
+    mul_v3_v3fl(avg, avg_co, 1.0f / tot_co);
+
+    /* Preserve volume. */
+    float vec[3];
+    sub_v3_v3(avg, v->co);
+    mul_v3_v3fl(vec, v->no, dot_v3v3(avg, v->no));
+    sub_v3_v3(avg, vec);
+    add_v3_v3(avg, v->co);
+  }
+  else {
+    zero_v3(avg);
+  }
+}
+
 /* Generic functions for laplacian smoothing. These functions do not take boundary vertices into
  * account. */
 
-void SCULPT_neighbor_coords_average(SculptSession *ss, float result[3], int index)
+void SCULPT_neighbor_coords_average(SculptSession *ss, float result[3], SculptIdx index)
 {
   float avg[3] = {0.0f, 0.0f, 0.0f};
   int total = 0;
@@ -172,7 +225,7 @@ void SCULPT_neighbor_coords_average(SculptSession *ss, float result[3], int inde
   }
 }
 
-float SCULPT_neighbor_mask_average(SculptSession *ss, int index)
+float SCULPT_neighbor_mask_average(SculptSession *ss, SculptIdx index)
 {
   float avg = 0.0f;
   int total = 0;
@@ -190,7 +243,7 @@ float SCULPT_neighbor_mask_average(SculptSession *ss, int index)
   return SCULPT_vertex_mask_get(ss, index);
 }
 
-void SCULPT_neighbor_color_average(SculptSession *ss, float result[4], int index)
+void SCULPT_neighbor_color_average(SculptSession *ss, float result[4], SculptIdx index)
 {
   float avg[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   int total = 0;
@@ -289,6 +342,96 @@ static void SCULPT_enhance_details_brush(Sculpt *sd,
   BLI_task_parallel_range(0, totnode, &data, do_enhance_details_brush_task_cb_ex, &settings);
 }
 
+
+#ifdef PROXY_ADVANCED
+static void do_smooth_brush_task_cb_ex(void *__restrict userdata,
+                                       const int n,
+                                       const TaskParallelTLS *__restrict tls)
+{
+  SculptThreadedTaskData *data = userdata;
+  SculptSession *ss = data->ob->sculpt;
+  Sculpt *sd = data->sd;
+  const Brush *brush = data->brush;
+  const bool smooth_mask = data->smooth_mask;
+  float bstrength = data->strength;
+
+  PBVHVertexIter vd;
+
+  CLAMP(bstrength, 0.0f, 1.0f);
+
+  SculptBrushTest test;
+  SculptBrushTestFn sculpt_brush_test_sq_fn = SCULPT_brush_test_init_with_falloff_shape(
+      ss, &test, data->brush->falloff_shape);
+
+  const int thread_id = BLI_task_parallel_thread_id(tls);
+
+  PBVHNode **nodes = data->nodes;
+  ProxyVertArray *p = &nodes[n]->proxyverts;
+
+  for (int i = 0; i < p->size; i++) {
+    float co[3] = {0.0f, 0.0f, 0.0f};
+    int ni = 0;
+
+#  if 1
+    if (sculpt_brush_test_sq_fn(&test, p->co[i])) {
+      const float fade = bstrength * SCULPT_brush_strength_factor(
+                                         ss,
+                                         brush,
+                                         p->co[i],
+                                         sqrtf(test.dist),
+                                         p->no[i],
+                                         p->fno[i],
+                                         smooth_mask ? 0.0f : (p->mask ? p->mask[i] : 0.0f),
+                                         p->index[i],
+                                         thread_id);
+#  else
+    if (1) {
+      const float fade = 1.0;
+#  endif
+
+      while (/*ni < MAX_PROXY_NEIGHBORS &&*/ p->neighbors[i][ni].node >= 0) {
+        ProxyKey *key = p->neighbors[i] + ni;
+        PBVHNode *n2 = ss->pbvh->nodes + key->node;
+
+        // printf("%d %d %d %p\n", key->node, key->pindex, ss->pbvh->totnode, n2);
+        float *co2 = n2->proxyverts.co[key->pindex];
+
+        co[0] += co2[0];
+        co[1] += co2[1];
+        co[2] += co2[2];
+
+        //add_v3_v3(co, n2->proxyverts.co[key->pindex]);
+        ni++;
+      }
+
+      // printf("ni %d\n", ni);
+
+      if (ni > 2) {
+        float mul = 1.0 / (float) ni;
+
+        co[0] *= mul;
+        co[1] *= mul;
+        co[2] *= mul;
+       // mul_v3_fl(co, 1.0f / (float)ni);
+      }
+      else {
+        co[0] = p->co[i][0];
+        co[1] = p->co[i][1];
+        co[2] = p->co[i][2];
+        //copy_v3_v3(co, p->co[i]);
+        
+      }
+
+      // printf("%f %f %f   ", co[0], co[1], co[2]);
+      p->co[i][0] += (co[0] - p->co[i][0]) * fade;
+      p->co[i][1] += (co[1] - p->co[i][1]) * fade;
+      p->co[i][2] += (co[2] - p->co[i][2]) * fade;
+      //interp_v3_v3v3(p->co[i], p->co[i], co, fade);
+    }
+  }
+}
+
+#else
 static void do_smooth_brush_task_cb_ex(void *__restrict userdata,
                                        const int n,
                                        const TaskParallelTLS *__restrict tls)
@@ -343,6 +486,8 @@ static void do_smooth_brush_task_cb_ex(void *__restrict userdata,
   }
   BKE_pbvh_vertex_iter_end;
 }
+#endif
+
 
 void SCULPT_smooth(Sculpt *sd,
                    Object *ob,
@@ -370,9 +515,18 @@ void SCULPT_smooth(Sculpt *sd,
     return;
   }
 
-  SCULPT_vertex_random_access_ensure(ss);
+  if (type != PBVH_TRIMESH) {
+    SCULPT_vertex_random_access_ensure(ss);
+  }
+
   SCULPT_boundary_info_ensure(ob);
 
+#ifdef PROXY_ADVANCED
+  int datamask = PV_CO | PV_NEIGHBORS | PV_NO | PV_INDEX | PV_MASK;
+  BKE_pbvh_ensure_proxyarrays(ss, ss->pbvh, datamask);
+
+  BKE_pbvh_load_proxyarrays(ss->pbvh, nodes, totnode, PV_CO | PV_NO | PV_MASK);
+#endif
   for (iteration = 0; iteration <= count; iteration++) {
     const float strength = (iteration != count) ? 1.0f : last;
 
@@ -388,6 +542,10 @@ void SCULPT_smooth(Sculpt *sd,
     TaskParallelSettings settings;
     BKE_pbvh_parallel_range_settings(&settings, true, totnode);
     BLI_task_parallel_range(0, totnode, &data, do_smooth_brush_task_cb_ex, &settings);
+
+#ifdef PROXY_ADVANCED
+    BKE_pbvh_gather_proxyarray(ss->pbvh, nodes, totnode);
+#endif
   }
 }
 
@@ -411,7 +569,7 @@ void SCULPT_surface_smooth_laplacian_step(SculptSession *ss,
                                           float *disp,
                                           const float co[3],
                                           float (*laplacian_disp)[3],
-                                          const int v_index,
+                                          const SculptIdx v_index,
                                           const float origco[3],
                                           const float alpha)
 {
@@ -430,7 +588,7 @@ void SCULPT_surface_smooth_laplacian_step(SculptSession *ss,
 void SCULPT_surface_smooth_displace_step(SculptSession *ss,
                                          float *co,
                                          float (*laplacian_disp)[3],
-                                         const int v_index,
+                                         const SculptIdx v_index,
                                          const float beta,
                                          const float fade)
 {

@@ -39,6 +39,7 @@
 #include "BLI_math.h"
 #include "BLI_math_color_blend.h"
 #include "BLI_mempool.h"
+#include "BLI_threadsafe_mempool.h"
 #include "BLI_path_util.h"
 #include "BLI_string.h"
 #include "BLI_string_utils.h"
@@ -58,6 +59,7 @@
 #include "BLO_read_write.h"
 
 #include "bmesh.h"
+#include "trimesh.h"
 
 #include "CLG_log.h"
 
@@ -3454,25 +3456,25 @@ void CustomData_bmesh_do_versions_update_active_layers(CustomData *fdata, Custom
   }
 }
 
-void CustomData_bmesh_init_pool(CustomData *data, int totelem, const char htype)
+void CustomData_trimesh_init_pool(TM_TriMesh *tm, CustomData *data, int totelem, const char htype)
 {
   int chunksize;
 
   /* Dispose old pools before calling here to avoid leaks */
-  BLI_assert(data->pool == NULL);
+  BLI_assert(data->tpool == NULL);
 
   switch (htype) {
-    case BM_VERT:
-      chunksize = bm_mesh_chunksize_default.totvert;
+    case TM_VERTEX:
+      chunksize = 512;
       break;
-    case BM_EDGE:
-      chunksize = bm_mesh_chunksize_default.totedge;
+    case TM_EDGE:
+      chunksize = 1024;
       break;
-    case BM_LOOP:
-      chunksize = bm_mesh_chunksize_default.totloop;
+    case TM_LOOP:
+      chunksize = 2048;
       break;
-    case BM_FACE:
-      chunksize = bm_mesh_chunksize_default.totface;
+    case TM_TRI:
+      chunksize = 512;
       break;
     default:
       BLI_assert(0);
@@ -3482,8 +3484,135 @@ void CustomData_bmesh_init_pool(CustomData *data, int totelem, const char htype)
 
   /* If there are no layers, no pool is needed just yet */
   if (data->totlayer) {
-    data->pool = BLI_mempool_create(data->totsize, totelem, chunksize, BLI_MEMPOOL_NOP);
+    data->tpool = BLI_safepool_create(data->totsize, chunksize, tm->maxthread);
   }
+}
+
+//XXX original code got axed in. . .copy/paste error? anyway, restore it from GIT later
+void CustomData_bmesh_init_pool(CustomData *data, int totelem, const char htype)
+{
+  int chunksize;
+
+  /* Dispose old pools before calling here to avoid leaks */
+  BLI_assert(data->tpool == NULL);
+
+  switch (htype) {
+  case BM_VERT:
+    chunksize = 512;
+    break;
+  case BM_EDGE:
+    chunksize = 1024;
+    break;
+  case BM_LOOP:
+    chunksize = 2048;
+    break;
+  case BM_FACE:
+    chunksize = 512;
+    break;
+  default:
+    BLI_assert(0);
+    chunksize = 512;
+    break;
+  }
+
+  /* If there are no layers, no pool is needed just yet */
+  if (data->totlayer) {
+    data->tpool = BLI_safepool_create(data->totsize, chunksize, 1);
+  }
+}
+
+bool CustomData_trimesh_merge(const CustomData *source,
+  CustomData *dest,
+  CustomDataMask mask,
+  eCDAllocType alloctype,
+  TM_TriMesh *bm,
+  const char htype)
+{
+  TMElement *h;
+  TM_TriMeshIter iter;
+  CustomData destold;
+  void *tmp;
+  int iter_type;
+  int totelem;
+
+  if (CustomData_number_of_layers_typemask(source, mask) == 0) {
+    return false;
+  }
+
+  /* copy old layer description so that old data can be copied into
+  * the new allocation */
+  destold = *dest;
+  if (destold.layers) {
+    destold.layers = MEM_dupallocN(destold.layers);
+  }
+
+  if (CustomData_merge(source, dest, mask, alloctype, 0) == false) {
+    if (destold.layers) {
+      MEM_freeN(destold.layers);
+    }
+    return false;
+  }
+
+  switch (htype) {
+  case TM_VERTEX:
+    iter_type = TM_VERTS_OF_MESH;
+    totelem = bm->totvert;
+    break;
+  case TM_EDGE:
+    iter_type = TM_EDGES_OF_MESH;
+    totelem = bm->totedge;
+    break;
+  case BM_LOOP:
+    iter_type = -1;
+    totelem = bm->tottri*3;
+    break;
+  case BM_FACE:
+    iter_type = TM_TRIS_OF_MESH;
+    totelem = bm->tottri;
+    break;
+  default: /* should never happen */
+    BLI_assert(!"invalid type given");
+    iter_type = TM_VERTS_OF_MESH;
+    totelem = bm->totvert;
+    break;
+  }
+
+  dest->tpool = NULL;
+  CustomData_trimesh_init_pool(bm, dest, totelem, htype);
+
+  if (iter_type != -1) {
+    /*ensure all current elements follow new customdata layout*/
+
+    TM_ITER_MESH (h, &iter, bm, iter_type) {
+      tmp = NULL;
+      CustomData_bmesh_copy_data(&destold, dest, h->customdata, &tmp);
+      CustomData_bmesh_free_block(&destold, &h->customdata);
+      h->customdata = tmp;
+    }
+  }
+  else {
+    TMFace *f;
+    
+    /*ensure all current elements follow new customdata layout*/
+    TM_ITER_MESH (f, &iter, bm, BM_FACES_OF_MESH) {
+      for (int i=0; i<3; i++) {
+        TMLoopData *l = TM_GET_TRI_LOOP(f, i);
+
+        tmp = NULL;
+        CustomData_bmesh_copy_data(&destold, dest, l->customdata, &tmp);
+        CustomData_bmesh_free_block(&destold, &l->customdata);
+        l->customdata = tmp;
+      }
+    }
+  }
+
+  if (destold.tpool) {
+    BLI_safepool_destroy(destold.tpool);
+  }
+  if (destold.layers) {
+    MEM_freeN(destold.layers);
+  }
+  return true;
 }
 
 bool CustomData_bmesh_merge(const CustomData *source,
@@ -3538,7 +3667,7 @@ bool CustomData_bmesh_merge(const CustomData *source,
       break;
   }
 
-  dest->pool = NULL;
+  dest->tpool = NULL;
   CustomData_bmesh_init_pool(dest, totelem, htype);
 
   if (iter_type != BM_LOOPS_OF_FACE) {
@@ -3569,8 +3698,8 @@ bool CustomData_bmesh_merge(const CustomData *source,
     }
   }
 
-  if (destold.pool) {
-    BLI_mempool_destroy(destold.pool);
+  if (destold.tpool) {
+    BLI_safepool_destroy(destold.tpool);
   }
   if (destold.layers) {
     MEM_freeN(destold.layers);
@@ -3596,7 +3725,7 @@ void CustomData_bmesh_free_block(CustomData *data, void **block)
   }
 
   if (data->totsize) {
-    BLI_mempool_free(data->pool, *block);
+    BLI_safepool_free(data->tpool, *block);
   }
 
   *block = NULL;
@@ -3631,7 +3760,7 @@ static void CustomData_bmesh_alloc_block(CustomData *data, void **block)
   }
 
   if (data->totsize > 0) {
-    *block = BLI_mempool_alloc(data->pool);
+    *block = BLI_safepool_alloc(data->tpool);
   }
   else {
     *block = NULL;

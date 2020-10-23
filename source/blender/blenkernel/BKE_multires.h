@@ -95,6 +95,8 @@ struct Mesh *BKE_multires_create_mesh(struct Depsgraph *depsgraph,
                                       struct Object *object,
                                       struct MultiresModifierData *mmd);
 
+void BKE_multires_bmesh_space_set(struct Object *ob, struct BMesh *bm, int mode);
+
 /* Get coordinates of a deformed base mesh which is an input to the given multires modifier.
  * NOTE: The modifiers will be re-evaluated. */
 float (*BKE_multires_create_deformed_base_mesh_vert_coords(struct Depsgraph *depsgraph,

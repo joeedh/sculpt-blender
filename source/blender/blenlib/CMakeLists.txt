@@ -27,6 +27,7 @@ set(INC
   ../../../intern/guardedalloc
   ../../../intern/numaapi/include
   ../../../extern/wcwidth
+  ../../../extern
 )
 
 set(INC_SYS
@@ -42,6 +43,7 @@ set(SRC
   intern/BLI_dial_2d.c
   intern/BLI_dynstr.c
   intern/BLI_filelist.c
+  intern/hashmap.cc
   intern/BLI_ghash.c
   intern/BLI_ghash_utils.c
   intern/BLI_heap.c
@@ -52,6 +54,7 @@ set(SRC
   intern/BLI_linklist_lockfree.c
   intern/BLI_memarena.c
   intern/BLI_memblock.c
+  intern/BLI_threadsafe_mempool.c
   intern/BLI_memiter.c
   intern/BLI_mempool.c
   intern/BLI_timer.c
@@ -133,6 +136,7 @@ set(SRC
   intern/task_pool.cc
   intern/task_range.cc
   intern/task_scheduler.cc
+  intern/hashmap_gen.h
   intern/threads.cc
   intern/time.c
   intern/timecode.c
@@ -295,6 +299,7 @@ set(SRC
   BLI_winstuff.h
   PIL_time.h
   PIL_time_utildefines.h
+  BLI_hashmap.h
 )
 
 set(LIB
@@ -372,6 +377,15 @@ set_source_files_properties(
   PROPERTIES HEADER_FILE_ONLY TRUE
 )
 
+#hashmap needs /Ob2 which is only used in Release, not RelWithDebInfo
+if(MSVC)
+  set(_findtemp "")
+  string(REPLACE "/Ob1" "/Ob3" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
+  string(REPLACE "/Ob1" "/Ob3" CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO}")
+  set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} /GS- ")
+  set(CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} /GS- ")
+endif()
+
 blender_add_lib(bf_blenlib "${SRC}" "${INC}" "${INC_SYS}" "${LIB}")
 
 if(WITH_GTESTS)
@@ -425,6 +439,7 @@ if(WITH_GTESTS)
 
     tests/BLI_exception_safety_test_utils.hh
   )
+
   set(TEST_INC
     ../imbuf
   )

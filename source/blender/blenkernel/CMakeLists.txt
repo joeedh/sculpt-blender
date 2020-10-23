@@ -25,6 +25,7 @@ set(INC
   ../blenloader
   ../blentranslation
   ../bmesh
+  ../trimesh
   ../depsgraph
   ../draw
   ../functions
@@ -207,6 +208,7 @@ set(SRC
   intern/particle_distribute.c
   intern/particle_system.c
   intern/pbvh.c
+  intern/pbvh_trimesh.c
   intern/pbvh_bmesh.c
   intern/pointcache.c
   intern/pointcloud.c
@@ -422,6 +424,7 @@ set(LIB
   bf_blenloader
   bf_blentranslation
   bf_bmesh
+  bf_trimesh
   bf_depsgraph
   bf_draw
   bf_functions
