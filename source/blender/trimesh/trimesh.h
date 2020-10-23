@@ -445,7 +445,7 @@ BLI_INLINE TMFace *TM_nextTriInEdge(TMEdge *e, TMFace *t)
   int i = TM_edgeTriIndex(e, t);
 
   if (i < 0) {
-    fprintf(stderr, "Evil!\n");
+    fprintf(stderr, "Error in %s\n", __func__);
     // return NULL;
     return t;
   }
@@ -460,7 +460,7 @@ BLI_INLINE TMFace *TM_prevTriInEdge(TMEdge *e, TMFace *t)
   int i = TM_edgeTriIndex(e, t);
 
   if (i < 0) {
-    fprintf(stderr, "Evil!\n");
+    fprintf(stderr, "Error in %s\n", __func__);
     // return NULL;
     return t;
   }
@@ -508,7 +508,7 @@ BLI_INLINE TMVert *TM_getAdjVert(TMEdge *e, TMFace *t)
     return t->v2;
   }
 
-  fprintf(stderr, "evil! %s:%i\n", __FILE__, __LINE__);
+  fprintf(stderr, "Error in %s\n", __func__);
   return t->v1;  // NULL?
 }
 

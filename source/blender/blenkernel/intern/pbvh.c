@@ -1386,6 +1386,7 @@ static void pbvh_update_draw_buffers(PBVH *pbvh, PBVHNode **nodes, int totnode, 
     /* Free buffers uses OpenGL, so not in parallel. */
     for (int n = 0; n < totnode; n++) {
       PBVHNode *node = nodes[n];
+
       if (node->flag & PBVH_Delete) {
         printf("corrupted node! %p\n", node);
         return;

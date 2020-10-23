@@ -46,6 +46,9 @@
 
 #include <assert.h>
 
+#define DYNTOPO_TIME_LIMIT 0.015
+#define DYNTOPO_RUN_INTERVAL 0.01
+
 struct EdgeQueueContext;
 static bool pbvh_trimesh_subdivide_long_edges(struct EdgeQueueContext *eq_ctx, PBVH *bvh);
 
@@ -984,7 +987,7 @@ static float calc_weighted_edge(EdgeQueueContext *eq_ctx, TMEdge *e)
   float n = ((float)e->v1->edges.length + (float)e->v2->edges.length) * 0.5f;
   n = MAX2(n - 5.0f, 1.0f);
 
-  return l*powf(n, 5.0f);
+  return l * powf(n, 5.0f);
 }
 
 static void long_edge_queue_edge_add(EdgeQueueContext *eq_ctx, TMEdge *e)
@@ -1473,7 +1476,7 @@ static bool long_edge_queue_create2(PBVH *pbvh,
     BLI_parallel_range_settings_defaults(&settings);
     settings.use_threading = false;
 
-    //printf("Total islands: %d\n", BLI_array_len(islands));
+    // printf("Total islands: %d\n", BLI_array_len(islands));
     BLI_task_parallel_range(0, BLI_array_len(islands), &tdata, longqueue_job, &settings);
   }
 
@@ -1708,11 +1711,17 @@ static void pbvh_trimesh_split_edge(EdgeQueueContext *eq_ctx, PBVH *bvh, TMEdge 
 static bool pbvh_trimesh_subdivide_long_edges(EdgeQueueContext *eq_ctx, PBVH *bvh)
 {
   bool any_subdivided = false;
+  double time = PIL_check_seconds_timer();
 
   while (!BLI_heapsimple_is_empty(eq_ctx->q->heap)) {
     TMVert **pair = BLI_heapsimple_pop_min(eq_ctx->q->heap);
     TMVert *v1 = pair[0], *v2 = pair[1];
     TMEdge *e;
+
+    // zbrushcore mini seems to do this
+    if (PIL_check_seconds_timer() - time > DYNTOPO_TIME_LIMIT) {
+      break;
+    }
 
     BLI_mempool_free(eq_ctx->pool, pair);
     pair = NULL;
@@ -1993,9 +2002,14 @@ static bool pbvh_trimesh_collapse_short_edges(EdgeQueueContext *eq_ctx,
 #if 1
   while (!BLI_heapsimple_is_empty(eq_ctx->q->heap)) {
     step++;
-    //if (step++ > 100) {
+    // if (step++ > 100) {
     //  break;
     //}
+
+    // ZBrush mini core seems to do this
+    if (PIL_check_seconds_timer() - time > DYNTOPO_TIME_LIMIT) {
+      break;
+    }
     TMVert **pair = BLI_heapsimple_pop_min(eq_ctx->q->heap);
 
 #else
@@ -2546,8 +2560,9 @@ bool BKE_pbvh_trimesh_update_topology(PBVH *bvh,
                                       int sym_axis)
 {
 
-  if (PIL_check_seconds_timer() - last_update_time[sym_axis] < 0.025) {
+  if (PIL_check_seconds_timer() - last_update_time[sym_axis] < DYNTOPO_RUN_INTERVAL) {
     return false;
+    // return false;
   }
 
   last_update_time[sym_axis] = PIL_check_seconds_timer();
@@ -2615,14 +2630,6 @@ bool BKE_pbvh_trimesh_update_topology(PBVH *bvh,
     //}
   }
 
-  /* Unmark nodes */
-  for (int n = 0; n < bvh->totnode; n++) {
-    PBVHNode *node = &bvh->nodes[n];
-
-    if (node->flag & PBVH_Leaf && node->flag & PBVH_UpdateTopology) {
-      node->flag &= ~PBVH_UpdateTopology;
-    }
-  }
   BLI_buffer_free(&deleted_faces);
 
 #ifdef USE_VERIFY
@@ -2635,6 +2642,32 @@ bool BKE_pbvh_trimesh_update_topology(PBVH *bvh,
 
     TM_mesh_elem_index_ensure(bvh->tm, TM_VERTEX | TM_TRI);
     TM_mesh_elem_table_ensure(bvh->tm, TM_VERTEX | TM_TRI);
+  }
+
+  if (modified) {
+    for (int i = 0; i < bvh->totnode; i++) {
+      PBVHNode *node = bvh->nodes + i;
+      
+      if ((node->flag & PBVH_Leaf) && (node->flag & PBVH_UpdateTopology) &&
+          !(node->flag & PBVH_FullyHidden)) {
+        /* Recursively split nodes that have gotten too many
+         * elements */
+        pbvh_trimesh_node_limit_ensure(bvh, i);
+      }
+
+      if ((node->flag & PBVH_Leaf) && (node->flag & PBVH_UpdateTopology)) {
+        node->flag &= ~PBVH_UpdateTopology;
+      }
+    }
+  }
+  else {  // still unmark nodes
+    for (int i = 0; i < bvh->totnode; i++) {
+      PBVHNode *node = bvh->nodes + i;
+
+      if ((node->flag & PBVH_Leaf) && (node->flag & PBVH_UpdateTopology)) {
+        node->flag &= ~PBVH_UpdateTopology;
+      }
+    }
   }
 
   return modified;
@@ -2863,7 +2896,7 @@ void BKE_pbvh_trimesh_after_stroke(PBVH *bvh)
     n->tm_subtree_tottri = 0;
   }
 
-#if 1
+#if 0
 
   for (int i = 0; i < bvh->totnode; i++) {
     PBVHNode *n = bvh->nodes + i;
