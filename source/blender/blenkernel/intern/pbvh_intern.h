@@ -112,8 +112,8 @@ struct PBVHNode {
   /* trimesh */
   GSet *tm_faces;
 
-  TMElemSet *tm_unique_verts;
-  TMElemSet *tm_other_verts;
+  TableGSet *tm_unique_verts;
+  TableGSet *tm_other_verts;
   float (*tm_orco)[3];
   int (*tm_ortri)[3];
   int tm_tot_ortri;

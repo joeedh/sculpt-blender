@@ -1468,8 +1468,15 @@ void BKE_sculptsession_free(Object *ob)
     SculptSession *ss = ob->sculpt;
 
     if (ss->tm) {
+#ifdef WITH_TRIMESH
       BKE_sculptsession_tm_to_me(ob, true);
       TMesh_free(ss->tm);
+      ss->tm = NULL;
+#else
+      BKE_sculptsession_bm_to_me(ob, true);
+      BM_mesh_free(ss->bm);
+      ss->bm = NULL;
+#endif
     }
 
     sculptsession_free_pbvh(ob);
@@ -2044,12 +2051,22 @@ void BKE_sculpt_sync_face_set_visibility(struct Mesh *mesh, struct SubdivCCG *su
 static PBVH *build_pbvh_for_dynamic_topology(Object *ob)
 {
   PBVH *pbvh = BKE_pbvh_new();
+
+#ifdef WITH_TRIMESH
   BKE_pbvh_build_trimesh(pbvh,
                        ob->sculpt->tm,
                        ob->sculpt->bm_smooth_shading,
                        ob->sculpt->tm_log,
                        ob->sculpt->cd_vert_node_offset,
                        ob->sculpt->cd_face_node_offset);
+#else
+  BKE_pbvh_build_bmesh(pbvh,
+                         ob->sculpt->bm,
+                         ob->sculpt->bm_smooth_shading,
+                         ob->sculpt->bm_log,
+                         ob->sculpt->cd_vert_node_offset,
+                         ob->sculpt->cd_face_node_offset);
+#endif
   pbvh_show_mask_set(pbvh, ob->sculpt->show_mask);
   pbvh_show_face_sets_set(pbvh, false);
   return pbvh;
@@ -2144,7 +2161,7 @@ PBVH *BKE_sculpt_object_pbvh_ensure(Depsgraph *depsgraph, Object *ob)
     return pbvh;
   }
 
-  if (ob->sculpt->tm != NULL) {
+  if (ob->sculpt->tm != NULL || ob->sculpt->bm != NULL) {
     /* Sculpting on a TriMesh (dynamic-topology) gets a special PBVH. */
     pbvh = build_pbvh_for_dynamic_topology(ob);
   }

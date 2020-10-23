@@ -713,11 +713,11 @@ void BKE_pbvh_free(PBVH *pbvh)
       }
 
       if (node->tm_unique_verts) {
-        TMElemSet_free(node->tm_unique_verts);
+        BLI_table_gset_free(node->tm_unique_verts);
       }
 
       if (node->tm_other_verts) {
-        TMElemSet_free(node->tm_other_verts);
+        BLI_table_gset_free(node->tm_other_verts);
       }
 
       if (node->tm_faces) {
@@ -1584,7 +1584,7 @@ static void pbvh_bmesh_node_visibility_update(PBVHNode *node)
 
 static void pbvh_trimesh_node_visibility_update(PBVHNode *node)
 {
-  TMElemSet *unique, *other;
+  TableGSet *unique, *other;
   TMVert *v;
 
   unique = BKE_pbvh_trimesh_node_unique_verts(node);

@@ -68,8 +68,8 @@
 #include "ED_undo.h"
 
 #include "bmesh.h"
-#include "trimesh.h"
 #include "sculpt_intern.h"
+#include "trimesh.h"
 
 /* Implementation of undo system for objects in sculpt mode.
  *
@@ -403,18 +403,19 @@ static bool sculpt_undo_restore_face_sets(bContext *C, SculptUndoNode *unode)
   return false;
 }
 
-
 static void sculpt_undo_trimesh_restore_generic_task_cb(
-  void *__restrict userdata, const int n, const TaskParallelTLS *__restrict UNUSED(tls))
+    void *__restrict userdata, const int n, const TaskParallelTLS *__restrict UNUSED(tls))
 {
   PBVHNode **nodes = userdata;
 
   BKE_pbvh_node_mark_redraw(nodes[n]);
 }
 
-static void sculpt_undo_trimesh_restore_generic(SculptUndoNode *unode, Object *ob, SculptSession *ss)
+static void sculpt_undo_trimesh_restore_generic(SculptUndoNode *unode,
+                                                Object *ob,
+                                                SculptSession *ss)
 {
-  //XXX
+  // XXX
   return;
   if (unode->applied) {
     BM_log_undo(ss->bm, ss->bm_log);
@@ -434,7 +435,7 @@ static void sculpt_undo_trimesh_restore_generic(SculptUndoNode *unode, Object *o
     TaskParallelSettings settings;
     BKE_pbvh_parallel_range_settings(&settings, true, totnode);
     BLI_task_parallel_range(
-      0, totnode, nodes, sculpt_undo_trimesh_restore_generic_task_cb, &settings);
+        0, totnode, nodes, sculpt_undo_trimesh_restore_generic_task_cb, &settings);
 
     if (nodes) {
       MEM_freeN(nodes);
@@ -455,7 +456,7 @@ static void sculpt_undo_bmesh_restore_generic_task_cb(
 
 static void sculpt_undo_bmesh_restore_generic(SculptUndoNode *unode, Object *ob, SculptSession *ss)
 {
-  //XXX
+  // XXX
   return;
   if (unode->applied) {
     BM_log_undo(ss->bm, ss->bm_log);
@@ -569,9 +570,9 @@ static void sculpt_undo_trimesh_enable(Object *ob, SculptUndoNode *unode)
 }
 
 static void sculpt_undo_trimesh_restore_begin(bContext *C,
-  SculptUndoNode *unode,
-  Object *ob,
-  SculptSession *ss)
+                                              SculptUndoNode *unode,
+                                              Object *ob,
+                                              SculptSession *ss)
 {
   if (unode->applied) {
     SCULPT_dynamic_topology_disable(C, unode);
@@ -579,24 +580,20 @@ static void sculpt_undo_trimesh_restore_begin(bContext *C,
   }
   else {
     sculpt_undo_trimesh_enable(ob, unode);
-
-    /* Restore the mesh from the first log entry. */
-    //XXX BM_log_redo(ss->bm, ss->bm_log);
-
     unode->applied = true;
   }
 }
 
 static void sculpt_undo_trimesh_restore_end(bContext *C,
-  SculptUndoNode *unode,
-  Object *ob,
-  SculptSession *ss)
+                                            SculptUndoNode *unode,
+                                            Object *ob,
+                                            SculptSession *ss)
 {
   if (unode->applied) {
     sculpt_undo_trimesh_enable(ob, unode);
 
     /* Restore the mesh from the last log entry. */
-    //XXX BM_log_undo(ss->bm, ss->bm_log);
+    // XXX BM_log_undo(ss->bm, ss->bm_log);
 
     unode->applied = false;
   }
@@ -716,30 +713,47 @@ static int sculpt_undo_bmesh_restore(bContext *C,
 }
 
 /* Handle all dynamic-topology updates
-*
-* Returns true if this was a dynamic-topology undo step, otherwise
-* returns false to indicate the non-dyntopo code should run. */
+ *
+ * Returns true if this was a dynamic-topology undo step, otherwise
+ * returns false to indicate the non-dyntopo code should run. */
 static int sculpt_undo_trimesh_restore(bContext *C,
-  SculptUndoNode *unode,
-  Object *ob,
-  SculptSession *ss)
+                                       SculptUndoNode *unode,
+                                       Object *ob,
+                                       SculptSession *ss)
 {
+#ifdef WITH_TRIMESH
   switch (unode->type) {
-  case SCULPT_UNDO_DYNTOPO_BEGIN:
-    sculpt_undo_trimesh_restore_begin(C, unode, ob, ss);
-    return true;
-
-  case SCULPT_UNDO_DYNTOPO_END:
-    sculpt_undo_trimesh_restore_end(C, unode, ob, ss);
-    return true;
-  default:
-    if (ss->bm_log) {
-      sculpt_undo_trimesh_restore_generic(unode, ob, ss);
+    case SCULPT_UNDO_DYNTOPO_BEGIN:
+      sculpt_undo_trimesh_restore_begin(C, unode, ob, ss);
       return true;
-    }
-    break;
-  }
 
+    case SCULPT_UNDO_DYNTOPO_END:
+      sculpt_undo_trimesh_restore_end(C, unode, ob, ss);
+      return true;
+    default:
+      if (ss->tm_log) {
+        sculpt_undo_trimesh_restore_generic(unode, ob, ss);
+        return true;
+      }
+      break;
+  }
+#else
+  switch (unode->type) {
+    case SCULPT_UNDO_DYNTOPO_BEGIN:
+      sculpt_undo_bmesh_restore_begin(C, unode, ob, ss);
+      return true;
+
+    case SCULPT_UNDO_DYNTOPO_END:
+      sculpt_undo_bmesh_restore_end(C, unode, ob, ss);
+      return true;
+    default:
+      if (ss->bm_log) {
+        sculpt_undo_bmesh_restore_generic(unode, ob, ss);
+        return true;
+      }
+      break;
+  }
+#endif
   return false;
 }
 
@@ -1408,10 +1422,10 @@ static SculptUndoNode *sculpt_undo_trimesh_push(Object *ob, PBVHNode *node, Scul
     }
     else if (type == SCULPT_UNDO_DYNTOPO_BEGIN) {
       /* Store a copy of the mesh's current vertices, loops, and
-      * polys. A full copy like this is needed because entering
-      * dynamic-topology immediately does topological edits
-      * (converting polys to triangles) that the BMLog can't
-      * fully restore from. */
+       * polys. A full copy like this is needed because entering
+       * dynamic-topology immediately does topological edits
+       * (converting polys to triangles) that the BMLog can't
+       * fully restore from. */
       SculptUndoNodeGeometry *geometry = &unode->geometry_bmesh_enter;
       sculpt_undo_geometry_store_data(geometry, ob);
 
@@ -1427,40 +1441,40 @@ static SculptUndoNode *sculpt_undo_trimesh_push(Object *ob, PBVHNode *node, Scul
 
   if (node) {
     switch (type) {
-    case SCULPT_UNDO_COORDS:
-    case SCULPT_UNDO_MASK:
-      /* Before any vertex values get modified, ensure their
-      * original positions are logged. */
-      BKE_pbvh_vertex_iter_begin(ss->pbvh, node, vd, PBVH_ITER_ALL)
-      {
-        BM_log_vert_before_modified(ss->bm_log, vd.bm_vert, vd.cd_vert_mask_offset);
-      }
-      BKE_pbvh_vertex_iter_end;
-      break;
+      case SCULPT_UNDO_COORDS:
+      case SCULPT_UNDO_MASK:
+        /* Before any vertex values get modified, ensure their
+         * original positions are logged. */
+        BKE_pbvh_vertex_iter_begin(ss->pbvh, node, vd, PBVH_ITER_ALL)
+        {
+          BM_log_vert_before_modified(ss->bm_log, vd.bm_vert, vd.cd_vert_mask_offset);
+        }
+        BKE_pbvh_vertex_iter_end;
+        break;
 
-    case SCULPT_UNDO_HIDDEN: {
-      GSetIterator gs_iter;
-      GSet *faces = BKE_pbvh_bmesh_node_faces(node);
-      BKE_pbvh_vertex_iter_begin(ss->pbvh, node, vd, PBVH_ITER_ALL)
-      {
-        BM_log_vert_before_modified(ss->bm_log, vd.bm_vert, vd.cd_vert_mask_offset);
-      }
-      BKE_pbvh_vertex_iter_end;
+      case SCULPT_UNDO_HIDDEN: {
+        GSetIterator gs_iter;
+        GSet *faces = BKE_pbvh_bmesh_node_faces(node);
+        BKE_pbvh_vertex_iter_begin(ss->pbvh, node, vd, PBVH_ITER_ALL)
+        {
+          BM_log_vert_before_modified(ss->bm_log, vd.bm_vert, vd.cd_vert_mask_offset);
+        }
+        BKE_pbvh_vertex_iter_end;
 
-      GSET_ITER (gs_iter, faces) {
-        BMFace *f = BLI_gsetIterator_getKey(&gs_iter);
-        BM_log_face_modified(ss->bm_log, f);
+        GSET_ITER (gs_iter, faces) {
+          BMFace *f = BLI_gsetIterator_getKey(&gs_iter);
+          BM_log_face_modified(ss->bm_log, f);
+        }
+        break;
       }
-      break;
-    }
 
-    case SCULPT_UNDO_DYNTOPO_BEGIN:
-    case SCULPT_UNDO_DYNTOPO_END:
-    case SCULPT_UNDO_DYNTOPO_SYMMETRIZE:
-    case SCULPT_UNDO_GEOMETRY:
-    case SCULPT_UNDO_FACE_SETS:
-    case SCULPT_UNDO_COLOR:
-      break;
+      case SCULPT_UNDO_DYNTOPO_BEGIN:
+      case SCULPT_UNDO_DYNTOPO_END:
+      case SCULPT_UNDO_DYNTOPO_SYMMETRIZE:
+      case SCULPT_UNDO_GEOMETRY:
+      case SCULPT_UNDO_FACE_SETS:
+      case SCULPT_UNDO_COLOR:
+        break;
     }
   }
 
@@ -1478,6 +1492,7 @@ SculptUndoNode *SCULPT_undo_push_node(Object *ob, PBVHNode *node, SculptUndoType
 
   ss->needs_flush_to_id = 1;
 
+#ifdef WITH_TRIMESH
   if (ss->tm || ELEM(type, SCULPT_UNDO_DYNTOPO_BEGIN, SCULPT_UNDO_DYNTOPO_END)) {
     /* Dynamic topology stores only one undo node per stroke,
      * regardless of the number of PBVH nodes modified. */
@@ -1485,6 +1500,15 @@ SculptUndoNode *SCULPT_undo_push_node(Object *ob, PBVHNode *node, SculptUndoType
     BLI_thread_unlock(LOCK_CUSTOM1);
     return unode;
   }
+#else
+  if (ss->bm || ELEM(type, SCULPT_UNDO_DYNTOPO_BEGIN, SCULPT_UNDO_DYNTOPO_END)) {
+    /* Dynamic topology stores only one undo node per stroke,
+     * regardless of the number of PBVH nodes modified. */
+    unode = sculpt_undo_bmesh_push(ob, node, type);
+    BLI_thread_unlock(LOCK_CUSTOM1);
+    return unode;
+  }
+#endif
   if (type == SCULPT_UNDO_GEOMETRY) {
     unode = sculpt_undo_geometry_push(ob, type);
     BLI_thread_unlock(LOCK_CUSTOM1);

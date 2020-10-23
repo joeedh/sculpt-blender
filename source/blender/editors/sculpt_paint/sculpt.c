@@ -7290,7 +7290,7 @@ static void sculpt_raycast_cb(PBVHNode *node, void *data_v, float *tmin)
     bool use_origco = false;
 
     if (srd->original && srd->ss->cache) {
-      if (BKE_pbvh_type(srd->ss->pbvh), PBVH_TRIMESH) {
+      if (ELEM(BKE_pbvh_type(srd->ss->pbvh), PBVH_TRIMESH, PBVH_BMESH)) {
         use_origco = true;
       }
       else {
@@ -7326,7 +7326,7 @@ static void sculpt_find_nearest_to_ray_cb(PBVHNode *node, void *data_v, float *t
     bool use_origco = false;
 
     if (srd->original && srd->ss->cache) {
-      if (BKE_pbvh_type(srd->ss->pbvh) == PBVH_TRIMESH) {
+      if (ELEM(BKE_pbvh_type(srd->ss->pbvh), PBVH_TRIMESH, PBVH_BMESH)) {
         use_origco = true;
       }
       else {
@@ -7462,6 +7462,7 @@ bool SCULPT_cursor_geometry_info_update(bContext *C,
       ss->active_face_index = 0;
       ss->active_grid_index = srd.active_face_grid_index;
       break;
+    case PBVH_BMESH:
     case PBVH_TRIMESH:
       ss->active_face_index = 0;
       ss->active_grid_index = 0;
@@ -7809,6 +7810,9 @@ void SCULPT_flush_update_done(const bContext *C, Object *ob, SculptUpdateType up
 
   if (BKE_pbvh_type(ss->pbvh) == PBVH_TRIMESH) {
     BKE_pbvh_trimesh_after_stroke(ss->pbvh);
+  }
+  if (BKE_pbvh_type(ss->pbvh) == PBVH_BMESH) {
+    BKE_pbvh_bmesh_after_stroke(ss->pbvh);
   }
 
   /* Optimization: if there is locked key and active modifiers present in */

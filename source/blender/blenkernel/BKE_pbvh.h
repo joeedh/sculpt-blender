@@ -165,19 +165,19 @@ typedef struct PBVHFrustumPlanes {
   int num_planes;
 } PBVHFrustumPlanes;
 
-typedef struct TMElemSet {
+typedef struct TableGSet {
   struct GHash *ptr_to_idx;
   void **elems;
   int size, length;
   int cur;
-} TMElemSet;
+} TableGSet;
 
-TMElemSet *TMElemSet_new();
-void TMElemSet_free(TMElemSet *ts);
-void TMElemSet_insert(TMElemSet *ts, void *elem);
-bool TMElemSet_add(TMElemSet *ts, void *elem);
-void TMElemSet_remove(TMElemSet *ts, void *elem, bool ignoreExist);
-bool TMElemSet_has(TMElemSet *ts, void *elem);
+TableGSet *BLI_table_gset_new();
+void BLI_table_gset_free(TableGSet *ts);
+void BLI_table_gset_insert(TableGSet *ts, void *elem);
+bool BLI_table_gset_add(TableGSet *ts, void *elem);
+void BLI_table_gset_remove(TableGSet *ts, void *elem, bool ignoreExist);
+bool BLI_table_gset_has(TableGSet *ts, void *elem);
 
 #define TMS_ITER(v, ts) \
   { \
@@ -205,6 +205,8 @@ typedef void (*BKE_pbvh_HitOccludedCallback)(PBVHNode *node, void *data, float *
 typedef void (*BKE_pbvh_SearchNearestCallback)(PBVHNode *node, void *data, float *tmin);
 
 /* Building */
+
+struct TM_TriMesh;
 
 PBVH *BKE_pbvh_new(void);
 void BKE_pbvh_build_mesh(PBVH *pbvh,
@@ -422,8 +424,8 @@ struct GSet *BKE_pbvh_bmesh_node_faces(PBVHNode *node);
 void BKE_pbvh_bmesh_node_save_orig(struct BMesh *bm, PBVHNode *node);
 void BKE_pbvh_bmesh_after_stroke(PBVH *pbvh);
 
-struct TMElemSet *BKE_pbvh_trimesh_node_unique_verts(PBVHNode *node);
-struct TMElemSet *BKE_pbvh_trimesh_node_other_verts(PBVHNode *node);
+struct TableGSet *BKE_pbvh_trimesh_node_unique_verts(PBVHNode *node);
+struct TableGSet *BKE_pbvh_trimesh_node_other_verts(PBVHNode *node);
 struct GSet *BKE_pbvh_trimesh_node_faces(PBVHNode *node);
 void BKE_pbvh_trimesh_node_save_orig(struct TM_TriMesh *tm, PBVHNode *node);
 void BKE_pbvh_trimesh_after_stroke(PBVH *bvh);
@@ -499,9 +501,9 @@ typedef struct PBVHVertexIter {
   struct CustomData *bm_vdata;
 
   int ti;
-  struct TMElemSet *tm_cur_set;
-  struct TMElemSet *tm_unique_verts;
-  struct TMElemSet *tm_other_verts;
+  struct TableGSet *tm_cur_set;
+  struct TableGSet *tm_unique_verts;
+  struct TableGSet *tm_other_verts;
   struct CustomData *tm_vdata;
 
   int cd_vert_mask_offset;
@@ -521,114 +523,193 @@ typedef struct PBVHVertexIter {
 
 void pbvh_vertex_iter_init(PBVH *pbvh, PBVHNode *node, PBVHVertexIter *vi, int mode);
 
-#define BKE_pbvh_vertex_iter_begin(pbvh, node, vi, mode) \
-  pbvh_vertex_iter_init(pbvh, node, &vi, mode); \
+#ifdef WITH_TRIMESH
+
+#  define BKE_pbvh_vertex_iter_begin(pbvh, node, vi, mode) \
+    pbvh_vertex_iter_init(pbvh, node, &vi, mode); \
 \
-  for (vi.i = 0, vi.g = 0; vi.g < vi.totgrid; vi.g++) { \
-    if (vi.grids) { \
-      vi.width = vi.gridsize; \
-      vi.height = vi.gridsize; \
-      vi.index = vi.grid_indices[vi.g] * vi.key.grid_area - 1; \
-      vi.grid = vi.grids[vi.grid_indices[vi.g]]; \
-      if (mode == PBVH_ITER_UNIQUE) { \
-        vi.gh = vi.grid_hidden[vi.grid_indices[vi.g]]; \
+    for (vi.i = 0, vi.g = 0; vi.g < vi.totgrid; vi.g++) { \
+      if (vi.grids) { \
+        vi.width = vi.gridsize; \
+        vi.height = vi.gridsize; \
+        vi.index = vi.grid_indices[vi.g] * vi.key.grid_area - 1; \
+        vi.grid = vi.grids[vi.grid_indices[vi.g]]; \
+        if (mode == PBVH_ITER_UNIQUE) { \
+          vi.gh = vi.grid_hidden[vi.grid_indices[vi.g]]; \
+        } \
       } \
-    } \
-    else { \
-      vi.width = vi.totvert; \
-      vi.height = 1; \
-    } \
+      else { \
+        vi.width = vi.totvert; \
+        vi.height = 1; \
+      } \
 \
-    for (vi.gy = 0; vi.gy < vi.height; vi.gy++) { \
-      for (vi.gx = 0; vi.gx < vi.width; vi.gx++, vi.i++) { \
-        if (vi.grid) { \
-          vi.co = CCG_elem_co(&vi.key, vi.grid); \
-          vi.fno = CCG_elem_no(&vi.key, vi.grid); \
-          vi.mask = vi.key.has_mask ? CCG_elem_mask(&vi.key, vi.grid) : NULL; \
-          vi.grid = CCG_elem_next(&vi.key, vi.grid); \
-          vi.index++; \
-          vi.visible = true; \
-          if (vi.gh) { \
-            if (BLI_BITMAP_TEST(vi.gh, vi.gy * vi.gridsize + vi.gx)) { \
-              continue; \
+      for (vi.gy = 0; vi.gy < vi.height; vi.gy++) { \
+        for (vi.gx = 0; vi.gx < vi.width; vi.gx++, vi.i++) { \
+          if (vi.grid) { \
+            vi.co = CCG_elem_co(&vi.key, vi.grid); \
+            vi.fno = CCG_elem_no(&vi.key, vi.grid); \
+            vi.mask = vi.key.has_mask ? CCG_elem_mask(&vi.key, vi.grid) : NULL; \
+            vi.grid = CCG_elem_next(&vi.key, vi.grid); \
+            vi.index++; \
+            vi.visible = true; \
+            if (vi.gh) { \
+              if (BLI_BITMAP_TEST(vi.gh, vi.gy * vi.gridsize + vi.gx)) { \
+                continue; \
+              } \
             } \
           } \
-        } \
-        else if (vi.mverts) { \
-          vi.mvert = &vi.mverts[vi.vert_indices[vi.gx]]; \
-          if (vi.respect_hide) { \
-            vi.visible = !(vi.mvert->flag & ME_HIDE); \
-            if (mode == PBVH_ITER_UNIQUE && !vi.visible) { \
-              continue; \
+          else if (vi.mverts) { \
+            vi.mvert = &vi.mverts[vi.vert_indices[vi.gx]]; \
+            if (vi.respect_hide) { \
+              vi.visible = !(vi.mvert->flag & ME_HIDE); \
+              if (mode == PBVH_ITER_UNIQUE && !vi.visible) { \
+                continue; \
+              } \
+            } \
+            else { \
+              BLI_assert(vi.visible); \
+            } \
+            vi.co = vi.mvert->co; \
+            vi.no = vi.mvert->no; \
+            vi.index = vi.vert_indices[vi.i]; \
+            if (vi.vmask) { \
+              vi.mask = &vi.vmask[vi.index]; \
+            } \
+            if (vi.vcol) { \
+              vi.col = vi.vcol[vi.index].color; \
             } \
           } \
-          else { \
-            BLI_assert(vi.visible); \
-          } \
-          vi.co = vi.mvert->co; \
-          vi.no = vi.mvert->no; \
-          vi.index = vi.vert_indices[vi.i]; \
-          if (vi.vmask) { \
-            vi.mask = &vi.vmask[vi.index]; \
-          } \
-          if (vi.vcol) { \
-            vi.col = vi.vcol[vi.index].color; \
-          } \
-        } \
-        else if (vi.tm_vdata) { \
-          TMVert *tv = NULL; \
-          while (!tv) { \
-            if (!vi.tm_cur_set->elems || vi.ti >= vi.tm_cur_set->cur) { \
-              if (vi.tm_cur_set != vi.tm_other_verts) { \
-                vi.tm_cur_set = vi.tm_other_verts; \
-                vi.ti = 0; \
-                if (!vi.tm_cur_set->elems || vi.ti >= vi.tm_other_verts->cur) { \
+          else if (vi.tm_vdata) { \
+            TMVert *tv = NULL; \
+            while (!tv) { \
+              if (!vi.tm_cur_set->elems || vi.ti >= vi.tm_cur_set->cur) { \
+                if (vi.tm_cur_set != vi.tm_other_verts) { \
+                  vi.tm_cur_set = vi.tm_other_verts; \
+                  vi.ti = 0; \
+                  if (!vi.tm_cur_set->elems || vi.ti >= vi.tm_other_verts->cur) { \
+                    break; \
+                  } \
+                } \
+                else { \
                   break; \
                 } \
               } \
               else { \
-                break; \
+                tv = vi.tm_cur_set->elems[vi.ti++]; \
+                if (tv && BLI_safepool_elem_is_dead(tv)) { \
+                  printf("dead vert: %p\n", tv); \
+                  tv = NULL; \
+                } \
+              } \
+            } \
+            if (!tv) { \
+              continue; \
+            } \
+            vi.tm_vert = tv; \
+            vi.visible = !TM_elem_flag_test_bool(vi.tm_vert, TM_ELEM_HIDDEN); \
+            if (mode == PBVH_ITER_UNIQUE && !vi.visible) { \
+              continue; \
+            } \
+            vi.co = vi.tm_vert->co; \
+            vi.fno = vi.tm_vert->no; \
+            vi.index = (SculptIdx)vi.tm_vert; \
+            vi.mask = TM_ELEM_CD_GET_VOID_P(vi.tm_vert, vi.cd_vert_mask_offset); \
+          } \
+          else { \
+            if (!BLI_gsetIterator_done(&vi.bm_unique_verts)) { \
+              vi.bm_vert = BLI_gsetIterator_getKey(&vi.bm_unique_verts); \
+              BLI_gsetIterator_step(&vi.bm_unique_verts); \
+            } \
+            else { \
+              vi.bm_vert = BLI_gsetIterator_getKey(&vi.bm_other_verts); \
+              BLI_gsetIterator_step(&vi.bm_other_verts); \
+            } \
+            vi.visible = !BM_elem_flag_test_bool(vi.bm_vert, BM_ELEM_HIDDEN); \
+            if (mode == PBVH_ITER_UNIQUE && !vi.visible) { \
+              continue; \
+            } \
+            vi.co = vi.bm_vert->co; \
+            vi.fno = vi.bm_vert->no; \
+            vi.index = BM_elem_index_get(vi.bm_vert); \
+            vi.mask = BM_ELEM_CD_GET_VOID_P(vi.bm_vert, vi.cd_vert_mask_offset); \
+          }
+
+#else
+
+#  define BKE_pbvh_vertex_iter_begin(pbvh, node, vi, mode) \
+    pbvh_vertex_iter_init(pbvh, node, &vi, mode); \
+\
+    for (vi.i = 0, vi.g = 0; vi.g < vi.totgrid; vi.g++) { \
+      if (vi.grids) { \
+        vi.width = vi.gridsize; \
+        vi.height = vi.gridsize; \
+        vi.index = vi.grid_indices[vi.g] * vi.key.grid_area - 1; \
+        vi.grid = vi.grids[vi.grid_indices[vi.g]]; \
+        if (mode == PBVH_ITER_UNIQUE) { \
+          vi.gh = vi.grid_hidden[vi.grid_indices[vi.g]]; \
+        } \
+      } \
+      else { \
+        vi.width = vi.totvert; \
+        vi.height = 1; \
+      } \
+\
+      for (vi.gy = 0; vi.gy < vi.height; vi.gy++) { \
+        for (vi.gx = 0; vi.gx < vi.width; vi.gx++, vi.i++) { \
+          if (vi.grid) { \
+            vi.co = CCG_elem_co(&vi.key, vi.grid); \
+            vi.fno = CCG_elem_no(&vi.key, vi.grid); \
+            vi.mask = vi.key.has_mask ? CCG_elem_mask(&vi.key, vi.grid) : NULL; \
+            vi.grid = CCG_elem_next(&vi.key, vi.grid); \
+            vi.index++; \
+            vi.visible = true; \
+            if (vi.gh) { \
+              if (BLI_BITMAP_TEST(vi.gh, vi.gy * vi.gridsize + vi.gx)) { \
+                continue; \
+              } \
+            } \
+          } \
+          else if (vi.mverts) { \
+            vi.mvert = &vi.mverts[vi.vert_indices[vi.gx]]; \
+            if (vi.respect_hide) { \
+              vi.visible = !(vi.mvert->flag & ME_HIDE); \
+              if (mode == PBVH_ITER_UNIQUE && !vi.visible) { \
+                continue; \
               } \
             } \
             else { \
-              tv = vi.tm_cur_set->elems[vi.ti++]; \
-              if (tv && BLI_safepool_elem_is_dead(tv)) { \
-                printf("dead vert: %p\n", tv); \
-                tv = NULL; \
-              } \
+              BLI_assert(vi.visible); \
+            } \
+            vi.co = vi.mvert->co; \
+            vi.no = vi.mvert->no; \
+            vi.index = vi.vert_indices[vi.i]; \
+            if (vi.vmask) { \
+              vi.mask = &vi.vmask[vi.index]; \
+            } \
+            if (vi.vcol) { \
+              vi.col = vi.vcol[vi.index].color; \
             } \
           } \
-          if (!tv) { \
-            continue; \
-          } \
-          vi.tm_vert = tv; \
-          vi.visible = !TM_elem_flag_test_bool(vi.tm_vert, TM_ELEM_HIDDEN); \
-          if (mode == PBVH_ITER_UNIQUE && !vi.visible) { \
-            continue; \
-          } \
-          vi.co = vi.tm_vert->co; \
-          vi.fno = vi.tm_vert->no; \
-          vi.index = (SculptIdx)vi.tm_vert; \
-          vi.mask = TM_ELEM_CD_GET_VOID_P(vi.tm_vert, vi.cd_vert_mask_offset); \
-        } \
-        else { \
-          if (!BLI_gsetIterator_done(&vi.bm_unique_verts)) { \
-            vi.bm_vert = BLI_gsetIterator_getKey(&vi.bm_unique_verts); \
-            BLI_gsetIterator_step(&vi.bm_unique_verts); \
-          } \
           else { \
-            vi.bm_vert = BLI_gsetIterator_getKey(&vi.bm_other_verts); \
-            BLI_gsetIterator_step(&vi.bm_other_verts); \
-          } \
-          vi.visible = !BM_elem_flag_test_bool(vi.bm_vert, BM_ELEM_HIDDEN); \
-          if (mode == PBVH_ITER_UNIQUE && !vi.visible) { \
-            continue; \
-          } \
-          vi.co = vi.bm_vert->co; \
-          vi.fno = vi.bm_vert->no; \
-          vi.index = BM_elem_index_get(vi.bm_vert); \
-          vi.mask = BM_ELEM_CD_GET_VOID_P(vi.bm_vert, vi.cd_vert_mask_offset); \
-        }
+            if (!BLI_gsetIterator_done(&vi.bm_unique_verts)) { \
+              vi.bm_vert = BLI_gsetIterator_getKey(&vi.bm_unique_verts); \
+              BLI_gsetIterator_step(&vi.bm_unique_verts); \
+            } \
+            else { \
+              vi.bm_vert = BLI_gsetIterator_getKey(&vi.bm_other_verts); \
+              BLI_gsetIterator_step(&vi.bm_other_verts); \
+            } \
+            vi.visible = !BM_elem_flag_test_bool(vi.bm_vert, BM_ELEM_HIDDEN); \
+            if (mode == PBVH_ITER_UNIQUE && !vi.visible) { \
+              continue; \
+            } \
+            vi.co = vi.bm_vert->co; \
+            vi.fno = vi.bm_vert->no; \
+            vi.index = BM_elem_index_get(vi.bm_vert); \
+            vi.mask = BM_ELEM_CD_GET_VOID_P(vi.bm_vert, vi.cd_vert_mask_offset); \
+          }
+
+#endif
 
 #define BKE_pbvh_vertex_iter_end \
   } \

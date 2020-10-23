@@ -288,7 +288,7 @@ static void partialvis_update_bmesh(Object *ob,
 }
 
 static void partialvis_update_trimesh_verts(TM_TriMesh *bm,
-  TMElemSet *verts,
+  TableGSet *verts,
   PartialVisAction action,
   PartialVisArea area,
   float planes[4][4],
@@ -351,7 +351,7 @@ static void partialvis_update_trimesh(Object *ob,
   float planes[4][4])
 {
   TM_TriMesh *bm;
-  TMElemSet *unique, *other;
+  TableGSet *unique, *other;
   GSet *faces;
   bool any_changed = false, any_visible = false;
 
