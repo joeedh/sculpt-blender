@@ -58,6 +58,8 @@ struct TaskParallelTLS;
 typedef struct PBVH PBVH;
 typedef struct PBVHNode PBVHNode;
 
+//#define WITH_TRIMESH
+
 //#define PROXY_ADVANCED
 
 // experimental performance test of "data-based programming" approach

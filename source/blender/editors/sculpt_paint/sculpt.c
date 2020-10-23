@@ -1289,7 +1289,7 @@ static bool sculpt_tool_is_proxy_used(const char sculpt_tool)
 static bool sculpt_brush_use_topology_rake(const SculptSession *ss, const Brush *brush)
 {
   return SCULPT_TOOL_HAS_TOPOLOGY_RAKE(brush->sculpt_tool) &&
-         (brush->topology_rake_factor > 0.0f) && (ss->tm != NULL);
+         (brush->topology_rake_factor > 0.0f) && (ss->tm != NULL || ss->bm != NULL);
 }
 
 /**
@@ -1601,7 +1601,7 @@ static void paint_mesh_restore_co(Sculpt *sd, Object *ob)
   };
 
   TaskParallelSettings settings;
-  BKE_pbvh_parallel_range_settings(&settings, true && !ss->tm, totnode);
+  BKE_pbvh_parallel_range_settings(&settings, true && !(ss->tm || ss->bm), totnode);
   BLI_task_parallel_range(0, totnode, &data, paint_mesh_restore_co_task_cb, &settings);
 
   BKE_pbvh_node_color_buffer_free(ss->pbvh);
@@ -2047,7 +2047,7 @@ static void calc_area_normal_and_center_task_cb(void *__restrict userdata,
     area_test.radius_squared = test_radius * test_radius;
   }
 
-  //TODO
+  // TODO
 
   /* When the mesh is edited we can't rely on original coords
    * (original mesh may not even have verts in brush radius). */
@@ -7551,11 +7551,6 @@ bool SCULPT_stroke_get_location(bContext *C, float out[3], const float mouse[2])
 
   depth = SCULPT_raycast_init(&vc, mouse, ray_start, ray_end, ray_normal, original);
 
-  /*if (BKE_pbvh_type(ss->pbvh) == PBVH_TRIMESH) {
-    TM_mesh_elem_table_ensure(ss->tm, TM_VERTEX);
-    TM_mesh_elem_index_ensure(ss->tm, TM_VERTEX);
-  }*/
-
   bool hit = false;
   {
     SculptRaycastData srd;
@@ -8680,7 +8675,6 @@ void SCULPT_geometry_preview_lines_update(bContext *C, SculptSession *ss, float 
 
   ss->preview_vert_index_count = totpoints;
 }
-
 
 static int vertex_to_loop_colors_exec(bContext *C, wmOperator *UNUSED(op))
 {
