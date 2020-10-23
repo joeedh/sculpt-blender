@@ -122,7 +122,7 @@ void gpu_pbvh_init()
     g_vbo_id.msk = GPU_vertformat_attr_add(
         &g_vbo_id.format, "msk", GPU_COMP_U8, 1, GPU_FETCH_INT_TO_FLOAT_UNIT);
     g_vbo_id.col = GPU_vertformat_attr_add(
-        &g_vbo_id.format, "ac", GPU_COMP_U16, 4, GPU_FETCH_INT_TO_FLOAT_UNIT);
+        &g_vbo_id.format, "c", GPU_COMP_U16, 4, GPU_FETCH_INT_TO_FLOAT_UNIT);
     g_vbo_id.fset = GPU_vertformat_attr_add(
         &g_vbo_id.format, "fset", GPU_COMP_U8, 3, GPU_FETCH_INT_TO_FLOAT_UNIT);
   }
@@ -827,15 +827,16 @@ static void gpu_bmesh_vert_to_buffer_copy(BMVert *v,
 
 /* Output a BMVert into a VertexBufferFormat array at v_index. */
 static void gpu_trimesh_vert_to_buffer_copy(TMVert *v,
-                                          GPUVertBuf *vert_buf,
-                                          int v_index,
-                                          const float fno[3],
-                                          const float *fmask,
-                                          const int cd_vert_mask_offset,
-                                          const int cd_vert_node_offset,
-                                          const bool show_mask,
-                                          const bool show_vcol,
-                                          bool *empty_mask)
+                                            GPUVertBuf *vert_buf,
+                                            int v_index,
+                                            const float fno[3],
+                                            const float *fmask,
+                                            const int cd_vert_mask_offset,
+                                            const int cd_vert_node_offset,
+                                            const bool show_mask,
+                                            const bool show_vcol,
+                                            bool *empty_mask,
+                                            int cd_vcol_offset)
 {
   /* Vertex should always be visible if it's used by a visible face. */
   BLI_assert(!TM_elem_flag_test(v, TM_ELEM_HIDDEN));
@@ -849,26 +850,62 @@ static void gpu_trimesh_vert_to_buffer_copy(TMVert *v,
 
   if (show_mask) {
     float effective_mask = fmask ? *fmask : TM_ELEM_CD_GET_FLOAT(v, cd_vert_mask_offset);
-    //int ni = TM_ELEM_CD_GET_INT(v, cd_vert_node_offset);
-    //float effective_mask = (float)(ni % 64) / 64.0f;
+    // int ni = TM_ELEM_CD_GET_INT(v, cd_vert_node_offset);
+    // float effective_mask = (float)(ni % 64) / 64.0f;
 
     uchar cmask = (uchar)(effective_mask * 255);
     GPU_vertbuf_attr_set(vert_buf, g_vbo_id.msk, v_index, &cmask);
     *empty_mask = *empty_mask && (cmask == 0);
   }
 
-  if (show_vcol) {
+  if (show_vcol && cd_vcol_offset >= 0) {
+    ushort vcol[4] = {USHRT_MAX, USHRT_MAX, USHRT_MAX, USHRT_MAX};
+    int col[4] = {0, 0, 0, 0};
+    int tot = 0;
+
+    for (int i = 0; i < v->edges.length; i++) {
+      TMEdge *e = v->edges.items[i];
+
+      for (int j = 0; j < e->tris.length; j++) {
+        TMFace *t = e->tris.items[j];
+
+        TMLoopData *l = TM_GET_TRI_LOOP_EDGE(t, e);
+        MLoopCol *ml = TM_ELEM_CD_GET_VOID_P(l, cd_vcol_offset);
+
+        col[0] += ml->r;
+        col[1] += ml->g;
+        col[2] += ml->b;
+        col[3] += ml->a;
+        tot++;
+      }
+    }
+
+    if (tot) {
+      col[0] /= tot;
+      col[1] /= tot;
+      col[2] /= tot;
+      col[3] /= tot;
+
+      vcol[0] = (ushort)(col[0] * 257);
+      vcol[1] = (ushort)(col[1] * 257);
+      vcol[2] = (ushort)(col[2] * 257);
+      vcol[3] = (ushort)(col[3] * 257);
+      //printf("%d %d %d %d   %d\n", vcol[0], vcol[1], vcol[2], vcol[3], tot);
+    }
+    //const ushort vcol[4] = {USHRT_MAX, USHRT_MAX, USHRT_MAX, USHRT_MAX};
+    GPU_vertbuf_attr_set(vert_buf, g_vbo_id.col, v_index, vcol);
+  }
+  else if (show_vcol) {
     const ushort vcol[4] = {USHRT_MAX, USHRT_MAX, USHRT_MAX, USHRT_MAX};
-    GPU_vertbuf_attr_set(vert_buf, g_vbo_id.col, v_index, &vcol);
+    GPU_vertbuf_attr_set(vert_buf, g_vbo_id.col, v_index, vcol);
   }
 
   /* Add default face sets color to avoid artifacts. */
-  
+
   const uchar face_set[3] = {UCHAR_MAX, UCHAR_MAX, UCHAR_MAX};
 
-  GPU_vertbuf_attr_set(vert_buf, g_vbo_id.fset, v_index, &face_set);
+  GPU_vertbuf_attr_set(vert_buf, g_vbo_id.fset, v_index, face_set);
 }
-
 
 /* Return the total number of vertices that don't have BM_ELEM_HIDDEN set */
 static int gpu_trimesh_vert_visible_count(TMElemSet *bm_unique_verts, TMElemSet *bm_other_verts)
@@ -880,13 +917,15 @@ static int gpu_trimesh_vert_visible_count(TMElemSet *bm_unique_verts, TMElemSet 
     if (!TM_elem_flag_test(v, TM_ELEM_HIDDEN)) {
       totvert++;
     }
-  } TMS_ITER_END
+  }
+  TMS_ITER_END
 
   TMS_ITER (v, bm_other_verts) {
     if (!TM_elem_flag_test(v, TM_ELEM_HIDDEN)) {
       totvert++;
     }
-  } TMS_ITER_END
+  }
+  TMS_ITER_END
 
   return totvert;
 }
@@ -1141,25 +1180,25 @@ void GPU_pbvh_bmesh_buffers_update(GPU_PBVH_Buffers *buffers,
   gpu_pbvh_batch_init(buffers, GPU_PRIM_TRIS);
 }
 
-
 /* Creates a vertex buffer (coordinate, normal, color) and, if smooth
-* shading, an element index buffer.
-* Threaded - do not call any functions that use OpenGL calls! */
+ * shading, an element index buffer.
+ * Threaded - do not call any functions that use OpenGL calls! */
 void GPU_pbvh_trimesh_buffers_update(GPU_PBVH_Buffers *buffers,
-  TM_TriMesh *bm,
-  GSet *bm_faces,
-  TMElemSet *bm_unique_verts,
-  TMElemSet *bm_other_verts,
-  const int update_flags, const int cd_vert_node_offset)
+                                     TM_TriMesh *bm,
+                                     GSet *tm_faces,
+                                     TMElemSet *bm_unique_verts,
+                                     TMElemSet *bm_other_verts,
+                                     const int update_flags,
+                                     const int cd_vert_node_offset)
 {
   const bool show_mask = (update_flags & GPU_PBVH_BUFFERS_SHOW_MASK) != 0;
-  const bool show_vcol = (update_flags & GPU_PBVH_BUFFERS_SHOW_VCOL) != 0;
+  const bool show_vcol = true; //(update_flags & GPU_PBVH_BUFFERS_SHOW_VCOL) != 0;
   int tottri, totvert;
   bool empty_mask = true;
   TMFace *f = NULL;
 
   /* Count visible triangles */
-  tottri = gpu_trimesh_face_visible_count(bm_faces);
+  tottri = gpu_trimesh_face_visible_count(tm_faces);
 
   if (buffers->smooth) {
     /* Count visible vertices */
@@ -1170,7 +1209,7 @@ void GPU_pbvh_trimesh_buffers_update(GPU_PBVH_Buffers *buffers,
   }
 
   if (!tottri) {
-    if (BLI_gset_len(bm_faces) != 0) {
+    if (BLI_gset_len(tm_faces) != 0) {
       /* Node is just hidden. */
     }
     else {
@@ -1191,6 +1230,8 @@ void GPU_pbvh_trimesh_buffers_update(GPU_PBVH_Buffers *buffers,
 
   int v_index = 0;
 
+  int cd_vcol_off = CustomData_get_offset(&bm->ldata, CD_MLOOPCOL);
+
   if (buffers->smooth) {
     /* Fill the vertex and triangle buffer in one pass over faces. */
     GPUIndexBufBuilder elb, elb_lines;
@@ -1200,7 +1241,7 @@ void GPU_pbvh_trimesh_buffers_update(GPU_PBVH_Buffers *buffers,
     GHash *bm_vert_to_index = BLI_ghash_int_new_ex("bm_vert_to_index", totvert);
 
     GSetIterator gs_iter;
-    GSET_ITER (gs_iter, bm_faces) {
+    GSET_ITER (gs_iter, tm_faces) {
       f = BLI_gsetIterator_getKey(&gs_iter);
 
       if (!TM_elem_flag_test(f, TM_ELEM_HIDDEN)) {
@@ -1214,15 +1255,16 @@ void GPU_pbvh_trimesh_buffers_update(GPU_PBVH_Buffers *buffers,
             *idx_p = POINTER_FROM_UINT(v_index);
 
             gpu_trimesh_vert_to_buffer_copy(v,
-              buffers->vert_buf,
-              v_index,
-              NULL,
-              NULL,
-              cd_vert_mask_offset,
-              cd_vert_node_offset,
-              show_mask,
-              show_vcol,
-              &empty_mask);
+                                            buffers->vert_buf,
+                                            v_index,
+                                            NULL,
+                                            NULL,
+                                            cd_vert_mask_offset,
+                                            cd_vert_node_offset,
+                                            show_mask,
+                                            show_vcol,
+                                            &empty_mask,
+                                            cd_vcol_off);
 
             idx[i] = v_index;
             v_index++;
@@ -1258,7 +1300,9 @@ void GPU_pbvh_trimesh_buffers_update(GPU_PBVH_Buffers *buffers,
     GPUIndexBufBuilder elb_lines;
     GPU_indexbuf_init(&elb_lines, GPU_PRIM_LINES, tottri * 3, tottri * 3);
 
-    GSET_ITER (gs_iter, bm_faces) {
+    int cd_vcol_offset = CustomData_get_offset(&bm->ldata, CD_MLOOPCOL);
+
+    GSET_ITER (gs_iter, tm_faces) {
       f = BLI_gsetIterator_getKey(&gs_iter);
 
       BLI_assert(f->len == 3);
@@ -1283,15 +1327,16 @@ void GPU_pbvh_trimesh_buffers_update(GPU_PBVH_Buffers *buffers,
           TMVert *v2 = TM_GET_TRI_VERT(f, i);
 
           gpu_trimesh_vert_to_buffer_copy(v2,
-            buffers->vert_buf,
-            v_index++,
-            f->no,
-            &fmask,
-            cd_vert_mask_offset,
-            cd_vert_node_offset,
-            show_mask,
-            show_vcol,
-            &empty_mask);
+                                          buffers->vert_buf,
+                                          v_index++,
+                                          f->no,
+                                          &fmask,
+                                          cd_vert_mask_offset,
+                                          cd_vert_node_offset,
+                                          show_mask,
+                                          show_vcol,
+                                          &empty_mask,
+                                          cd_vcol_offset);
         }
       }
     }

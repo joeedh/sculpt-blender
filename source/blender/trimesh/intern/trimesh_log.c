@@ -761,7 +761,7 @@ static int meshlog_wind(TriMeshLog *tlog, int entry_i, int threadnr)
     case LOG_VERT_KILL: {
       int id = log[i++].value.i;
       TMVert *v = elemhash_lookup_id(tlog, id);
-      TM_kill_vert(tlog->tm, v, 0);
+      TM_kill_vert(tlog->tm, v);
 
       break;
     }
@@ -771,7 +771,7 @@ static int meshlog_wind(TriMeshLog *tlog, int entry_i, int threadnr)
       int kill_verts = log[i++].value.i;
 
       TMEdge *e = elemhash_lookup_id(tlog, id);
-      TM_kill_edge(tlog->tm, e, 0, !!kill_verts);
+      TM_kill_edge(tlog->tm, e, !!kill_verts);
 
       break;
     }
@@ -782,7 +782,7 @@ static int meshlog_wind(TriMeshLog *tlog, int entry_i, int threadnr)
       int kill_edges = log[i++].value.i;
 
       TMFace *tri = elemhash_lookup_id(tlog, id);
-      TM_kill_tri(tlog->tm, tri, 0, !!kill_edges, !!kill_verts);
+      TM_kill_tri(tlog->tm, tri, !!kill_edges, !!kill_verts);
 
       break;
     }
@@ -794,7 +794,7 @@ static int meshlog_wind(TriMeshLog *tlog, int entry_i, int threadnr)
       float mask = log[i++].value.f;
       int skipcd = log[i++].value.i;
 
-      TMVert *v = TM_make_vert(tlog->tm, co, no, threadnr, skipcd);
+      TMVert *v = TM_make_vert(tlog->tm, co, no, skipcd);
 
       if (tlog->cd_vert_mask_index >= 0) {
         TM_ELEM_CD_SET_FLOAT(v, tlog->cd_vert_mask_index, mask);
@@ -812,7 +812,7 @@ static int meshlog_wind(TriMeshLog *tlog, int entry_i, int threadnr)
 
       TMVert *v1 = elemhash_lookup_id(tlog, v1id);
       TMVert *v2 = elemhash_lookup_id(tlog, v2id);
-      TMEdge *e = TM_get_edge(tlog->tm, v1, v2, 0, skipcd);
+      TMEdge *e = TM_get_edge(tlog->tm, v1, v2, skipcd);
 
       elemhash_add(tlog, e, id, entry_i);
 
@@ -829,7 +829,7 @@ static int meshlog_wind(TriMeshLog *tlog, int entry_i, int threadnr)
       TMVert *v2 = elemhash_lookup_id(tlog, v2id);
       TMVert *v3 = elemhash_lookup_id(tlog, v3id);
 
-      TMFace *f = TM_make_tri(tlog->tm, v1, v2, v3, 0, !!skipcd);
+      TMFace *f = TM_make_tri(tlog->tm, v1, v2, v3, !!skipcd);
       elemhash_add(tlog, f, id, entry_i);
     }
   }
@@ -902,7 +902,7 @@ static int meshlog_unwind(TriMeshLog *tlog, int entry_i, int threadnr)
 
       TMVert *v = elemhash_lookup_id(tlog, id);
 
-      TM_kill_vert(tlog->tm, v, 0);
+      TM_kill_vert(tlog->tm, v);
       break;
     }
     case LOG_VERT_STATE: {
@@ -930,7 +930,7 @@ static int meshlog_unwind(TriMeshLog *tlog, int entry_i, int threadnr)
       int skipcd = log[i++].value.i;
 
       TMEdge *e = elemhash_lookup_id(tlog, id);
-      TM_kill_edge(tlog->tm, e, 0, false);
+      TM_kill_edge(tlog->tm, e, false);
 
       break;
     }
@@ -939,7 +939,7 @@ static int meshlog_unwind(TriMeshLog *tlog, int entry_i, int threadnr)
       int id = log[i++].value.i;
       TMFace *f = elemhash_lookup_id(tlog, id);
 
-      TM_kill_tri(tlog->tm, f, 0, false, false);
+      TM_kill_tri(tlog->tm, f, false, false);
 
       break;
     }
@@ -987,7 +987,7 @@ static int meshlog_unwind(TriMeshLog *tlog, int entry_i, int threadnr)
       }
 
       i -= 6;
-      TMFace *tri = TM_make_tri(tlog->tm, vs[0], vs[1], vs[2], threadnr, false);
+      TMFace *tri = TM_make_tri(tlog->tm, vs[0], vs[1], vs[2], false);
 
       i = trimesh_read_loop(tlog, tri->l1, i);
       i = trimesh_read_loop(tlog, tri->l2, i);

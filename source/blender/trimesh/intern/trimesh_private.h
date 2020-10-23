@@ -21,13 +21,15 @@ enum {
 
 struct CustomData;
 void trimesh_element_init(void *elem, struct CustomData *customdata, bool skipcd);
-void trimesh_element_destroy(void *elem, int threadnr, struct CustomData *customdata);
+void trimesh_element_destroy(void *elem, struct CustomData *customdata);
 
 struct TM_TriMesh;
 struct optmesh_simplelist;
 
-static void trimesh_simplelist_remove(
-    struct TM_TriMesh *tm, struct optmesh_simplelist *list, void *item, int pool, int threadnr)
+static void trimesh_simplelist_remove(struct TM_TriMesh *tm,
+                                      struct optmesh_simplelist *list,
+                                      void *item,
+                                      int pool)
 {
   if (list->length == 0) {
     return;
@@ -52,10 +54,7 @@ static void trimesh_simplelist_remove(
   }
 }
 
-static void trimesh_simplelist_free(TM_TriMesh *tm,
-                                    optmesh_simplelist *list,
-                                    int pool,
-                                    int threadnr)
+static void trimesh_simplelist_free(TM_TriMesh *tm, optmesh_simplelist *list, int pool)
 {
   if (list->is_pool_allocd) {
     BLI_safepool_free(tm->pools[pool], list->items);
@@ -73,8 +72,10 @@ static void trilist_simplelist_init(TM_TriMesh *tm, optmesh_simplelist *list, in
   list->is_pool_allocd = true;
 }
 
-static void trilist_simplelist_append(
-    TM_TriMesh *tm, optmesh_simplelist *list, void *item, int pool, int threadnr)
+static void trilist_simplelist_append(TM_TriMesh *tm,
+                                      optmesh_simplelist *list,
+                                      void *item,
+                                      int pool)
 {
   list->length++;
 

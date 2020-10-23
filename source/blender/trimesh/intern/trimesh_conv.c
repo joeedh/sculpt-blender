@@ -64,18 +64,17 @@
 #include "trimesh_private.h"
 
 /* ME -> BM */
-char TM_vert_flag_from_mflag(const char meflag)
+short TM_vert_flag_from_mflag(const char meflag)
 {
   return (((meflag & SELECT) ? SELECT : 0) | ((meflag & ME_HIDE) ? TM_ELEM_HIDDEN : 0));
 }
-char TM_edge_flag_from_mflag(const short meflag)
+short TM_edge_flag_from_mflag(const short meflag)
 {
   return (((meflag & SELECT) ? SELECT : 0) | ((meflag & ME_SEAM) ? TRIMESH_SEAM : 0) |
           ((meflag & ME_EDGEDRAW) ? TRIMESH_EDGEDRAW : 0) |
-          ((meflag & ME_SHARP) == 0 ? TRIMESH_SHARP : 0) | /* invert */
-          ((meflag & ME_HIDE) ? TM_ELEM_HIDDEN : 0));
+          ((meflag & ME_SHARP) ? TRIMESH_SHARP : 0) | ((meflag & ME_HIDE) ? TM_ELEM_HIDDEN : 0));
 }
-char TM_face_flag_from_mflag(const char meflag)
+short TM_face_flag_from_mflag(const char meflag)
 {
   return (((meflag & ME_FACE_SEL) ? SELECT : 0) | ((meflag & ME_SMOOTH) ? TRIMESH_SMOOTH : 0) |
           ((meflag & ME_HIDE) ? TM_ELEM_HIDDEN : 0));
@@ -375,14 +374,11 @@ void TM_mesh_tm_from_me(TM_TriMesh *bm, const Mesh *me, const struct TriMeshFrom
   vtable = MEM_mallocN(sizeof(TMVert **) * me->totvert, __func__);
 
   for (i = 0, mvert = me->mvert; i < me->totvert; i++, mvert++) {
-    v = vtable[i] = TM_make_vert(bm, keyco ? keyco[i] : mvert->co, NULL, 0, true);
+    v = vtable[i] = TM_make_vert(bm, keyco ? keyco[i] : mvert->co, NULL, true);
     v->index = i;
 
     /* Transfer flag. */
-    v->flag = mvert->flag & SELECT;
-    if (mvert->flag & ME_HIDE) {
-      v->flag |= TM_ELEM_HIDDEN;
-    }
+    v->flag = TM_vert_flag_from_mflag(mvert->flag);
 
     normal_short_to_float_v3(v->no, mvert->no);
 
@@ -414,11 +410,11 @@ void TM_mesh_tm_from_me(TM_TriMesh *bm, const Mesh *me, const struct TriMeshFrom
 
   medge = me->medge;
   for (i = 0; i < me->totedge; i++, medge++) {
-    e = etable[i] = TM_get_edge(bm, vtable[medge->v1], vtable[medge->v2], 0, true);
+    e = etable[i] = TM_get_edge(bm, vtable[medge->v1], vtable[medge->v2], true);
     e->index = i;
 
     /* Transfer flags. */
-    e->flag = TM_edge_flag_from_mflag(medge->flag & ~SELECT);
+    e->flag = TM_edge_flag_from_mflag(medge->flag);
 
     /* Copy Custom Data */
     CustomData_to_bmesh_block(&me->edata, &bm->edata, i, &e->customdata, true);
@@ -446,10 +442,10 @@ void TM_mesh_tm_from_me(TM_TriMesh *bm, const Mesh *me, const struct TriMeshFrom
       TMVert *v2 = vtable[ml[i2].v];
       TMVert *v3 = vtable[ml[i3].v];
 
-      TMFace *tri = TM_make_tri(bm, v1, v2, v3, 0, true);
+      TMFace *tri = TM_make_tri(bm, v1, v2, v3, true);
       tri->index = bm->tottri - 1;
 
-      tri->flag = TM_face_flag_from_mflag(mp->flag & ~ME_FACE_SEL);
+      tri->flag = TM_face_flag_from_mflag(mp->flag);
       tri->mat_nr = mp->mat_nr;
 
       if (params->calc_face_normal) {
@@ -458,6 +454,10 @@ void TM_mesh_tm_from_me(TM_TriMesh *bm, const Mesh *me, const struct TriMeshFrom
 
       /* Copy Custom Data */
       CustomData_to_bmesh_block(&me->pdata, &bm->tdata, i, &tri->customdata, true);
+
+      i1 += mp->loopstart;
+      i2 += mp->loopstart;
+      i3 += mp->loopstart;
 
       CustomData_to_bmesh_block(&me->ldata, &bm->ldata, i1, &tri->l1->customdata, true);
       CustomData_to_bmesh_block(&me->ldata, &bm->ldata, i2, &tri->l2->customdata, true);
@@ -682,6 +682,8 @@ void TM_mesh_bm_to_me(struct Main *bmain,
     mpoly->loopstart = j;
     mpoly->totloop = 3;
     mpoly->mat_nr = f->mat_nr;
+
+    mpoly->flag = BLI_trimesh_tri_flag_to_mflag(f->flag);
 
     for (int k = 0; k < 3; k++, j++, mloop++) {
       TMLoopData *ld = TM_GET_TRI_LOOP(f, k);

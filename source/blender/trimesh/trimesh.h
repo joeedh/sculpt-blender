@@ -28,7 +28,7 @@ enum { TM_VERTEX = 1, TM_EDGE = 2, TM_LOOP = 4, TM_TRI = 8 };
 
 enum {
   TRIMESH_SELECT = 1 << 1,
-  TM_ELEM_HIDDEN = 1 << 1,
+  TM_ELEM_HIDDEN = 1 << 2,
   TRIMESH_SMOOTH = 1 << 3,
   TRIMESH_SEAM = 1 << 4,
   TRIMESH_SHARP = 1 << 5,
@@ -43,6 +43,7 @@ BLI_INLINE uint8_t BLI_trimesh_vert_flag_to_mflag(int16_t f)
   uint8_t r = 0;
 
   r = f & TRIMESH_SELECT;
+
   if (f & TM_ELEM_HIDDEN) {
     r |= ME_HIDE;
   }
@@ -52,10 +53,21 @@ BLI_INLINE uint8_t BLI_trimesh_vert_flag_to_mflag(int16_t f)
 
 BLI_INLINE uint8_t BLI_trimesh_edge_flag_to_mflag(int16_t f)
 {
-  uint8_t r = 0;
+  uint8_t r = f & TRIMESH_SELECT;
 
-  // XXX
-  r = f & 255;
+  if (f & TM_ELEM_HIDDEN) {
+    r |= ME_HIDE;
+  }
+
+  if (f & TRIMESH_SEAM) {
+    r |= ME_SEAM;
+  }
+  if (f & TRIMESH_EDGEDRAW) {
+    r |= ME_EDGEDRAW;
+  }
+  if (f & TRIMESH_SHARP) {
+    r |= ME_SHARP;
+  }
 
   return r;
 }
@@ -247,7 +259,7 @@ BLI_INLINE void TM_iterate(TM_TriMesh *tm, TM_TriMeshIter *iter, int type)
   elem = TM_iterstep(iter); \
   for (; elem; elem = TM_iterstep(iter))
 
-TMVert *TM_make_vert(TM_TriMesh *tm, float co[3], float no[3], int threadnr, bool skipcd);
+TMVert *TM_make_vert(TM_TriMesh *tm, float co[3], float no[3], bool skipcd);
 
 BLI_INLINE TMEdge *TM_edge_exists(TMVert *v1, TMVert *v2)
 {
@@ -265,12 +277,12 @@ BLI_INLINE TMEdge *TM_edge_exists(TMVert *v1, TMVert *v2)
 #define TM_edge_is_wire(e) ((e)->tris.length == 0)
 
 // only creates an edge if one doesn't already exist between v1 and v2
-TMEdge *TM_get_edge(TM_TriMesh *tm, TMVert *v1, TMVert *v2, int threadnr, bool skipcd);
-TMFace *TM_make_tri(TM_TriMesh *tm, TMVert *v1, TMVert *v2, TMVert *v3, int threadnr, bool skipcd);
+TMEdge *TM_get_edge(TM_TriMesh *tm, TMVert *v1, TMVert *v2, bool skipcd);
+TMFace *TM_make_tri(TM_TriMesh *tm, TMVert *v1, TMVert *v2, TMVert *v3, bool skipcd);
 
-void TM_kill_edge(TM_TriMesh *tm, TMEdge *e, int threadnr, bool kill_verts);
-void TM_kill_vert(TM_TriMesh *tm, TMVert *v, int threadnr);
-void TM_kill_tri(TM_TriMesh *tm, TMFace *tri, int threadnr, bool kill_edges, bool kill_verts);
+void TM_kill_edge(TM_TriMesh *tm, TMEdge *e, bool kill_verts);
+void TM_kill_vert(TM_TriMesh *tm, TMVert *v);
+void TM_kill_tri(TM_TriMesh *tm, TMFace *tri, bool kill_edges, bool kill_verts);
 
 // primary interface to run threaded jobs
 
@@ -311,8 +323,33 @@ bool TM_elem_is_dead(void *elem);
 #define TM_GET_TRI_EDGE(tri, n) ((&(tri)->e1)[n])
 #define TM_GET_TRI_LOOP(tri, n) ((&(tri)->l1)[n])
 
-TMVert *TM_split_edge(TM_TriMesh *tm, TMEdge *e, int threadnr, float fac, bool skipcd);
-void TM_collapse_edge(TM_TriMesh *tm, TMEdge *e, int threadnr);
+BLI_INLINE TMLoopData *TM_GET_TRI_LOOP_EDGE(TMFace *t, TMEdge *e)
+{
+  if (e == t->e1) {
+    return t->l1;
+  }
+  if (e == t->e2) {
+    return t->l2;
+  }
+
+  return t->l3;
+}
+
+BLI_INLINE TMLoopData *TM_GET_TRI_LOOP_VERTEX(TMFace *t, TMVert *v)
+{
+  if (v == t->v1) {
+    return t->l1;
+  }
+  else if (v == t->v2) {
+    return t->l2;
+  }
+  else {
+    return t->l3;
+  }
+}
+
+TMVert *TM_split_edge(TM_TriMesh *tm, TMEdge *e, float fac, bool skipcd);
+void TM_collapse_edge(TM_TriMesh *tm, TMEdge *e);
 
 typedef struct TriMeshLog TriMeshLog;
 TriMeshLog *TM_log_new(TM_TriMesh *tm, int cd_vert_mask_index);

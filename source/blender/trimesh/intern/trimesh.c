@@ -85,14 +85,14 @@ void trimesh_element_init(void *elem, CustomData *customdata, bool skipcd)
   }
 }
 
-void trimesh_element_destroy(void *elem, int threadnr, CustomData *customdata)
+void trimesh_element_destroy(void *elem, CustomData *customdata)
 {
   TMElement *e = elem;
 
   CustomData_bmesh_free_block(customdata, &e->customdata);
 }
 
-static TMLoopData *trimesh_make_loop(TM_TriMesh *tm, int threadnr, bool skipcd)
+static TMLoopData *trimesh_make_loop(TM_TriMesh *tm, bool skipcd)
 {
   TMLoopData *loop = BLI_safepool_alloc(tm->pools[POOL_LOOP]);
 
@@ -101,9 +101,9 @@ static TMLoopData *trimesh_make_loop(TM_TriMesh *tm, int threadnr, bool skipcd)
   return loop;
 }
 
-static void trimesh_kill_loop(TM_TriMesh *tm, TMLoopData *l, int threadnr)
+static void trimesh_kill_loop(TM_TriMesh *tm, TMLoopData *l)
 {
-  trimesh_element_destroy(l, threadnr, &tm->ldata);
+  trimesh_element_destroy(l, &tm->ldata);
 }
 
 void TMesh_free(TM_TriMesh *tm)
@@ -183,7 +183,7 @@ TM_TriMesh *TMesh_new(int maxthread)
 
 #define OTHER_VERT(e, v) ((v) == (e)->v1 ? (e)->v2 : (e)->v1)
 
-static TMEdge *ensure_edge(TM_TriMesh *tm, TMVert *v1, TMVert *v2, int threadnr, bool skipcd)
+static TMEdge *ensure_edge(TM_TriMesh *tm, TMVert *v1, TMVert *v2, bool skipcd)
 {
   for (int i = 0; i < v1->edges.length; i++) {
     TMEdge *e = v1->edges.items[i];
@@ -201,8 +201,8 @@ static TMEdge *ensure_edge(TM_TriMesh *tm, TMVert *v1, TMVert *v2, int threadnr,
 
   trilist_simplelist_init(tm, &e->tris, E_TLIST_ESIZE, POOL_TLIST);
 
-  trilist_simplelist_append(tm, &e->v1->edges, e, POOL_ELIST, threadnr);
-  trilist_simplelist_append(tm, &e->v2->edges, e, POOL_ELIST, threadnr);
+  trilist_simplelist_append(tm, &e->v1->edges, e, POOL_ELIST);
+  trilist_simplelist_append(tm, &e->v2->edges, e, POOL_ELIST);
 
   trimesh_element_init(e, &tm->edata, skipcd);
   tm->totedge++;
@@ -243,15 +243,15 @@ void TM_tri_iternew(TM_TriMesh *tm, TM_TriMeshIter *iter)
 }
 
 static TMEdge *edge_add_tri(
-    TM_TriMesh *tm, TMVert *v1, TMVert *v2, TMFace *tri, int threadnr, bool skipcd)
+    TM_TriMesh *tm, TMVert *v1, TMVert *v2, TMFace *tri, bool skipcd)
 {
-  TMEdge *e = ensure_edge(tm, v1, v2, threadnr, skipcd);
-  trilist_simplelist_append(tm, &e->tris, tri, POOL_TLIST, threadnr);
+  TMEdge *e = ensure_edge(tm, v1, v2, skipcd);
+  trilist_simplelist_append(tm, &e->tris, tri, POOL_TLIST);
 
   return e;
 }
 
-TMVert *TM_make_vert(TM_TriMesh *tm, float co[3], float no[3], int threadnr, bool skipcd)
+TMVert *TM_make_vert(TM_TriMesh *tm, float co[3], float no[3], bool skipcd)
 {
   TMVert *v = BLI_safepool_alloc(tm->pools[POOL_VERTEX]);
 
@@ -280,12 +280,12 @@ TMVert *TM_make_vert(TM_TriMesh *tm, float co[3], float no[3], int threadnr, boo
   return v;
 }
 
-TMEdge *TM_get_edge(TM_TriMesh *tm, TMVert *v1, TMVert *v2, int threadnr, bool skipcd)
+TMEdge *TM_get_edge(TM_TriMesh *tm, TMVert *v1, TMVert *v2, bool skipcd)
 {
-  return ensure_edge(tm, v1, v2, threadnr, skipcd);
+  return ensure_edge(tm, v1, v2, skipcd);
 }
 
-TMFace *TM_make_tri(TM_TriMesh *tm, TMVert *v1, TMVert *v2, TMVert *v3, int threadnr, bool skipcd)
+TMFace *TM_make_tri(TM_TriMesh *tm, TMVert *v1, TMVert *v2, TMVert *v3, bool skipcd)
 {
   TMFace *tri = BLI_safepool_alloc(tm->pools[POOL_TRI]);
 
@@ -293,17 +293,17 @@ TMFace *TM_make_tri(TM_TriMesh *tm, TMVert *v1, TMVert *v2, TMVert *v3, int thre
 
   trimesh_element_init(tri, &tm->tdata, skipcd);
 
-  tri->l1 = trimesh_make_loop(tm, threadnr, skipcd);
-  tri->l2 = trimesh_make_loop(tm, threadnr, skipcd);
-  tri->l3 = trimesh_make_loop(tm, threadnr, skipcd);
+  tri->l1 = trimesh_make_loop(tm, skipcd);
+  tri->l2 = trimesh_make_loop(tm, skipcd);
+  tri->l3 = trimesh_make_loop(tm, skipcd);
 
   tri->v1 = v1;
   tri->v2 = v2;
   tri->v3 = v3;
 
-  tri->e1 = edge_add_tri(tm, v1, v2, tri, threadnr, skipcd);
-  tri->e2 = edge_add_tri(tm, v2, v3, tri, threadnr, skipcd);
-  tri->e3 = edge_add_tri(tm, v3, v1, tri, threadnr, skipcd);
+  tri->e1 = edge_add_tri(tm, v1, v2, tri, skipcd);
+  tri->e2 = edge_add_tri(tm, v2, v3, tri, skipcd);
+  tri->e3 = edge_add_tri(tm, v3, v1, tri, skipcd);
 
   if (!tri->e3) {
     printf("evil! %p\n", tri->e3);
@@ -335,7 +335,7 @@ void TM_add(TM_TriMesh *tm,
   vno = vertNos;
 
   for (i = 0; i < totvert; i++, vco += 3, vno += 3) {
-    TMVert *v = TM_make_vert(tm, vco, vno, threadnr, skipcd);
+    TMVert *v = TM_make_vert(tm, vco, vno, skipcd);
     vmap[i] = v;
   }
 
@@ -344,7 +344,7 @@ void TM_add(TM_TriMesh *tm,
     TMVert *v2 = vmap[triIndices[1]];
     TMVert *v3 = vmap[triIndices[2]];
 
-    TM_make_tri(tm, v1, v2, v3, threadnr, skipcd);
+    TM_make_tri(tm, v1, v2, v3, skipcd);
   }
 
   MEM_freeN(vmap);
@@ -366,9 +366,58 @@ CustomData *trimesh_get_customdata(TM_TriMesh *tm, int type)
   return NULL;
 }
 
+void TM_kill_vert(TM_TriMesh *tm, TMVert *v)
+{
+  tm->elem_index_dirty |= TM_VERTEX;
+  tm->elem_table_dirty |= TM_VERTEX;
+
+  /// clear debug tag, 12345
+  v->pad = v->threadtag = 0;
+
+  while (v->edges.length > 0) {
+    TM_kill_edge(tm, v->edges.items[0], false);
+  }
+
+  trimesh_element_destroy(v, &tm->vdata);
+
+  tm->totvert--;
+  trimesh_simplelist_free(tm, &v->edges, POOL_ELIST);
+  BLI_safepool_free(tm->pools[POOL_VERTEX], v);
+}
+
+// if kill_verts is true verts with no edges will be deleted
+void TM_kill_edge(TM_TriMesh *tm, TMEdge *e, bool kill_verts)
+{
+  tm->elem_index_dirty |= TM_EDGE;
+  tm->elem_table_dirty |= TM_EDGE;
+
+  while (e->tris.length > 0) {
+    TMFace *tri = e->tris.items[0];
+    TM_kill_tri(tm, tri, false, false);
+  }
+
+  trimesh_simplelist_remove(tm, &e->v1->edges, e, POOL_ELIST);
+  trimesh_simplelist_remove(tm, &e->v2->edges, e, POOL_ELIST);
+
+  if (kill_verts) {
+    if (e->v1->edges.length == 0) {
+      TM_kill_vert(tm, e->v1);
+    }
+
+    if (e->v2->edges.length == 0) {
+      TM_kill_vert(tm, e->v2);
+    }
+  }
+
+  tm->totedge--;
+  trimesh_element_destroy(e, &tm->edata);
+
+  trimesh_simplelist_free(tm, &e->tris, POOL_TLIST);
+  BLI_safepool_free(tm->pools[POOL_EDGE], e);
+}
+
 // kill_edges/verts is whether to automatically kill verts/edges that belong to no triangles
-// note that threadnr doesn't refer to whichever thread created tri, but the calling thread
-void TM_kill_tri(TM_TriMesh *tm, TMFace *tri, int threadnr, bool kill_edges, bool kill_verts)
+void TM_kill_tri(TM_TriMesh *tm, TMFace *tri, bool kill_edges, bool kill_verts)
 {
   // static void simplelist_remove(OptTriMesh *tm, optmesh_simplelist *list, void *item, int pool,
   // int threadnr) {
@@ -376,33 +425,33 @@ void TM_kill_tri(TM_TriMesh *tm, TMFace *tri, int threadnr, bool kill_edges, boo
   tm->elem_index_dirty |= TM_TRI;
   tm->elem_table_dirty |= TM_TRI;
 
-  trimesh_simplelist_remove(tm, &tri->e1->tris, tri, POOL_TLIST, threadnr);
-  trimesh_simplelist_remove(tm, &tri->e2->tris, tri, POOL_TLIST, threadnr);
-  trimesh_simplelist_remove(tm, &tri->e3->tris, tri, POOL_TLIST, threadnr);
+  trimesh_simplelist_remove(tm, &tri->e1->tris, tri, POOL_TLIST);
+  trimesh_simplelist_remove(tm, &tri->e2->tris, tri, POOL_TLIST);
+  trimesh_simplelist_remove(tm, &tri->e3->tris, tri, POOL_TLIST);
 
-  trimesh_kill_loop(tm, tri->l1, threadnr);
-  trimesh_kill_loop(tm, tri->l2, threadnr);
-  trimesh_kill_loop(tm, tri->l3, threadnr);
+  trimesh_kill_loop(tm, tri->l1);
+  trimesh_kill_loop(tm, tri->l2);
+  trimesh_kill_loop(tm, tri->l3);
 
   if (kill_edges) {
     if (tri->e1->tris.length == 0) {
-      TM_kill_edge(tm, tri->e1, threadnr, kill_verts);
+      TM_kill_edge(tm, tri->e1, kill_verts);
     }
     if (tri->e2->tris.length == 0) {
-      TM_kill_edge(tm, tri->e2, threadnr, kill_verts);
+      TM_kill_edge(tm, tri->e2, kill_verts);
     }
     if (tri->e3->tris.length == 0) {
-      TM_kill_edge(tm, tri->e3, threadnr, kill_verts);
+      TM_kill_edge(tm, tri->e3, kill_verts);
     }
   }
 
   tm->tottri--;
-  trimesh_element_destroy(tri, threadnr, &tm->tdata);
+  trimesh_element_destroy(tri, &tm->tdata);
 
   BLI_safepool_free(tm->pools[POOL_TRI], tri);
 }
 
-static void weld_verts(TM_TriMesh *tm, TMVert *v1, TMVert *v2, int threadnr)
+static void weld_verts(TM_TriMesh *tm, TMVert *v1, TMVert *v2)
 {
   for (int i = 0; i < v2->edges.length; i++) {
     TMEdge *e = v2->edges.items[i];
@@ -413,7 +462,7 @@ static void weld_verts(TM_TriMesh *tm, TMVert *v1, TMVert *v2, int threadnr)
       fprintf(stdout, "auto deleting edge in BLI_trimesh code\n");
       fflush(stdout);
 
-      TM_kill_edge(tm, e, threadnr, false);
+      TM_kill_edge(tm, e, false);
 
       continue;
     }
@@ -440,7 +489,7 @@ static void weld_verts(TM_TriMesh *tm, TMVert *v1, TMVert *v2, int threadnr)
       }
 
       if (tot > 1) {
-        TM_kill_tri(tm, tri, threadnr, false, false);
+        TM_kill_tri(tm, tri, false, false);
       }
     }
 
@@ -452,11 +501,11 @@ static void weld_verts(TM_TriMesh *tm, TMVert *v1, TMVert *v2, int threadnr)
       e->v2 = v1;
     }
 
-    trilist_simplelist_append(tm, &v1->edges, e, POOL_ELIST, threadnr);
+    trilist_simplelist_append(tm, &v1->edges, e, POOL_ELIST);
   }
 
   v2->edges.length = 0;
-  TM_kill_vert(tm, v2, threadnr);
+  TM_kill_vert(tm, v2);
 }
 
 bool TM_elem_is_dead(void *elem)
@@ -464,15 +513,15 @@ bool TM_elem_is_dead(void *elem)
   return BLI_safepool_elem_is_dead(elem);
 }
 
-void TM_collapse_edge(TM_TriMesh *tm, TMEdge *e, int threadnr)
+void TM_collapse_edge(TM_TriMesh *tm, TMEdge *e)
 {
   TMVert *v1 = e->v1, *v2 = e->v2;
 
-  TM_kill_edge(tm, e, threadnr, false);
-  weld_verts(tm, v1, v2, threadnr);
+  TM_kill_edge(tm, e, false);
+  weld_verts(tm, v1, v2);
 }
 
-TMVert *TM_split_edge(TM_TriMesh *tm, TMEdge *e, int threadnr, float fac, bool skipcd)
+TMVert *TM_split_edge(TM_TriMesh *tm, TMEdge *e, float fac, bool skipcd)
 {
   float co[3];
   float no[3];
@@ -481,10 +530,15 @@ TMVert *TM_split_edge(TM_TriMesh *tm, TMEdge *e, int threadnr, float fac, bool s
   add_v3_v3v3(no, e->v1->no, e->v2->no);
   normalize_v3(no);
 
-  TMVert *vc = TM_make_vert(tm, co, no, threadnr, skipcd);
+  TMVert *vc = TM_make_vert(tm, co, no, skipcd);
 
-  TMEdge *e2 = ensure_edge(tm, e->v1, vc, threadnr, skipcd);
-  TMEdge *e3 = ensure_edge(tm, vc, e->v2, threadnr, skipcd);
+  TMEdge *e2 = ensure_edge(tm, e->v1, vc, skipcd);
+  TMEdge *e3 = ensure_edge(tm, vc, e->v2, skipcd);
+
+  int eflag = e->flag;
+
+  e2->flag |= eflag;
+  e3->flag |= eflag;
 
   if (!skipcd) {
     float src_weights[2] = {0.5f, 0.5f};
@@ -512,8 +566,8 @@ TMVert *TM_split_edge(TM_TriMesh *tm, TMEdge *e, int threadnr, float fac, bool s
     tv2 = TRIVERT(tri, (vi + 1) % 3);
     tv3 = TRIVERT(tri, (vi + 2) % 3);
 
-    TMFace *t1 = TM_make_tri(tm, tv1, vc, tv3, threadnr, skipcd);
-    TMFace *t2 = TM_make_tri(tm, vc, tv2, tv3, threadnr, skipcd);
+    TMFace *t1 = TM_make_tri(tm, tv1, vc, tv3, skipcd);
+    TMFace *t2 = TM_make_tri(tm, vc, tv2, tv3, skipcd);
 
     if (!skipcd) {
       TMLoopData *l1 = TRILOOP(tri, vi);
@@ -534,10 +588,10 @@ TMVert *TM_split_edge(TM_TriMesh *tm, TMEdge *e, int threadnr, float fac, bool s
       CustomData_bmesh_copy_data(&tm->ldata, &tm->ldata, l1->customdata, t1->l2->customdata);
       CustomData_bmesh_copy_data(&tm->ldata, &tm->ldata, l3->customdata, t1->l3->customdata);
     }
-    TM_kill_tri(tm, tri, threadnr, false, false);
+    TM_kill_tri(tm, tri, false, false);
   }
 
-  TM_kill_edge(tm, e, threadnr, false);
+  TM_kill_edge(tm, e, false);
   TM_calc_vert_normal(vc, true);
 
   return vc;
