@@ -42,6 +42,7 @@
 
 #include "BKE_DerivedMesh.h"
 #include "BKE_ccg.h"
+#include "BKE_global.h"
 #include "BKE_mesh.h"
 #include "BKE_paint.h"
 #include "BKE_pbvh.h"
@@ -794,6 +795,7 @@ static void gpu_bmesh_vert_to_buffer_copy(BMVert *v,
                                           const float fno[3],
                                           const float *fmask,
                                           const int cd_vert_mask_offset,
+                                          const int cd_vert_node_offset,
                                           const bool show_mask,
                                           const bool show_vcol,
                                           bool *empty_mask,
@@ -811,6 +813,13 @@ static void gpu_bmesh_vert_to_buffer_copy(BMVert *v,
 
   if (show_mask) {
     float effective_mask = fmask ? *fmask : BM_ELEM_CD_GET_FLOAT(v, cd_vert_mask_offset);
+
+    if (G.debug_value == 889) {
+      int ni = BM_ELEM_CD_GET_INT(v, cd_vert_node_offset);
+
+      effective_mask = ni == -1 ? 0.0f : (float)((ni*50) % 32) / 32.0f;
+    }
+
     uchar cmask = (uchar)(effective_mask * 255);
     GPU_vertbuf_attr_set(vert_buf, g_vbo_id.msk, v_index, &cmask);
     *empty_mask = *empty_mask && (cmask == 0);
@@ -1058,7 +1067,8 @@ void GPU_pbvh_bmesh_buffers_update(GPU_PBVH_Buffers *buffers,
                                    GSet *bm_faces,
                                    GSet *bm_unique_verts,
                                    GSet *bm_other_verts,
-                                   const int update_flags)
+                                   const int update_flags,
+                                   const int cd_vert_node_offset)
 {
   const bool show_mask = (update_flags & GPU_PBVH_BUFFERS_SHOW_MASK) != 0;
   const bool show_vcol = (update_flags & GPU_PBVH_BUFFERS_SHOW_VCOL) != 0;
@@ -1129,6 +1139,7 @@ void GPU_pbvh_bmesh_buffers_update(GPU_PBVH_Buffers *buffers,
                                           NULL,
                                           NULL,
                                           cd_vert_mask_offset,
+                                          cd_vert_node_offset,
                                           show_mask,
                                           show_vcol,
                                           &empty_mask,
@@ -1197,6 +1208,7 @@ void GPU_pbvh_bmesh_buffers_update(GPU_PBVH_Buffers *buffers,
                                         f->no,
                                         &fmask,
                                         cd_vert_mask_offset,
+                                        cd_vert_node_offset,
                                         show_mask,
                                         show_vcol,
                                         &empty_mask,

@@ -1364,7 +1364,8 @@ static void pbvh_update_draw_buffer_cb(void *__restrict userdata,
                                       node->bm_faces,
                                       node->bm_unique_verts,
                                       node->bm_other_verts,
-                                      update_flags);
+                                      update_flags,
+                                      pbvh->cd_vert_node_offset);
         break;
       case PBVH_TRIMESH:
         GPU_pbvh_trimesh_buffers_update(node->draw_buffers,
@@ -1388,7 +1389,7 @@ static void pbvh_update_draw_buffers(PBVH *pbvh, PBVHNode **nodes, int totnode, 
       PBVHNode *node = nodes[n];
 
       if (node->flag & PBVH_Delete) {
-        printf("corrupted node! %p\n", node);
+        printf("corrupted node! %p %d\n", node, node->flag);
         return;
       }
 
@@ -2441,7 +2442,7 @@ bool BKE_pbvh_node_raycast(PBVH *pbvh,
                                      face_normal);
       break;
     case PBVH_BMESH:
-      //BM_mesh_elem_index_ensure(pbvh->bm, BM_VERT);
+      // BM_mesh_elem_index_ensure(pbvh->bm, BM_VERT);
       hit = pbvh_bmesh_node_raycast(node,
                                     ray_start,
                                     ray_normal,
@@ -3027,7 +3028,6 @@ void BKE_pbvh_gather_proxies(PBVH *pbvh, PBVHNode ***r_array, int *r_tot)
   for (int n = 0; n < pbvh->totnode; n++) {
     PBVHNode *node = pbvh->nodes + n;
 
-
     if (node->proxy_count > 0) {
       if (tot == space) {
         /* resize array if needed */
@@ -3424,10 +3424,12 @@ void BKE_pbvh_ensure_proxyarray(SculptSession *ss,
       if (vd.no) {
         copy_v3_v3_short(p->no[i], vd.no);
         normal_short_to_float_v3(p->fno[i], vd.no);
-      } else if (vd.fno) {
+      }
+      else if (vd.fno) {
         copy_v3_v3(p->fno[i], vd.fno);
         normal_float_to_short_v3(p->no[i], p->fno[i]);
-      } else {
+      }
+      else {
         zero_v3(p->fno[i]);
         p->fno[i][2] = 1.0f;
         normal_float_to_short_v3(p->no[i], p->fno[i]);
