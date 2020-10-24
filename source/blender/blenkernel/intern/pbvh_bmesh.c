@@ -1998,7 +1998,6 @@ bool BKE_pbvh_bmesh_update_topology(PBVH *pbvh,
                                     const bool use_projected,
                                     int sym_axis)
 {
-  return false;
   if (sym_axis >= 0 &&
       PIL_check_seconds_timer() - last_update_time[sym_axis] < DYNTOPO_RUN_INTERVAL) {
     return false;
