@@ -456,8 +456,6 @@ static void sculpt_undo_bmesh_restore_generic_task_cb(
 
 static void sculpt_undo_bmesh_restore_generic(SculptUndoNode *unode, Object *ob, SculptSession *ss)
 {
-  // XXX
-  return;
   if (unode->applied) {
     BM_log_undo(ss->bm, ss->bm_log);
     unode->applied = false;

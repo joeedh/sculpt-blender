@@ -366,7 +366,7 @@ static void stats_object_sculpt_dynamic_topology(Object *ob, SceneStats *stats)
 
 static bool stats_is_object_dynamic_topology_sculpt(Object *ob, const eObjectMode object_mode)
 {
-  return (ob && (object_mode & OB_MODE_SCULPT) && ob->sculpt && ob->sculpt->tm);
+  return (ob && (object_mode & OB_MODE_SCULPT) && ob->sculpt && (ob->sculpt->tm || ob->sculpt->bm));
 }
 
 /* Statistics displayed in info header. Called regularly on scene changes. */
