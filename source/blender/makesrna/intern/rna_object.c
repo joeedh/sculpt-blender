@@ -2036,7 +2036,7 @@ bool rna_GPencil_object_poll(PointerRNA *UNUSED(ptr), PointerRNA value)
 int rna_Object_use_dynamic_topology_sculpting_get(PointerRNA *ptr)
 {
   SculptSession *ss = ((Object *)ptr->owner_id)->sculpt;
-  return (ss && ss->tm);
+  return (ss && (ss->tm || ss->bm));
 }
 
 #else

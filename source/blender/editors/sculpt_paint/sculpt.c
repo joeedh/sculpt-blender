@@ -148,8 +148,11 @@ const float *SCULPT_vertex_co_get(SculptSession *ss, SculptIdx index)
       }
       return ss->mvert[index].co;
     }
-    case PBVH_BMESH:
-      return BM_vert_at_index(BKE_pbvh_get_bmesh(ss->pbvh), index)->co;
+    case PBVH_BMESH: {
+      BMVert *v = (BMVert *)index;
+      return v->co;
+    }
+    //  return BM_vert_at_index(BKE_pbvh_get_bmesh(ss->pbvh), index)->co;
     case PBVH_TRIMESH: {
       TMVert *v = (TMVert *)index;
       return v->co;
@@ -194,9 +197,14 @@ void SCULPT_vertex_normal_get(SculptSession *ss, SculptIdx index, float no[3])
       }
       break;
     }
-    case PBVH_BMESH:
-      copy_v3_v3(no, BM_vert_at_index(BKE_pbvh_get_bmesh(ss->pbvh), index)->no);
+    case PBVH_BMESH: {
+      BMVert *v = (BMVert *)index;
+      copy_v3_v3(no, v->no);
       break;
+    }
+    // case PBVH_BMESH:
+    // copy_v3_v3(no, BM_vert_at_index(BKE_pbvh_get_bmesh(ss->pbvh), index)->no);
+    // break;
     case PBVH_TRIMESH: {
       TMVert *v = (TMVert *)index;
       copy_v3_v3(no, v->no);
@@ -278,7 +286,7 @@ float SCULPT_vertex_mask_get(SculptSession *ss, SculptIdx index)
     case PBVH_FACES:
       return ss->vmask[index];
     case PBVH_BMESH:
-      v = BM_vert_at_index(BKE_pbvh_get_bmesh(ss->pbvh), index);
+      v = (BMVert *)index;  // BM_vert_at_index(BKE_pbvh_get_bmesh(ss->pbvh), index);
       mask = BM_ELEM_CD_GET_VOID_P(v, CustomData_get_offset(&ss->bm->vdata, CD_PAINT_MASK));
       return *mask;
     case PBVH_TRIMESH: {
@@ -362,9 +370,11 @@ void SCULPT_vertex_visible_set(SculptSession *ss, SculptIdx index, bool visible)
       SET_FLAG_FROM_TEST(ss->mvert[index].flag, !visible, ME_HIDE);
       ss->mvert[index].flag |= ME_VERT_PBVH_UPDATE;
       break;
-    case PBVH_BMESH:
-      BM_elem_flag_set(BM_vert_at_index(ss->bm, index), BM_ELEM_HIDDEN, !visible);
+    case PBVH_BMESH: {
+      BMVert *v = (BMVert *)index;
+      BM_elem_flag_set(v, BM_ELEM_HIDDEN, !visible);
       break;
+    }
     case PBVH_TRIMESH: {
       TMVert *v = (TMVert *)index;
       TM_elem_flag_set(v, TM_ELEM_HIDDEN, !visible);
@@ -380,8 +390,10 @@ bool SCULPT_vertex_visible_get(SculptSession *ss, SculptIdx index)
   switch (BKE_pbvh_type(ss->pbvh)) {
     case PBVH_FACES:
       return !(ss->mvert[index].flag & ME_HIDE);
-    case PBVH_BMESH:
-      return !BM_elem_flag_test(BM_vert_at_index(ss->bm, index), BM_ELEM_HIDDEN);
+    case PBVH_BMESH: {
+      BMVert *v = (BMVert *)index;
+      return !BM_elem_flag_test(v, BM_ELEM_HIDDEN);
+    }
     case PBVH_TRIMESH: {
       TMVert *v = (TMVert *)index;
       return !TM_elem_flag_test(v, TM_ELEM_HIDDEN);
@@ -807,7 +819,7 @@ static void sculpt_vertex_neighbors_get_bmesh(SculptSession *ss,
                                               SculptIdx index,
                                               SculptVertexNeighborIter *iter)
 {
-  BMVert *v = BM_vert_at_index(ss->bm, index);
+  BMVert *v = (BMVert *)index;  // BM_vert_at_index(ss->bm, index);
   BMIter liter;
   BMLoop *l;
   iter->size = 0;
@@ -819,8 +831,8 @@ static void sculpt_vertex_neighbors_get_bmesh(SculptSession *ss,
     const BMVert *adj_v[2] = {l->prev->v, l->next->v};
     for (int i = 0; i < ARRAY_SIZE(adj_v); i++) {
       const BMVert *v_other = adj_v[i];
-      if (BM_elem_index_get(v_other) != (int)index) {
-        sculpt_vertex_neighbor_add(iter, BM_elem_index_get(v_other));
+      if ((SculptIdx)v_other != index) {
+        sculpt_vertex_neighbor_add(iter, (SculptIdx)v_other);
       }
     }
   }
@@ -936,8 +948,7 @@ bool SCULPT_vertex_is_boundary(const SculptSession *ss, const SculptIdx index)
       return sculpt_check_boundary_vertex_in_base_mesh(ss, index);
     }
     case PBVH_BMESH: {
-      BMVert *v = BM_vert_at_index(ss->bm, index);
-      return BM_vert_is_boundary(v);
+      return BM_vert_is_boundary((BMVert *)index);
     }
     case PBVH_TRIMESH: {
       TMVert *v = (TMVert *)index;
@@ -1376,7 +1387,15 @@ void SCULPT_orig_vert_data_update(SculptOrigVertData *orig_data, PBVHVertexIter 
       TM_log_original_vert_data(orig_data->tm_log, iter->tm_vert, &orig_data->co, &orig_data->no);
     }
     else if (orig_data->bm_log) {
-      BM_log_original_vert_data(orig_data->bm_log, iter->bm_vert, &orig_data->co, &orig_data->no);
+      float *co = BM_ELEM_CD_GET_VOID_P(iter->bm_vert, iter->cd_origco_offset);
+      float *no = BM_ELEM_CD_GET_VOID_P(iter->bm_vert, iter->cd_origno_offset);
+
+      orig_data->co = co;
+      orig_data->no = orig_data->_no;
+
+      normal_float_to_short_v3(orig_data->_no, no);
+      // BM_log_original_vert_data(orig_data->bm_log, iter->bm_vert, &orig_data->co,
+      // &orig_data->no);
     }
     else {
       orig_data->co = orig_data->coords[iter->i];
@@ -1511,8 +1530,11 @@ static void sculpt_project_v3(const SculptProjectVector *spvc, const float vec[3
  * Same goes for alt-key smoothing. */
 bool SCULPT_stroke_is_dynamic_topology(const SculptSession *ss, const Brush *brush)
 {
+#ifdef WITH_TRIMESH
   return ((BKE_pbvh_type(ss->pbvh) == PBVH_TRIMESH) &&
-
+#else
+  return ((BKE_pbvh_type(ss->pbvh) == PBVH_BMESH) &&
+#endif
           (!ss->cache || (!ss->cache->alt_smooth)) &&
 
           /* Requires mesh restore, which doesn't work with
@@ -2113,11 +2135,19 @@ static void calc_area_normal_and_center_task_cb(void *__restrict userdata,
 
       if (use_original) {
         if (unode->bm_entry) {
+          float *temp_co = BM_ELEM_CD_GET_VOID_P(vd.bm_vert, vd.cd_origco_offset);
+          float *temp_no = BM_ELEM_CD_GET_VOID_P(vd.bm_vert, vd.cd_origno_offset);
+
+          copy_v3_v3(co, temp_co);
+          normal_float_to_short_v3(no_s, temp_no);
+
+          /*
           const float *temp_co;
           const short *temp_no_s;
           BM_log_original_vert_data(ss->bm_log, vd.bm_vert, &temp_co, &temp_no_s);
           copy_v3_v3(co, temp_co);
           copy_v3_v3_short(no_s, temp_no_s);
+          */
         }
         else {
           copy_v3_v3(co, unode->co[vd.i]);
@@ -5780,6 +5810,11 @@ static void sculpt_topology_update(Sculpt *sd,
       }
     }
 
+    int symidx = ss->cache->mirror_symmetry_pass + (ss->cache->radial_symmetry_pass * 8);
+    if (symidx > 127) {
+      symidx = 127;
+    }
+
     if (BKE_pbvh_type(ss->pbvh) == PBVH_BMESH) {
       BKE_pbvh_bmesh_update_topology(ss->pbvh,
                                      mode,
@@ -5787,15 +5822,11 @@ static void sculpt_topology_update(Sculpt *sd,
                                      ss->cache->view_normal,
                                      ss->cache->radius,
                                      (brush->flag & BRUSH_FRONTFACE) != 0,
-                                     (brush->falloff_shape != PAINT_FALLOFF_SHAPE_SPHERE));
+                                     (brush->falloff_shape != PAINT_FALLOFF_SHAPE_SPHERE),
+                                     symidx);
     }
 
     if (BKE_pbvh_type(ss->pbvh) == PBVH_TRIMESH) {
-      int symidx = ss->cache->mirror_symmetry_pass + (ss->cache->radial_symmetry_pass * 8);
-      if (symidx > 127) {
-        symidx = 127;
-      }
-
       BKE_pbvh_trimesh_update_topology(ss->pbvh,
                                        mode,
                                        ss->cache->location,
@@ -6113,8 +6144,11 @@ static void do_brush_action(Sculpt *sd, Object *ob, Brush *brush, UnifiedPaintSe
     }
 
     if (sculpt_brush_use_topology_rake(ss, brush)) {
-      // bmesh_topology_rake(sd, ob, nodes, totnode, brush->topology_rake_factor);
+#ifdef WITH_TRIMESH
       trimesh_topology_rake(sd, ob, nodes, totnode, brush->topology_rake_factor);
+#else
+      bmesh_topology_rake(sd, ob, nodes, totnode, brush->topology_rake_factor);
+#endif
     }
 
     /* The cloth brush adds the gravity as a regular force and it is processed in the solver. */
@@ -6200,7 +6234,9 @@ static void sculpt_combine_proxies_task_cb(void *__restrict userdata,
 
     if (use_orco) {
       if (ss->bm) {
-        copy_v3_v3(val, BM_log_original_vert_co(ss->bm_log, vd.bm_vert));
+        float *co = BM_ELEM_CD_GET_VOID_P(vd.bm_vert, ss->cd_origco_offset);
+        copy_v3_v3(val, co);
+        // copy_v3_v3(val, BM_log_original_vert_co(ss->bm_log, vd.bm_vert));
       }
       else if (ss->tm) {
         copy_v3_v3(val, TM_log_original_vert_co(ss->tm_log, vd.tm_vert));
@@ -7447,7 +7483,7 @@ bool SCULPT_cursor_geometry_info_update(bContext *C,
 
   /* Update the active vertex of the SculptSession. */
   ss->active_vertex_index = srd.active_vertex_index;
-  if (BKE_pbvh_type(ss->pbvh) != PBVH_TRIMESH) {
+  if (!ELEM(BKE_pbvh_type(ss->pbvh), PBVH_TRIMESH, PBVH_BMESH)) {
     SCULPT_vertex_random_access_ensure(ss);
   }
 

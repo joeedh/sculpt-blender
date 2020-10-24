@@ -232,13 +232,18 @@ void BKE_pbvh_build_bmesh(PBVH *pbvh,
                           bool smooth_shading,
                           struct BMLog *log,
                           const int cd_vert_node_offset,
-                          const int cd_face_node_offset);
+                          const int cd_face_node_offset,
+                          const int cd_origco_offset,
+                          const int cd_origno_offset);
 void BKE_pbvh_build_trimesh(PBVH *bvh,
                             struct TM_TriMesh *bm,
                             bool smooth_shading,
                             struct TriMeshLog *log,
                             const int cd_vert_node_offset,
                             const int cd_face_node_offset);
+
+struct BMVert;
+void BKE_pbvh_bmesh_update_origvert(PBVH *bvh, struct BMVert *v);
 
 void BKE_pbvh_free(PBVH *bvh);
 // void BKE_pbvh_free_layer_disp(PBVH *bvh);
@@ -368,7 +373,8 @@ bool BKE_pbvh_bmesh_update_topology(PBVH *pbvh,
                                     const float view_normal[3],
                                     float radius,
                                     const bool use_frontface,
-                                    const bool use_projected);
+                                    const bool use_projected,
+                                    int sym_axis);
 
 bool BKE_pbvh_trimesh_update_topology(PBVH *bvh,
                                       PBVHTopologyUpdateMode mode,
@@ -507,6 +513,8 @@ typedef struct PBVHVertexIter {
   struct CustomData *tm_vdata;
 
   int cd_vert_mask_offset;
+  int cd_origco_offset;
+  int cd_origno_offset;
 
   /* result: these are all computed in the macro, but we assume
    * that compiler optimization's will skip the ones we don't use */
@@ -705,7 +713,7 @@ void pbvh_vertex_iter_init(PBVH *pbvh, PBVHNode *node, PBVHVertexIter *vi, int m
             } \
             vi.co = vi.bm_vert->co; \
             vi.fno = vi.bm_vert->no; \
-            vi.index = BM_elem_index_get(vi.bm_vert); \
+            vi.index = (SculptIdx)vi.bm_vert; \
             vi.mask = BM_ELEM_CD_GET_VOID_P(vi.bm_vert, vi.cd_vert_mask_offset); \
           }
 

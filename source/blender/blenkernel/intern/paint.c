@@ -1467,7 +1467,7 @@ void BKE_sculptsession_free(Object *ob)
   if (ob && ob->sculpt) {
     SculptSession *ss = ob->sculpt;
 
-    if (ss->tm) {
+    if (ss->tm || ss->bm) {
 #ifdef WITH_TRIMESH
       BKE_sculptsession_tm_to_me(ob, true);
       TMesh_free(ss->tm);
@@ -2065,7 +2065,9 @@ static PBVH *build_pbvh_for_dynamic_topology(Object *ob)
                          ob->sculpt->bm_smooth_shading,
                          ob->sculpt->bm_log,
                          ob->sculpt->cd_vert_node_offset,
-                         ob->sculpt->cd_face_node_offset);
+                         ob->sculpt->cd_face_node_offset,
+                         ob->sculpt->cd_origco_offset,
+                         ob->sculpt->cd_origno_offset);
 #endif
   pbvh_show_mask_set(pbvh, ob->sculpt->show_mask);
   pbvh_show_face_sets_set(pbvh, false);

@@ -1357,7 +1357,7 @@ static SculptUndoNode *sculpt_undo_bmesh_push(Object *ob, PBVHNode *node, Sculpt
          * original positions are logged. */
         BKE_pbvh_vertex_iter_begin(ss->pbvh, node, vd, PBVH_ITER_ALL)
         {
-          BM_log_vert_before_modified(ss->bm_log, vd.bm_vert, vd.cd_vert_mask_offset);
+          BKE_pbvh_bmesh_update_origvert(ss->pbvh, vd.bm_vert);
         }
         BKE_pbvh_vertex_iter_end;
         break;
@@ -1367,7 +1367,7 @@ static SculptUndoNode *sculpt_undo_bmesh_push(Object *ob, PBVHNode *node, Sculpt
         GSet *faces = BKE_pbvh_bmesh_node_faces(node);
         BKE_pbvh_vertex_iter_begin(ss->pbvh, node, vd, PBVH_ITER_ALL)
         {
-          BM_log_vert_before_modified(ss->bm_log, vd.bm_vert, vd.cd_vert_mask_offset);
+          BKE_pbvh_bmesh_update_origvert(ss->pbvh, vd.bm_vert);
         }
         BKE_pbvh_vertex_iter_end;
 
@@ -1447,7 +1447,7 @@ static SculptUndoNode *sculpt_undo_trimesh_push(Object *ob, PBVHNode *node, Scul
          * original positions are logged. */
         BKE_pbvh_vertex_iter_begin(ss->pbvh, node, vd, PBVH_ITER_ALL)
         {
-          BM_log_vert_before_modified(ss->bm_log, vd.bm_vert, vd.cd_vert_mask_offset);
+          BKE_pbvh_bmesh_update_origvert(ss->pbvh, vd.bm_vert);
         }
         BKE_pbvh_vertex_iter_end;
         break;
@@ -1457,7 +1457,7 @@ static SculptUndoNode *sculpt_undo_trimesh_push(Object *ob, PBVHNode *node, Scul
         GSet *faces = BKE_pbvh_bmesh_node_faces(node);
         BKE_pbvh_vertex_iter_begin(ss->pbvh, node, vd, PBVH_ITER_ALL)
         {
-          BM_log_vert_before_modified(ss->bm_log, vd.bm_vert, vd.cd_vert_mask_offset);
+          BKE_pbvh_bmesh_update_origvert(ss->pbvh, vd.bm_vert);
         }
         BKE_pbvh_vertex_iter_end;
 

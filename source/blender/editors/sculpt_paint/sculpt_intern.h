@@ -230,6 +230,7 @@ typedef struct {
   const short *no;
   float mask;
   const float *col;
+  const short _no[3];
 } SculptOrigVertData;
 
 void SCULPT_orig_vert_data_init(SculptOrigVertData *data, Object *ob, PBVHNode *node);

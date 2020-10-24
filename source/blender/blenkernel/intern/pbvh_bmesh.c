@@ -26,6 +26,7 @@
 #include "BLI_math.h"
 #include "BLI_memarena.h"
 #include "BLI_utildefines.h"
+#include "PIL_time.h"
 
 #include "BKE_DerivedMesh.h"
 #include "BKE_ccg.h"
@@ -35,6 +36,9 @@
 
 #include "bmesh.h"
 #include "pbvh_intern.h"
+
+#define DYNTOPO_TIME_LIMIT 0.015
+#define DYNTOPO_RUN_INTERVAL 0.01
 
 /* Avoid skinny faces */
 #define USE_EDGEQUEUE_EVEN_SUBDIV
@@ -1236,8 +1240,13 @@ static bool pbvh_bmesh_subdivide_long_edges(EdgeQueueContext *eq_ctx,
                                             BLI_Buffer *edge_loops)
 {
   bool any_subdivided = false;
+  double time = PIL_check_seconds_timer();
 
   while (!BLI_heapsimple_is_empty(eq_ctx->q->heap)) {
+    if (PIL_check_seconds_timer() - time > DYNTOPO_TIME_LIMIT) {
+      break;
+    }
+
     BMVert **pair = BLI_heapsimple_pop_min(eq_ctx->q->heap);
     BMVert *v1 = pair[0], *v2 = pair[1];
     BMEdge *e;
@@ -1451,6 +1460,17 @@ static void pbvh_bmesh_collapse_edge(PBVH *pbvh,
   BM_vert_kill(pbvh->bm, v_del);
 }
 
+void BKE_pbvh_bmesh_update_origvert(PBVH *pbvh, BMVert *v)
+{
+  BM_log_vert_before_modified(pbvh->bm_log, v, pbvh->cd_vert_mask_offset);
+
+  float *co = BM_ELEM_CD_GET_VOID_P(v, pbvh->cd_origco_offset);
+  float *no = BM_ELEM_CD_GET_VOID_P(v, pbvh->cd_origno_offset);
+
+  copy_v3_v3(co, v->co);
+  copy_v3_v3(no, v->no);
+}
+
 static bool pbvh_bmesh_collapse_short_edges(EdgeQueueContext *eq_ctx,
                                             PBVH *pbvh,
                                             BLI_Buffer *deleted_faces)
@@ -1460,7 +1480,13 @@ static bool pbvh_bmesh_collapse_short_edges(EdgeQueueContext *eq_ctx,
   /* deleted verts point to vertices they were merged into, or NULL when removed. */
   GHash *deleted_verts = BLI_ghash_ptr_new("deleted_verts");
 
+  double time = PIL_check_seconds_timer();
+
   while (!BLI_heapsimple_is_empty(eq_ctx->q->heap)) {
+    if (PIL_check_seconds_timer() - time > DYNTOPO_TIME_LIMIT) {
+      break;
+    }
+
     BMVert **pair = BLI_heapsimple_pop_min(eq_ctx->q->heap);
     BMVert *v1 = pair[0], *v2 = pair[1];
     BLI_mempool_free(eq_ctx->pool, pair);
@@ -1556,7 +1582,7 @@ bool pbvh_bmesh_node_raycast(PBVHNode *node,
               if (len_squared_v3v3(location, v_tri[j]->co) <
                   len_squared_v3v3(location, nearest_vertex_co)) {
                 copy_v3_v3(nearest_vertex_co, v_tri[j]->co);
-                *r_active_vertex_index = BM_elem_index_get(v_tri[j]);
+                *r_active_vertex_index = (SculptIdx)v_tri[j];  // BM_elem_index_get(v_tri[j]);
               }
             }
           }
@@ -1880,10 +1906,16 @@ void BKE_pbvh_build_bmesh(PBVH *pbvh,
                           bool smooth_shading,
                           BMLog *log,
                           const int cd_vert_node_offset,
-                          const int cd_face_node_offset)
+                          const int cd_face_node_offset,
+                          const int cd_origco_offset,
+                          const int cd_origno_offset)
 {
   pbvh->cd_vert_node_offset = cd_vert_node_offset;
   pbvh->cd_face_node_offset = cd_face_node_offset;
+  pbvh->cd_origco_offset = cd_origco_offset;
+  pbvh->cd_origno_offset = cd_origno_offset;
+  pbvh->cd_vert_mask_offset = CustomData_get_offset(&bm->vdata, CD_PAINT_MASK);
+
   pbvh->bm = bm;
 
   BKE_pbvh_bmesh_detail_size_set(pbvh, 0.75);
@@ -1892,7 +1924,7 @@ void BKE_pbvh_build_bmesh(PBVH *pbvh,
   pbvh->bm_log = log;
 
   /* TODO: choose leaf limit better */
-  pbvh->leaf_limit = 100;
+  pbvh->leaf_limit = 2000;
 
   if (smooth_shading) {
     pbvh->flags |= PBVH_DYNTOPO_SMOOTH_SHADING;
@@ -1952,6 +1984,10 @@ void BKE_pbvh_build_bmesh(PBVH *pbvh,
   MEM_freeN(nodeinfo);
 }
 
+static double last_update_time[128] = {
+    0,
+};
+
 /* Collapse short edges, subdivide long edges */
 bool BKE_pbvh_bmesh_update_topology(PBVH *pbvh,
                                     PBVHTopologyUpdateMode mode,
@@ -1959,8 +1995,19 @@ bool BKE_pbvh_bmesh_update_topology(PBVH *pbvh,
                                     const float view_normal[3],
                                     float radius,
                                     const bool use_frontface,
-                                    const bool use_projected)
+                                    const bool use_projected,
+                                    int sym_axis)
 {
+  if (sym_axis >= 0 &&
+      PIL_check_seconds_timer() - last_update_time[sym_axis] < DYNTOPO_RUN_INTERVAL) {
+    return false;
+    // return false;
+  }
+
+  if (sym_axis >= 0) {
+    last_update_time[sym_axis] = PIL_check_seconds_timer();
+  }
+
   /* 2 is enough for edge faces - manifold edge */
   BLI_buffer_declare_static(BMLoop *, edge_loops, BLI_BUFFER_NOP, 2);
   BLI_buffer_declare_static(BMFace *, deleted_faces, BLI_BUFFER_NOP, 32);
@@ -2012,14 +2059,32 @@ bool BKE_pbvh_bmesh_update_topology(PBVH *pbvh,
     BLI_mempool_destroy(queue_pool);
   }
 
-  /* Unmark nodes */
-  for (int n = 0; n < pbvh->totnode; n++) {
-    PBVHNode *node = &pbvh->nodes[n];
+  if (modified) {
+    for (int i = 0; i < pbvh->totnode; i++) {
+      PBVHNode *node = pbvh->nodes + i;
 
-    if (node->flag & PBVH_Leaf && node->flag & PBVH_UpdateTopology) {
-      node->flag &= ~PBVH_UpdateTopology;
+      if ((node->flag & PBVH_Leaf) && (node->flag & PBVH_UpdateTopology) &&
+          !(node->flag & PBVH_FullyHidden)) {
+        /* Recursively split nodes that have gotten too many
+         * elements */
+        pbvh_bmesh_node_limit_ensure(pbvh, i);
+      }
+
+      if ((node->flag & PBVH_Leaf) && (node->flag & PBVH_UpdateTopology)) {
+        node->flag &= ~PBVH_UpdateTopology;
+      }
     }
   }
+  else {  // still unmark nodes
+    for (int i = 0; i < pbvh->totnode; i++) {
+      PBVHNode *node = pbvh->nodes + i;
+
+      if ((node->flag & PBVH_Leaf) && (node->flag & PBVH_UpdateTopology)) {
+        node->flag &= ~PBVH_UpdateTopology;
+      }
+    }
+  }
+
   BLI_buffer_free(&edge_loops);
   BLI_buffer_free(&deleted_faces);
 

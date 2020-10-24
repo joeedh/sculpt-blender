@@ -515,7 +515,7 @@ void SCULPT_smooth(Sculpt *sd,
     return;
   }
 
-  if (type != PBVH_TRIMESH) {
+  if (!ELEM(type, PBVH_TRIMESH, PBVH_BMESH)) {
     SCULPT_vertex_random_access_ensure(ss);
   }
 

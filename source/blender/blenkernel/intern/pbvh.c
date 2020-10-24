@@ -2441,7 +2441,7 @@ bool BKE_pbvh_node_raycast(PBVH *pbvh,
                                      face_normal);
       break;
     case PBVH_BMESH:
-      BM_mesh_elem_index_ensure(pbvh->bm, BM_VERT);
+      //BM_mesh_elem_index_ensure(pbvh->bm, BM_VERT);
       hit = pbvh_bmesh_node_raycast(node,
                                     ray_start,
                                     ray_normal,
@@ -3111,6 +3111,8 @@ void pbvh_vertex_iter_init(PBVH *pbvh, PBVHNode *node, PBVHVertexIter *vi, int m
     BLI_gsetIterator_init(&vi->bm_unique_verts, node->bm_unique_verts);
     BLI_gsetIterator_init(&vi->bm_other_verts, node->bm_other_verts);
     vi->bm_vdata = &pbvh->bm->vdata;
+    vi->cd_origco_offset = pbvh->cd_origco_offset;
+    vi->cd_origno_offset = pbvh->cd_origno_offset;
     vi->cd_vert_mask_offset = CustomData_get_offset(vi->bm_vdata, CD_PAINT_MASK);
   }
 

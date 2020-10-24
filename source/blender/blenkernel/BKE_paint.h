@@ -478,6 +478,8 @@ typedef struct SculptSession {
   struct BMesh *bm;
   int cd_vert_node_offset;
   int cd_face_node_offset;
+  int cd_origco_offset;
+  int cd_origno_offset;
   bool bm_smooth_shading;
   /* Undo/redo log for dynamic topology sculpting */
   struct BMLog *bm_log;
