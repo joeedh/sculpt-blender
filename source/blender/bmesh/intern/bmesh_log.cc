@@ -19,6 +19,7 @@
 
 #include "bmesh.h"
 #include "bmesh_idmap.h"
+#include "bmesh_hive_alloc.h"
 #include "bmesh_log_intern.h"
 extern "C" {
 #include "bmesh_structure.h"
@@ -536,17 +537,17 @@ struct BMLogEntry {
       face.free(&pdata, &ldata);
     }
 
-    if (vdata.pool) {
-      BLI_mempool_destroy(vdata.pool);
+    if (vdata.hive) {
+      customdata_hive_destroy(vdata.hive);
     }
-    if (edata.pool) {
-      BLI_mempool_destroy(edata.pool);
+    if (edata.hive) {
+      customdata_hive_destroy(edata.hive);
     }
-    if (ldata.pool) {
-      BLI_mempool_destroy(ldata.pool);
+    if (ldata.hive) {
+      customdata_hive_destroy(ldata.hive);
     }
-    if (pdata.pool) {
-      BLI_mempool_destroy(pdata.pool);
+    if (pdata.hive) {
+      customdata_hive_destroy(pdata.hive);
     }
 
     CustomData_free(&vdata, 0);
@@ -641,7 +642,7 @@ struct BMLogEntry {
 
   void update_logvert(BMesh *bm, BMVert *v, BMLogVert *lv)
   {
-    if (vdata.pool) {
+    if (vdata.hive) {
       CustomData_bmesh_copy_data(&bm->vdata, &vdata, v->head.data, &lv->customdata);
     }
 
@@ -712,7 +713,7 @@ struct BMLogEntry {
   {
     if (lv->customdata) {
       CustomData_bmesh_asan_unpoison(&vdata, lv->customdata);
-      BLI_mempool_free(vdata.pool, lv->customdata);
+      customdata_hive_free(vdata.hive, lv->customdata);
     }
 
     vpool.free(lv);
@@ -752,7 +753,7 @@ struct BMLogEntry {
   {
     if (le->customdata) {
       CustomData_bmesh_asan_unpoison(&edata, le->customdata);
-      BLI_mempool_free(edata.pool, le->customdata);
+      customdata_hive_free(edata.hive, le->customdata);
     }
 
     epool.free(le);
@@ -809,13 +810,13 @@ struct BMLogEntry {
     if (lf->loop_customdata[0]) {
       for (int i = 0; i < lf->verts.size(); i++) {
         CustomData_bmesh_asan_unpoison(&ldata, lf->loop_customdata[i]);
-        BLI_mempool_free(ldata.pool, lf->loop_customdata[i]);
+        customdata_hive_free(ldata.hive, lf->loop_customdata[i]);
       }
     }
 
     if (lf->customdata) {
       CustomData_bmesh_asan_unpoison(&pdata, lf->customdata);
-      BLI_mempool_free(pdata.pool, lf->customdata);
+      customdata_hive_free(pdata.hive, lf->customdata);
     }
 
     fpool.free(lf);
@@ -898,10 +899,10 @@ struct BMLogEntry {
   {
     int ret = 0;
 
-    ret += vdata.pool ? int(BLI_mempool_get_size(vdata.pool)) : 0;
-    ret += edata.pool ? int(BLI_mempool_get_size(edata.pool)) : 0;
-    ret += ldata.pool ? int(BLI_mempool_get_size(ldata.pool)) : 0;
-    ret += pdata.pool ? int(BLI_mempool_get_size(pdata.pool)) : 0;
+    ret += vdata.hive ? int(customdata_hive_get_size(vdata.hive)) : 0;
+    ret += edata.hive ? int(customdata_hive_get_size(edata.hive)) : 0;
+    ret += ldata.hive ? int(customdata_hive_get_size(ldata.hive)) : 0;
+    ret += pdata.hive ? int(customdata_hive_get_size(pdata.hive)) : 0;
 
     ret += vpool.calc_size();
     ret += epool.calc_size();
@@ -1266,7 +1267,7 @@ void BMLogSetDiff::swap_verts(BMesh *bm,
                               blender::Map<BMID<BMVert>, BMLogVert *> verts,
                               BMLogCallbacks *callbacks)
 {
-  void *old_customdata = bm->vdata.pool ? BLI_mempool_alloc(bm->vdata.pool) : nullptr;
+  void *old_customdata = bm->vdata.hive ? customdata_hive_alloc(bm->vdata.hive) : nullptr;
 
   const int cd_id = entry->idmap->cd_id_off[BM_VERT];
 
@@ -1299,7 +1300,7 @@ void BMLogSetDiff::swap_verts(BMesh *bm,
   }
 
   if (old_customdata) {
-    BLI_mempool_free(bm->vdata.pool, old_customdata);
+    customdata_hive_free(bm->vdata.hive, old_customdata);
   }
 }
 
@@ -1405,7 +1406,7 @@ void BMLogSetDiff::swap_edges(BMesh *bm,
                               blender::Map<BMID<BMEdge>, BMLogEdge *> edges,
                               BMLogCallbacks *callbacks)
 {
-  void *old_customdata = entry->edata.pool ? BLI_mempool_alloc(bm->edata.pool) : nullptr;
+  void *old_customdata = entry->edata.hive ? customdata_hive_alloc(bm->edata.hive) : nullptr;
 
   if (old_customdata) {
     CustomData_bmesh_asan_unpoison(&bm->edata, old_customdata);
@@ -1433,7 +1434,7 @@ void BMLogSetDiff::swap_edges(BMesh *bm,
   }
 
   if (old_customdata) {
-    BLI_mempool_free(bm->edata.pool, old_customdata);
+    customdata_hive_free(bm->edata.hive, old_customdata);
   }
 }
 
@@ -1517,7 +1518,7 @@ void BMLogSetDiff::swap_faces(BMesh *bm,
                               blender::Map<BMID<BMFace>, BMLogFace *> faces,
                               BMLogCallbacks *callbacks)
 {
-  void *old_customdata = entry->pdata.pool ? BLI_mempool_alloc(bm->pdata.pool) : nullptr;
+  void *old_customdata = entry->pdata.hive ? customdata_hive_alloc(bm->pdata.hive) : nullptr;
 
   const int cd_id = entry->idmap->cd_id_off[BM_FACE];
 
@@ -1550,7 +1551,7 @@ void BMLogSetDiff::swap_faces(BMesh *bm,
   }
 
   if (old_customdata) {
-    BLI_mempool_free(bm->pdata.pool, old_customdata);
+    customdata_hive_free(bm->pdata.hive, old_customdata);
   }
 }
 

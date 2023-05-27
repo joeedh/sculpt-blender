@@ -23,6 +23,7 @@
 #include "BLI_color.hh"
 #include "BLI_compiler_attrs.h"
 #include "BLI_endian_switch.h"
+#include "BLI_hive_alloc.hh"
 #include "BLI_index_range.hh"
 #include "BLI_math.h"
 #include "BLI_math_color_blend.h"
@@ -37,7 +38,6 @@
 #include "BLI_string_utils.h"
 #include "BLI_utildefines.h"
 #include "BLI_vector.hh"
-#include "BLI_hive_alloc.hh"
 
 #ifndef NDEBUG
 #  include "BLI_dynstr.h"
@@ -57,8 +57,8 @@
 
 #include "BLO_read_write.h"
 
-#include "bmesh.h"
 #include "../bmesh/intern/bmesh_hive_alloc_intern.hh"
+#include "bmesh.h"
 
 #include "CLG_log.h"
 
@@ -94,7 +94,7 @@ bool CustomData_layout_is_same(const CustomData *_a, const CustomData *_b)
   }
 
   a.layers = b.layers = nullptr;
-  a.pool = b.pool = nullptr;
+  a.hive = b.hive = nullptr;
 
   if (memcmp((void *)&a, (void *)&b, sizeof(CustomData)) != 0) {
     return false;
@@ -2348,7 +2348,7 @@ void CustomData_copy_all_layout(const struct CustomData *source, struct CustomDa
 {
   *dest = *source;
   dest->external = nullptr;
-  dest->pool = nullptr;
+  dest->hive = nullptr;
 
   if (source->layers) {
     dest->layers = static_cast<CustomDataLayer *>(
@@ -4105,7 +4105,7 @@ void CustomData_bmesh_init_pool_ex(CustomData *data,
   int chunksize;
 
   /* Dispose old pools before calling here to avoid leaks */
-  BLI_assert(data->pool == nullptr);
+  BLI_assert(data->hive == nullptr);
 
   switch (htype) {
     case BM_VERT:
@@ -4128,7 +4128,8 @@ void CustomData_bmesh_init_pool_ex(CustomData *data,
 
   /* If there are no layers, no pool is needed just yet */
   if (data->totlayer) {
-    data->pool = BLI_mempool_create(data->totsize, totelem, chunksize, BLI_MEMPOOL_NOP);
+    data->hive = static_cast<void *>(
+        MEM_new<CustomDataHive>("CustomDataHive", max_ii(data->totsize, 4)));
   }
 }
 
@@ -4184,7 +4185,7 @@ bool CustomData_bmesh_merge_layout(const CustomData *source,
       break;
   }
 
-  dest->pool = nullptr;
+  dest->hive = nullptr;
   CustomData_bmesh_init_pool(dest, totelem, htype);
 
   if (iter_type != BM_LOOPS_OF_FACE) {
@@ -4215,8 +4216,8 @@ bool CustomData_bmesh_merge_layout(const CustomData *source,
     }
   }
 
-  if (destold.pool) {
-    BLI_mempool_destroy(destold.pool);
+  if (destold.hive) {
+    MEM_delete<CustomDataHive>(static_cast<CustomDataHive *>(destold.hive));
   }
   if (destold.layers) {
     MEM_freeN(destold.layers);
@@ -4243,7 +4244,7 @@ void CustomData_bmesh_free_block(CustomData *data, void **block)
 
   if (data->totsize) {
     CustomData_bmesh_asan_unpoison(data, *block);
-    BLI_mempool_free(data->pool, *block);
+    static_cast<CustomDataHive *>(data->hive)->free(static_cast<int *>(*block));
   }
 
   *block = nullptr;
@@ -4281,7 +4282,7 @@ void CustomData_bmesh_alloc_block(CustomData *data, void **block)
   }
 
   if (data->totsize > 0) {
-    *block = BLI_mempool_alloc(data->pool);
+    *block = static_cast<void *>(static_cast<CustomDataHive *>(data->hive)->alloc());
 
     CustomData_bmesh_asan_poison(data, *block);
 

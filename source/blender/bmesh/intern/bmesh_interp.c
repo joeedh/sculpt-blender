@@ -25,6 +25,7 @@
 
 #include "bmesh.h"
 #include "intern/bmesh_private.h"
+#include "intern/bmesh_hive_alloc_intern.h"
 
 static void copy_cdata_simple(BMesh *UNUSED(bm),
                               CustomData *data_layer,
@@ -808,7 +809,7 @@ void *BPy_bm_new_customdata_layout_pre(BMesh *bm, CustomData *cdata, char htype)
 ATTR_NO_OPT static void update_data_blocks(BMesh *bm, CustomData *olddata, CustomData *data)
 {
   BMIter iter;
-  BLI_mempool *oldpool = olddata->pool;
+  void *oldpool = olddata->hive;
   void *block;
 
   CustomDataLayer **nocopy_layers = NULL;
@@ -907,9 +908,9 @@ ATTR_NO_OPT static void update_data_blocks(BMesh *bm, CustomData *olddata, Custo
 
   if (oldpool) {
     /* this should never happen but can when dissolve fails - #28960. */
-    BLI_assert(data->pool != oldpool);
+    BLI_assert(data->hive != oldpool);
 
-    BLI_mempool_destroy(oldpool);
+    customdata_hive_destroy(oldpool);
   }
 }
 
@@ -951,7 +952,7 @@ void BM_data_layers_ensure(BMesh *bm, CustomData *data, BMCustomLayerReq *layers
 
   if (modified) {
     /* the pool is now owned by olddata and must not be shared */
-    data->pool = NULL;
+    data->hive = NULL;
 
     update_data_blocks(bm, &old, data);
   }
@@ -966,7 +967,7 @@ void BM_data_layer_add(BMesh *bm, CustomData *data, int type)
   CustomData olddata = *data;
   olddata.layers = (olddata.layers) ? MEM_dupallocN(olddata.layers) : NULL;
   /* The pool is now owned by `olddata` and must not be shared. */
-  data->pool = NULL;
+  data->hive = NULL;
 
   CustomData_add_layer(data, type, CD_SET_DEFAULT, 0);
 
@@ -981,7 +982,7 @@ void BM_data_layer_add_named(BMesh *bm, CustomData *data, int type, const char *
   CustomData olddata = *data;
   olddata.layers = (olddata.layers) ? MEM_dupallocN(olddata.layers) : NULL;
   /* The pool is now owned by `olddata` and must not be shared. */
-  data->pool = NULL;
+  data->hive = NULL;
 
   CustomData_add_layer_named(data, type, CD_SET_DEFAULT, 0, name);
 
@@ -1051,7 +1052,7 @@ void BM_data_layer_free(BMesh *bm, CustomData *data, int type)
   CustomData olddata = *data;
   olddata.layers = (olddata.layers) ? MEM_dupallocN(olddata.layers) : NULL;
   /* The pool is now owned by `olddata` and must not be shared. */
-  data->pool = NULL;
+  data->hive = NULL;
 
   const bool had_layer = CustomData_free_layer_active(data, type, 0);
   /* Assert because its expensive to realloc - better not do if layer isn't present. */
@@ -1069,7 +1070,7 @@ bool BM_data_layer_free_named(BMesh *bm, CustomData *data, const char *name)
   CustomData olddata = *data;
   olddata.layers = (olddata.layers) ? MEM_dupallocN(olddata.layers) : NULL;
   /* The pool is now owned by `olddata` and must not be shared. */
-  data->pool = NULL;
+  data->hive = NULL;
 
   const bool had_layer = CustomData_free_layer_named(data, name, 0);
 
@@ -1078,7 +1079,7 @@ bool BM_data_layer_free_named(BMesh *bm, CustomData *data, const char *name)
   }
   else {
     /* Move pool ownership back to BMesh CustomData, no block reallocation. */
-    data->pool = olddata.pool;
+    data->hive = olddata.hive;
   }
 
   if (olddata.layers) {
@@ -1093,7 +1094,7 @@ void BM_data_layer_free_n(BMesh *bm, CustomData *data, int type, int n)
   CustomData olddata = *data;
   olddata.layers = (olddata.layers) ? MEM_dupallocN(olddata.layers) : NULL;
   /* The pool is now owned by `olddata` and must not be shared. */
-  data->pool = NULL;
+  data->hive = NULL;
 
   const bool had_layer = CustomData_free_layer(
       data, type, 0, CustomData_get_layer_index_n(data, type, n));

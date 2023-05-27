@@ -73,6 +73,8 @@ set(SRC
   intern/bmesh_edgeloop.h
   intern/bmesh_hive_alloc.cc
   intern/bmesh_hive_alloc.h
+  intern/bmesh_hive_alloc_intern.h
+  intern/bmesh_hive_alloc_intern.hh
   intern/bmesh_idmap.cc
   intern/bmesh_idmap.h
   intern/bmesh_inline.h

@@ -42,6 +42,8 @@ class HiveAllocator {
     UserData userdata;
 
    public:
+    int used = 0;
+
     DynamicChunk(void *mem_, size_t size_, UserData userdata_) noexcept
         : mem(static_cast<char *>(mem_)), size(size_), userdata(userdata_)
     {
@@ -49,18 +51,18 @@ class HiveAllocator {
 
     DynamicChunk(const DynamicChunk &b) noexcept
     {
-      mem = std::move(b.mem);
-      userdata = std::move(b.userdata);
+      mem = b.mem;
+      userdata = b.userdata;
       size = b.size;
+      used = b.used;
     }
 
-    DynamicChunk &operator=(DynamicChunk &&b) noexcept
+    DynamicChunk &operator=(const DynamicChunk &b) noexcept
     {
-      mem = std::move(b.mem);
-      userdata = std::move(b.userdata);
+      mem = b.mem;
+      userdata = b.userdata;
       size = b.size;
-
-      b.mem = nullptr;
+      used = b.used;
     }
 
     T &operator[](int index) noexcept
@@ -77,6 +79,11 @@ class HiveAllocator {
     {
       return reinterpret_cast<T *>(mem + size);
     }
+
+    void set_userdata(UserData data)
+    {
+      userdata = data;
+    }
   };
 
   struct Hive {
@@ -87,7 +94,6 @@ class HiveAllocator {
     int hive_index;
     int used = 0;
 
-   public:
     ATTR_NO_OPT Hive(UserData userdata_, int index, int reserved = ChunkSize)
         : chunksize(reserved), userdata(userdata_), hive_index(index)
     {
@@ -107,6 +113,10 @@ class HiveAllocator {
     ATTR_NO_OPT ~Hive()
     {
       for (DynamicChunk &chunk : chunks) {
+        if (!chunk.data()) {
+          continue;
+        }
+
         for (int i = 0; i < chunksize; i++) {
           if (!is_free(&chunk[i])) {
             chunk[i].~T();
@@ -145,7 +155,9 @@ class HiveAllocator {
       int chunk_i = i / chunksize;
       i = i % chunksize;
 
+      chunks[chunk_i].used++;
       T *ret = &chunks[chunk_i][i];
+
       BLI_assert(is_free(ret));
 
       clear_free_elem(ret);
@@ -165,6 +177,8 @@ class HiveAllocator {
           char *c1 = reinterpret_cast<char *>(chunk.data());
           char *c2 = reinterpret_cast<char *>(elem);
           int idx = int(size_t(c2 - c1) / SizeOf::size(userdata));
+
+          chunk.used--;
 
           freelist.append(i * chunksize + idx);
           return;
@@ -236,6 +250,49 @@ class HiveAllocator {
       }
 
       return true;
+    }
+
+    ATTR_NO_OPT void set_userdata(UserData data)
+    {
+      userdata = data;
+
+      for (DynamicChunk &chunk : chunks) {
+        chunk.set_userdata(data);
+      }
+    }
+
+    size_t get_mem_size()
+    {
+      return chunks.size() * chunksize * SizeOf::size(userdata);
+    }
+
+    ATTR_NO_OPT void compact()
+    {
+      std::vector<DynamicChunk> chunks2;
+
+      for (DynamicChunk &chunk2 : chunks) {
+        if (chunk2.used != 0) {
+          chunks2.push_back(chunk2);
+        }
+      }
+
+      if (chunks.size() != chunks2.size()) {
+        printf("HiveAllocator::Hive::compact: pruned %d chunks\n", chunks.size() - chunks2.size());
+
+        /* Regenerate free list */
+        freelist.clear_and_shrink();
+        int elem_i = 0;
+
+        for (DynamicChunk &chunk : chunks2) {
+          for (int i = 0; i < chunksize; i++, elem_i++) {
+            if (is_free(&chunk[i])) {
+              freelist.append(elem_i);
+            }
+          }
+        }
+      }
+
+      chunks = chunks2;
     }
   };
 
@@ -430,6 +487,33 @@ class HiveAllocator {
     }
 
     return nullptr;
+  }
+
+  ATTR_NO_OPT void set_userdata(UserData data)
+  {
+    userdata = data;
+
+    for (Hive &hive : hives) {
+      hive.set_userdata(data);
+    }
+  }
+
+  size_t get_mem_size()
+  {
+    size_t sum = 0;
+
+    for (Hive &hive : hives) {
+      sum += hive.get_mem_size();
+    }
+
+    return sum;
+  }
+
+  ATTR_NO_OPT void compact()
+  {
+    for (Hive &hive : hives) {
+      hive.compact();
+    }
   }
 };
 }  // namespace blender

@@ -94,8 +94,8 @@ typedef struct CustomData {
   /** In editmode, total size of all data layers. */
   int totsize;
   /** (BMesh Only): Memory pool for allocation of blocks. */
-  struct BLI_mempool *pool;
-  //void *hive;
+  //struct BLI_mempool *pool;
+  void *hive;
 
   /** External file storing custom-data layers. */
   CustomDataExternal *external;

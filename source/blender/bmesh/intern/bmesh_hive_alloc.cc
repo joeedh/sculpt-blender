@@ -4,6 +4,7 @@
 #include "bmesh_structure.h"
 
 #include "bmesh_hive_alloc.h"
+#include "bmesh_hive_alloc_intern.h"
 #include "bmesh_hive_alloc_intern.hh"
 
 void *make_vert_hive(BMesh *bm)
@@ -200,4 +201,28 @@ BMFace *bm_alloc_face(BMesh *bm)
 void bm_free_face(BMesh *bm, BMFace *f)
 {
   static_cast<FaceHive *>(bm->fhive)->free(f);
+}
+
+void *customdata_hive_alloc(void *hive)
+{
+  return static_cast<void *>(static_cast<CustomDataHive *>(hive)->alloc());
+}
+
+void customdata_hive_free(void *hive, void *ptr)
+{
+  static_cast<CustomDataHive *>(hive)->free(static_cast<int *>(ptr));
+}
+
+void customdata_hive_destroy(void *hive)
+{
+  MEM_delete<CustomDataHive>(static_cast<CustomDataHive *>(hive));
+}
+
+int customdata_hive_get_size(void *hive)
+{
+  return int(static_cast<CustomDataHive *>(hive)->get_mem_size());
+}
+
+void customdata_hive_set_owner(void *hive, CustomData *cdata) {
+  //static_cast<CustomDataHive *>(hive)->set_userdata(cdata);
 }

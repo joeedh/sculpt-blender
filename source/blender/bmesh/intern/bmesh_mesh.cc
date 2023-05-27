@@ -168,9 +168,9 @@ BMesh *BM_mesh_create(const BMAllocTemplate *allocsize, const struct BMeshCreate
 
 static void customdata_pool_destroy(BMesh * /*bm*/, CustomData *cdata)
 {
-  if (cdata->pool) {
-    BLI_mempool_destroy(cdata->pool);
-    cdata->pool = nullptr;
+  if (cdata->hive) {
+    customdata_hive_destroy(cdata->hive);
+    cdata->hive = nullptr;
   }
 }
 
