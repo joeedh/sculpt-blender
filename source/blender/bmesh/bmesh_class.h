@@ -311,8 +311,13 @@ typedef struct BMesh {
    */
   char elem_table_dirty;
 
-  /* element pools */
-  struct BLI_mempool *vpool, *epool, *lpool, *fpool;
+  void *vhive, *ehive, *lhive, *fhive;
+
+  void *vhive_userdata, *ehive_userdata, *lhive_userdata, *fhive_userdata;
+  void (*vhive_move_cb)(struct BMVert *vold, struct BMVert *vnew, void *userdata, int hive_nr);
+  void (*ehive_move_cb)(struct BMEdge *vold, struct BMEdge *vnew, void *userdata, int hive_nr);
+  void (*lhive_move_cb)(struct BMLoop *vold, struct BMLoop *vnew, void *userdata, int hive_nr);
+  void (*fhive_move_cb)(struct BMFace *vold, struct BMFace *vnew, void *userdata, int hive_nr);
 
   /* mempool lookup tables (optional)
    * index tables, to map indices to elements via

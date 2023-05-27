@@ -193,19 +193,6 @@ void BM_mesh_remap(BMesh *bm,
                    const uint *loop_idx,
                    const uint *face_idx);
 
-/**
- * Use new memory pools for this mesh.
- *
- * \note needed for re-sizing elements (adding/removing tool flags)
- * but could also be used for packing fragmented bmeshes.
- */
-void BM_mesh_rebuild(BMesh *bm,
-                     const struct BMeshCreateParams *params,
-                     struct BLI_mempool *vpool,
-                     struct BLI_mempool *epool,
-                     struct BLI_mempool *lpool,
-                     struct BLI_mempool *fpool);
-
 typedef struct BMAllocTemplate {
   int totvert, totedge, totloop, totface;
 } BMAllocTemplate;

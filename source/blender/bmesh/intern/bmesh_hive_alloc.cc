@@ -1,0 +1,165 @@
+#include "BLI_hive_alloc.hh"
+
+#include "bmesh.h"
+#include "bmesh_structure.h"
+
+#include "bmesh_hive_alloc.h"
+#include "bmesh_hive_alloc_intern.hh"
+
+void *make_vert_hive(BMesh *bm)
+{
+  return static_cast<void *>(MEM_new<VertHive>("VertHive", bm));
+}
+void free_vert_hive(void *hive)
+{
+  MEM_delete<VertHive>(static_cast<VertHive *>(hive));
+}
+void *make_edge_hive(BMesh *bm)
+{
+  return static_cast<void *>(MEM_new<EdgeHive>("EdgeHive", bm));
+}
+void free_edge_hive(void *hive)
+{
+  MEM_delete<EdgeHive>(static_cast<EdgeHive *>(hive));
+}
+
+void *make_loop_hive(BMesh *bm)
+{
+  return static_cast<void *>(MEM_new<LoopHive>("LoopHive", bm));
+}
+void free_loop_hive(void *hive)
+{
+  MEM_delete<LoopHive>(static_cast<LoopHive *>(hive));
+}
+
+void *make_face_hive(BMesh *bm)
+{
+  return static_cast<void *>(MEM_new<FaceHive>("FaceHive", bm));
+}
+void free_face_hive(void *hive)
+{
+  MEM_delete<FaceHive>(static_cast<FaceHive *>(hive));
+}
+
+template<typename HiveType> static void bm_hive_iternew(HiveType *hive, HiveIter *iter)
+{
+  *reinterpret_cast<typename HiveType::Iterator *>(iter->reserved) = hive->begin();
+}
+
+template<typename HiveType> static bool bm_hive_iterdone(HiveIter *iter)
+{
+  typename HiveType::Iterator *real_iter = reinterpret_cast<typename HiveType::Iterator *>(
+      iter->reserved);
+  HiveType *hive = static_cast<HiveType *>(iter->hive);
+
+  return *real_iter == hive->end();
+}
+
+template<typename HiveType> static void *bm_hive_iterstep(HiveIter *iter)
+{
+  typename HiveType::Iterator *real_iter = reinterpret_cast<typename HiveType::Iterator *>(
+      iter->reserved);
+
+  return real_iter->done() ? nullptr : static_cast<void *>(*(*real_iter));
+}
+
+void BM_hive_iternew(void *hive, HiveIter *iter, char htype)
+{
+  using namespace blender;
+
+  iter->htype = htype;
+  iter->hive = hive;
+
+  switch (htype) {
+    case BM_VERT:
+      bm_hive_iternew<VertHive>(static_cast<VertHive *>(hive), iter);
+      break;
+    case BM_EDGE:
+      bm_hive_iternew<EdgeHive>(static_cast<EdgeHive *>(hive), iter);
+      break;
+    case BM_LOOP:
+      bm_hive_iternew<LoopHive>(static_cast<LoopHive *>(hive), iter);
+      break;
+    case BM_FACE:
+      bm_hive_iternew<FaceHive>(static_cast<FaceHive *>(hive), iter);
+      break;
+  }
+}
+
+bool BM_hive_iterdone(HiveIter *iter)
+{
+  using namespace blender;
+
+  switch (iter->htype) {
+    case BM_VERT:
+      return bm_hive_iterdone<VertHive>(iter);
+    case BM_EDGE:
+      return bm_hive_iterdone<EdgeHive>(iter);
+    case BM_LOOP:
+      return bm_hive_iterdone<LoopHive>(iter);
+    case BM_FACE:
+      return bm_hive_iterdone<FaceHive>(iter);
+  }
+
+  BLI_assert_unreachable();
+  return true;
+}
+
+void *BM_hive_iterstep(HiveIter *iter)
+{
+  using namespace blender;
+
+  switch (iter->htype) {
+    case BM_VERT:
+      return bm_hive_iterstep<VertHive>(iter);
+    case BM_EDGE:
+      return bm_hive_iterstep<EdgeHive>(iter);
+    case BM_LOOP:
+      return bm_hive_iterstep<LoopHive>(iter);
+    case BM_FACE:
+      return bm_hive_iterstep<FaceHive>(iter);
+  }
+
+  BLI_assert_unreachable();
+  return nullptr;
+}
+
+template<typename T, typename HiveType = VertHive>
+static void bm_task_parallel_memhive(void *vhive,
+                                     char htype,
+                                     void *userdata,
+                                     TaskParallelMempoolFunc func,
+                                     const TaskParallelSettings *settings)
+{
+  /*TODO: implement parallelism code. */
+  HiveType *hive = static_cast<HiveType *>(vhive);
+  TaskParallelTLS tls;
+
+  tls.userdata_chunk = settings->userdata_chunk;
+
+  for (T *elem : *hive) {
+    func(userdata, reinterpret_cast<MempoolIterData *>(elem), &tls);
+  }
+}
+
+void BM_task_parallel_memhive(void *hive,
+                              char htype,
+                              void *userdata,
+                              TaskParallelMempoolFunc func,
+                              const TaskParallelSettings *settings)
+{
+  switch (htype) {
+    case BM_VERT:
+      bm_task_parallel_memhive<BMVert, VertHive>(hive, htype, userdata, func, settings);
+      break;
+    case BM_EDGE:
+      bm_task_parallel_memhive<BMEdge, EdgeHive>(hive, htype, userdata, func, settings);
+      break;
+    case BM_LOOP:
+      bm_task_parallel_memhive<BMLoop, LoopHive>(hive, htype, userdata, func, settings);
+      break;
+    case BM_FACE:
+      bm_task_parallel_memhive<BMFace, FaceHive>(hive, htype, userdata, func, settings);
+      break;
+  }
+}

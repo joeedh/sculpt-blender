@@ -249,6 +249,7 @@ set(SRC
   BLI_heap.h
   BLI_heap_simple.h
   BLI_heap_minmax.hh
+  BLI_hive_alloc.hh
   BLI_implicit_sharing.h
   BLI_implicit_sharing.hh
   BLI_implicit_sharing_ptr.hh

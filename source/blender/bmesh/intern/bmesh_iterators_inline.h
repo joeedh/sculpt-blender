@@ -40,21 +40,24 @@ ATTR_NONNULL(1) BLI_INLINE bool BM_iter_init(BMIter *iter, BMesh *bm, const char
       BLI_assert(data == NULL);
       iter->begin = (BMIter__begin_cb)bmiter__elem_of_mesh_begin;
       iter->step = (BMIter__step_cb)bmiter__elem_of_mesh_step;
-      iter->data.elem_of_mesh.pooliter.pool = bm->vpool;
+      iter->data.elem_of_mesh.hive = bm->vhive;
+      iter->data.elem_of_mesh.iter.htype = BM_VERT;
       break;
     case BM_EDGES_OF_MESH:
       BLI_assert(bm != NULL);
       BLI_assert(data == NULL);
       iter->begin = (BMIter__begin_cb)bmiter__elem_of_mesh_begin;
       iter->step = (BMIter__step_cb)bmiter__elem_of_mesh_step;
-      iter->data.elem_of_mesh.pooliter.pool = bm->epool;
+      iter->data.elem_of_mesh.hive = bm->ehive;
+      iter->data.elem_of_mesh.iter.htype = BM_EDGE;
       break;
     case BM_FACES_OF_MESH:
       BLI_assert(bm != NULL);
       BLI_assert(data == NULL);
       iter->begin = (BMIter__begin_cb)bmiter__elem_of_mesh_begin;
       iter->step = (BMIter__step_cb)bmiter__elem_of_mesh_step;
-      iter->data.elem_of_mesh.pooliter.pool = bm->fpool;
+      iter->data.elem_of_mesh.hive = bm->fhive;
+      iter->data.elem_of_mesh.iter.htype = BM_FACE;
       break;
     case BM_EDGES_OF_VERT:
       BLI_assert(data != NULL);
@@ -168,6 +171,8 @@ ATTR_WARN_UNUSED_RESULT ATTR_NONNULL(1) BLI_INLINE
 
 #ifdef __BLI_TASK_H__
 
+#include "bmesh_hive_alloc.h"
+
 ATTR_NONNULL(1)
 BLI_INLINE void BM_iter_parallel(BMesh *bm,
                                  const char itype,
@@ -178,13 +183,13 @@ BLI_INLINE void BM_iter_parallel(BMesh *bm,
   /* inlining optimizes out this switch when called with the defined type */
   switch ((BMIterType)itype) {
     case BM_VERTS_OF_MESH:
-      BLI_task_parallel_mempool(bm->vpool, userdata, func, settings);
+      BM_task_parallel_memhive(bm->vhive, BM_VERT, userdata, func, settings);
       break;
     case BM_EDGES_OF_MESH:
-      BLI_task_parallel_mempool(bm->epool, userdata, func, settings);
+      BM_task_parallel_memhive(bm->ehive, BM_EDGE, userdata, func, settings);
       break;
     case BM_FACES_OF_MESH:
-      BLI_task_parallel_mempool(bm->fpool, userdata, func, settings);
+      BM_task_parallel_memhive(bm->fhive, BM_FACE, userdata, func, settings);
       break;
     default:
       /* should never happen */

@@ -19,6 +19,7 @@
 
 #include "BLI_compiler_attrs.h"
 #include "BLI_mempool.h"
+#include "bmesh_hive_alloc.h"
 
 #ifdef __cplusplus
 #  include "BLI_bit_span.hh"
@@ -105,7 +106,8 @@ extern const char bm_iter_itype_htype_map[BM_ITYPE_MAX];
 
 /* iterator type structs */
 struct BMIter__elem_of_mesh {
-  BLI_mempool_iter pooliter;
+  void *hive;
+  HiveIter iter;
 };
 struct BMIter__edge_of_vert {
   BMVert *vdata;

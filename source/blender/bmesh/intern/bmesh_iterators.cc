@@ -15,6 +15,7 @@
 #include "BLI_utildefines.h"
 
 #include "bmesh.h"
+#include "intern/bmesh_hive_alloc.h"
 #include "intern/bmesh_private.h"
 
 const char bm_iter_itype_htype_map[BM_ITYPE_MAX] = {
@@ -368,7 +369,8 @@ void bmiter__elem_of_mesh_begin(struct BMIter__elem_of_mesh *iter)
 #ifdef USE_IMMUTABLE_ASSERT
   ((BMIter *)iter)->count = BLI_mempool_len(iter->pooliter.pool);
 #endif
-  BLI_mempool_iternew(iter->pooliter.pool, &iter->pooliter);
+  //BLI_mempool_iternew(iter->pooliter.pool, &iter->pooliter);
+  BM_hive_iternew(iter->hive, &iter->iter, iter->iter.htype);
 }
 
 void *bmiter__elem_of_mesh_step(struct BMIter__elem_of_mesh *iter)
@@ -376,7 +378,8 @@ void *bmiter__elem_of_mesh_step(struct BMIter__elem_of_mesh *iter)
 #ifdef USE_IMMUTABLE_ASSERT
   BLI_assert(((BMIter *)iter)->count <= BLI_mempool_len(iter->pooliter.pool));
 #endif
-  return BLI_mempool_iterstep(&iter->pooliter);
+  //return BLI_mempool_iterstep(&iter->pooliter);
+  return BM_hive_iterstep(&iter->iter);
 }
 
 #ifdef USE_IMMUTABLE_ASSERT
