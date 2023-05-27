@@ -52,7 +52,7 @@ template<typename HiveType> ATTR_NO_OPT static bool bm_hive_iterdone(HiveIter *i
       iter->reserved);
   HiveType *hive = static_cast<HiveType *>(iter->hive);
 
-  return *real_iter == hive->end();
+  return real_iter->done();
 }
 
 template<typename HiveType> ATTR_NO_OPT static void *bm_hive_iterstep(HiveIter *iter)

@@ -37,6 +37,7 @@
 #include "BLI_string_utils.h"
 #include "BLI_utildefines.h"
 #include "BLI_vector.hh"
+#include "BLI_hive_alloc.hh"
 
 #ifndef NDEBUG
 #  include "BLI_dynstr.h"
@@ -57,6 +58,7 @@
 #include "BLO_read_write.h"
 
 #include "bmesh.h"
+#include "../bmesh/intern/bmesh_hive_alloc_intern.hh"
 
 #include "CLG_log.h"
 

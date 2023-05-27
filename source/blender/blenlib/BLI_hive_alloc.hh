@@ -7,12 +7,20 @@
 #include "BLI_vector.hh"
 
 #include <algorithm>
+#include <type_traits>
 #include <vector>
 
 namespace blender {
 
 template<typename T, typename UserData = void *> struct ElemCallbacks {
   static void move_elem(T *old_loc, T *new_loc, UserData userdata, int hive) {}
+};
+
+template<typename T> struct ElemSizeOf {
+  static size_t size(void *userdata) noexcept
+  {
+    return sizeof(T);
+  }
 };
 
 /**
@@ -22,13 +30,57 @@ template<typename T, typename UserData = void *> struct ElemCallbacks {
 template<typename T,
          typename Callbacks = ElemCallbacks<T>,
          typename UserData = void *,
-         int ChunkSize = 4096>
+         int ChunkSize = 4096,
+         typename SizeOf = ElemSizeOf<T>>
 class HiveAllocator {
   static constexpr char freeword[5] = "FREE";
   UserData userdata;
 
+  class DynamicChunk {
+    char *mem;
+    size_t size;
+    UserData userdata;
+
+   public:
+    DynamicChunk(void *mem_, size_t size_, UserData userdata_) noexcept
+        : mem(static_cast<char *>(mem_)), size(size_), userdata(userdata_)
+    {
+    }
+
+    DynamicChunk(const DynamicChunk &b) noexcept
+    {
+      mem = std::move(b.mem);
+      userdata = std::move(b.userdata);
+      size = b.size;
+    }
+
+    DynamicChunk &operator=(DynamicChunk &&b) noexcept
+    {
+      mem = std::move(b.mem);
+      userdata = std::move(b.userdata);
+      size = b.size;
+
+      b.mem = nullptr;
+    }
+
+    T &operator[](int index) noexcept
+    {
+      return *reinterpret_cast<T *>(mem + SizeOf::size(userdata) * size_t(index));
+    }
+
+    T *data()
+    {
+      return reinterpret_cast<T *>(mem);
+    }
+
+    T *end()
+    {
+      return reinterpret_cast<T *>(mem + size);
+    }
+  };
+
   struct Hive {
-    Vector<T *> chunks;
+    std::vector<DynamicChunk> chunks;
     int chunksize;
     Vector<int> freelist;
     UserData userdata;
@@ -39,30 +91,35 @@ class HiveAllocator {
     ATTR_NO_OPT Hive(UserData userdata_, int index, int reserved = ChunkSize)
         : chunksize(reserved), userdata(userdata_), hive_index(index)
     {
-      T *elements = static_cast<T *>(
-          MEM_malloc_arrayN(sizeof(T), chunksize, "HiveAlloc elements"));
-      chunks.append(elements);
+      DynamicChunk chunk(
+          MEM_malloc_arrayN(SizeOf::size(userdata), chunksize, "HiveAlloc elements"),
+          size_t(chunksize) * SizeOf::size(userdata),
+          userdata);
 
-      for (int i = reserved - 1; i >= 0; i--) {
+      for (int i = chunksize - 1; i >= 0; i--) {
         freelist.append(i);
-        set_free_elem(&elements[i]);
+        set_free_elem(&chunk[i]);
       }
+
+      chunks.push_back(chunk);
     }
 
     ATTR_NO_OPT ~Hive()
     {
-      for (T *elements : chunks) {
+      for (DynamicChunk &chunk : chunks) {
         for (int i = 0; i < chunksize; i++) {
-          if (!is_free(elements + i)) {
-            elements[i].~T();
+          if (!is_free(&chunk[i])) {
+            chunk[i].~T();
           }
         }
 
-        MEM_freeN(elements);
+        if (chunk.data()) {
+          MEM_freeN(static_cast<void *>(chunk.data()));
+        }
       }
     }
 
-    ATTR_NO_OPT Hive(Hive &&b)
+    ATTR_NO_OPT Hive(Hive &&b) noexcept
     {
       userdata = std::move(b.userdata);
       chunks = std::move(b.chunks);
@@ -88,7 +145,7 @@ class HiveAllocator {
       int chunk_i = i / chunksize;
       i = i % chunksize;
 
-      T *ret = chunks[chunk_i] + i;
+      T *ret = &chunks[chunk_i][i];
       BLI_assert(is_free(ret));
 
       clear_free_elem(ret);
@@ -101,11 +158,15 @@ class HiveAllocator {
       set_free_elem(elem);
       used--;
 
-      for (int i : chunks.index_range()) {
-        T *chunk = chunks[i];
+      for (int i : IndexRange(chunks.size())) {
+        DynamicChunk &chunk = chunks[i];
 
-        if (elem >= chunk && elem < chunk + chunksize) {
-          freelist.append(i * chunksize + int(elem - chunk));
+        if (elem >= chunk.data() && elem < chunk.end()) {
+          char *c1 = reinterpret_cast<char *>(chunk.data());
+          char *c2 = reinterpret_cast<char *>(elem);
+          int idx = int(size_t(c2 - c1) / SizeOf::size(userdata));
+
+          freelist.append(i * chunksize + idx);
           return;
         }
       }
@@ -116,8 +177,8 @@ class HiveAllocator {
 
     ATTR_NO_OPT bool has_elem(T *elem)
     {
-      for (T *chunk : chunks) {
-        if (elem >= chunk && elem < chunk + chunksize) {
+      for (DynamicChunk &chunk : chunks) {
+        if (elem >= chunk.data() && elem < chunk.end()) {
           return true;
         }
       }
@@ -127,25 +188,28 @@ class HiveAllocator {
 
     ATTR_NO_OPT void append_chunk()
     {
-      T *elements = static_cast<T *>(MEM_malloc_arrayN(sizeof(T), chunksize, "hive chunk"));
-      chunks.append(elements);
+      DynamicChunk chunk(MEM_malloc_arrayN(SizeOf::size(userdata), chunksize, "hive chunk"),
+                         SizeOf::size(userdata) * chunksize,
+                         userdata);
 
-      int start = (chunks.size() - 1) * chunksize;
-      int end = chunks.size() * chunksize;
+      int start = chunks.size() * chunksize;
+      int end = (chunks.size() + 1) * chunksize;
       int j = chunksize - 1;
 
       for (int i = end - 1; i >= start; i--, j--) {
-        set_free_elem(elements + j);
         freelist.append(i);
+        set_free_elem(&chunk[j]);
       }
+
+      chunks.push_back(chunk);
     }
 
     ATTR_NO_OPT void set_free_elem(T *elem)
     {
       /* Make sure to corrupt BMHeader.htype by setting first 16 bytes
-       * to 255.
+       * to 255. This is used as a way to detect freed elements.
        */
-      if constexpr (sizeof(T) > 16) {
+      if (SizeOf::size(userdata) > 16) {
         memset(static_cast<void *>(elem), 255, 16);
       }
 
@@ -199,7 +263,7 @@ class HiveAllocator {
 
    public:
     ATTR_NO_OPT Iterator(HiveAllocator *alloc_, int hive_i_, int elem_i_)
-        : hive_i(hive_i_), chunk_i(), elem_i(elem_i_), alloc(alloc_)
+        : hive_i(hive_i_), chunk_i(0), elem_i(elem_i_), alloc(alloc_)
     {
       /* Find first element. */
       if (hive_i == 0 && elem_i == 0) {
@@ -230,7 +294,7 @@ class HiveAllocator {
 
     ATTR_NO_OPT bool operator==(const Iterator &b)
     {
-      return b.hive_i == hive_i && b.elem_i == elem_i;
+      return b.hive_i == hive_i && b.elem_i == elem_i && b.chunk_i == chunk_i;
     }
     ATTR_NO_OPT bool operator!=(const Iterator &b)
     {
@@ -259,7 +323,7 @@ class HiveAllocator {
           hive = &alloc->hives[hive_i];
         }
 
-        if (!hive->is_free(hive->chunks[chunk_i] + elem_i)) {
+        if (!hive->is_free(&hive->chunks[chunk_i][elem_i])) {
           return *this;
         }
       }
@@ -269,7 +333,7 @@ class HiveAllocator {
 
     ATTR_NO_OPT T *operator*()
     {
-      return alloc->hives[hive_i].chunks[chunk_i] + elem_i;
+      return &alloc->hives[hive_i].chunks[chunk_i][elem_i];
     }
 
    public:
