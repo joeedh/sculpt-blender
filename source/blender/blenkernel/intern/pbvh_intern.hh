@@ -147,6 +147,7 @@ struct PBVHNode {
    */
   int debug_draw_gen;
   int id;
+  int bm_hive;
 };
 
 typedef enum {
@@ -166,6 +167,9 @@ struct PBVH {
   int idgen;
 
   bool dyntopo_stop;
+
+  int bm_tot_hives;
+  blender::Vector<int> bm_free_hives;
 
   PBVHNode *nodes;
   int node_mem_count, totnode;
@@ -307,7 +311,7 @@ struct PBVH {
 void BB_reset(BB *bb);
 void BB_zero(BB *bb);
 
-    /**
+/**
  * Expand the bounding box to include a new coordinate.
  */
 void BB_expand(BB *bb, const float co[3]);
@@ -496,3 +500,11 @@ BLI_INLINE void pbvh_boundary_update_bmesh(PBVH *pbvh, BMVert *v)
   int *flags = (int *)BM_ELEM_CD_GET_VOID_P(v, pbvh->cd_boundary_flag);
   *flags |= SCULPT_BOUNDARY_NEEDS_UPDATE;
 }
+
+namespace blender::bke::pbvh {
+void set_hive_callbacks(PBVH *pbvh);
+void node_release_hive(PBVH *pbvh, PBVHNode *node);
+void node_ensure_hive(PBVH *pbvh, PBVHNode *node);
+void defragment_node(PBVH *pbvh, PBVHNode *node);
+void defragment_pbvh(PBVH *pbvh);
+}  // namespace blender::bke::pbvh

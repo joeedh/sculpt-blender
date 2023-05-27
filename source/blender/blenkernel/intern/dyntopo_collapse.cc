@@ -285,13 +285,13 @@ static void collapse_ring_callback_post(BMElem *elem, void *userdata)
   }
 }
 
-static void vert_ring_do(BMVert *v,
-                         BMVert *v_extra,
-                         void (*callback)(BMElem *elem, void *userdata),
-                         void *userdata,
-                         int /*tag*/,
-                         int /*facetag*/,
-                         int /*depth*/)
+ATTR_NO_OPT static void vert_ring_do(BMVert *v,
+                                     BMVert *v_extra,
+                                     void (*callback)(BMElem *elem, void *userdata),
+                                     void *userdata,
+                                     int /*tag*/,
+                                     int /*facetag*/,
+                                     int /*depth*/)
 {
   blender::Set<BMFace *, 128> faces;
 

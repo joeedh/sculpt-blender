@@ -4061,24 +4061,24 @@ void *BPy_bm_new_customdata_layout_pre(BMesh *bm, CustomData *cdata, char htype)
     return NULL;
   }
 
-  BLI_mempool *pool = NULL;
+  void *pool = NULL;
   int num = 0;
 
   switch (htype) {
     case BM_VERT:
-      pool = bm->vpool;
+      pool = bm->vhive;
       num = bm->totvert;
       break;
     case BM_EDGE:
-      pool = bm->epool;
+      pool = bm->ehive;
       num = bm->totedge;
       break;
     case BM_LOOP:
-      pool = bm->fpool;
+      pool = bm->fhive;
       num = bm->totloop;
       break;
     case BM_FACE:
-      pool = bm->fpool;
+      pool = bm->fhive;
       num = bm->totface;
       break;
   }
@@ -4088,21 +4088,21 @@ void *BPy_bm_new_customdata_layout_pre(BMesh *bm, CustomData *cdata, char htype)
   int cd_py = CustomData_get_offset(cdata, CD_BM_ELEM_PYPTR);
 
   BMElem *elem;
-  BLI_mempool_iter iter;
+  HiveIter iter;
 
   int i = 0;
 
   if (htype != BM_LOOP) {
-    BLI_mempool_iternew(pool, &iter);
-    while ((elem = BLI_mempool_iterstep(&iter))) {
+    BM_hive_iternew(pool, &iter, htype);
+    while ((elem = BM_hive_iterstep(&iter))) {
       ptrs[i++] = *((void **)BM_ELEM_CD_GET_VOID_P(elem, cd_py));
     }
   }
   else {
     BMFace *f;
 
-    BLI_mempool_iternew(pool, &iter);
-    while ((f = BLI_mempool_iterstep(&iter))) {
+    BM_hive_iternew(pool, &iter, BM_FACE);
+    while ((f = BM_hive_iterstep(&iter))) {
       BMLoop *l = f->l_first;
 
       do {
@@ -4125,33 +4125,33 @@ void BPy_bm_new_customdata_layout(BMesh *bm, CustomData *cdata, void *state, cha
     return;
   }
 
-  BLI_mempool *pool = NULL;
+  void *pool = NULL;
   void **ptrs = (void **)state;
 
   switch (htype) {
     case BM_VERT:
-      pool = bm->vpool;
+      pool = bm->vhive;
       break;
     case BM_EDGE:
-      pool = bm->epool;
+      pool = bm->ehive;
       break;
     case BM_LOOP:
-      pool = bm->fpool;
+      pool = bm->fhive;
       break;
     case BM_FACE:
-      pool = bm->fpool;
+      pool = bm->fhive;
       break;
   }
 
   int cd_py = CustomData_get_offset(cdata, CD_BM_ELEM_PYPTR);
 
   BMElem *elem;
-  BLI_mempool_iter iter;
+  HiveIter iter;
   int i = 0;
 
   if (htype != BM_LOOP) {
-    BLI_mempool_iternew(pool, &iter);
-    while ((elem = BLI_mempool_iterstep(&iter))) {
+    BM_hive_iternew(pool, &iter, htype);
+    while ((elem = BM_hive_iterstep(&iter))) {
       void **ptr = BM_ELEM_CD_GET_VOID_P(elem, cd_py);
 
       *ptr = ptrs[i++];
@@ -4165,8 +4165,8 @@ void BPy_bm_new_customdata_layout(BMesh *bm, CustomData *cdata, void *state, cha
   else {
     BMFace *f;
 
-    BLI_mempool_iternew(pool, &iter);
-    while ((f = BLI_mempool_iterstep(&iter))) {
+    BM_hive_iternew(pool, &iter, BM_FACE);
+    while ((f = BM_hive_iterstep(&iter))) {
       BMLoop *l = f->l_first;
 
       do {

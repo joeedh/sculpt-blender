@@ -2173,6 +2173,10 @@ void EdgeQueueContext::finish()
       continue;
     }
 
+    if (node->flag & PBVH_UpdateTopology) {
+      node->flag |= PBVH_Defragment;
+    }
+
     node->flag &= ~PBVH_UpdateTopology;
   }
 

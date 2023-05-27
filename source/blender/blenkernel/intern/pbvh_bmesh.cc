@@ -40,6 +40,7 @@ Topology rake:
 #include "BLI_task.h"
 #include "BLI_utildefines.h"
 
+#include "BLI_hive_alloc.hh"
 #include "BLI_index_range.hh"
 #include "BLI_map.hh"
 #include "BLI_math_vector_types.hh"
@@ -66,6 +67,8 @@ Topology rake:
 #include "bmesh_log.h"
 #include "dyntopo_intern.hh"
 #include "pbvh_intern.hh"
+
+#include "../../bmesh/intern/bmesh_hive_alloc_intern.hh"
 
 #include <cmath>
 #include <cstdio>
@@ -798,7 +801,9 @@ static void pbvh_bmesh_node_finalize(PBVH *pbvh,
 
   BKE_pbvh_node_fully_hidden_set(n, !has_visible);
   n->flag |= PBVH_UpdateNormals | PBVH_UpdateCurvatureDir | PBVH_UpdateTris;
-  n->flag |= PBVH_UpdateBB | PBVH_UpdateOriginalBB;
+  n->flag |= PBVH_UpdateBB | PBVH_UpdateOriginalBB | PBVH_Defragment;
+
+  n->flag |= PBVH_UpdateTopology;
 
   if (add_orco) {
     BKE_pbvh_bmesh_check_tris(pbvh, n);
@@ -1119,7 +1124,7 @@ void bke_pbvh_insert_face_finalize(PBVH *pbvh, BMFace *f, const int ni)
                              PBVH_UpdateCurvatureDir | PBVH_UpdateOtherVerts;
   updateflag |= PBVH_UpdateColor | PBVH_UpdateMask | PBVH_UpdateNormals | PBVH_UpdateOriginalBB;
   updateflag |= PBVH_UpdateVisibility | PBVH_UpdateRedraw | PBVH_RebuildDrawBuffers |
-                PBVH_UpdateTriAreas;
+                PBVH_UpdateTriAreas | PBVH_Defragment;
 
   node->flag |= updateflag;
 
@@ -2623,7 +2628,7 @@ void BKE_pbvh_build_bmesh(PBVH *pbvh,
 
     BKE_pbvh_bmesh_check_tris(pbvh, node);
 
-    node->flag |= PBVH_UpdateTriAreas;
+    node->flag |= PBVH_UpdateTriAreas | PBVH_Defragment;
     BKE_pbvh_check_tri_areas(pbvh, node);
 
     int area_src_i = pbvh->face_area_i ^ 1;
@@ -2636,6 +2641,10 @@ void BKE_pbvh_build_bmesh(PBVH *pbvh,
     }
     TGSET_ITER_END;
   }
+
+  blender::bke::pbvh::defragment_pbvh(pbvh);
+  BM_mesh_elem_table_ensure(pbvh->header.bm, BM_VERT | BM_EDGE | BM_FACE);
+  BM_mesh_elem_index_ensure(pbvh->header.bm, BM_VERT | BM_EDGE | BM_FACE);
 }
 
 void BKE_pbvh_set_bm_log(PBVH *pbvh, BMLog *log)
@@ -3250,6 +3259,7 @@ static void pbvh_bmesh_join_subnodes(PBVH *pbvh, PBVHNode *node, PBVHNode *paren
     }
     if (node != parent) {
       node->flag |= PBVH_Delete; /* Mark for deletion. */
+      blender::bke::pbvh::node_release_hive(pbvh, node);
     }
 
     return;
@@ -3257,6 +3267,7 @@ static void pbvh_bmesh_join_subnodes(PBVH *pbvh, PBVHNode *node, PBVHNode *paren
 
   if (node != parent) {
     node->flag |= PBVH_Delete; /* Mark for deletion. */
+    blender::bke::pbvh::node_release_hive(pbvh, node);
   }
 
   BMVert *v;
@@ -3378,6 +3389,7 @@ static void pbvh_bmesh_compact_tree(PBVH *bvh)
           printf("un-deleting an empty node\n");
           PBVHNode *n3 = n1->flag & PBVH_Delete ? n1 : n2;
 
+          n3->bm_hive = 0; /* New hive needed. */
           n3->flag = PBVH_Leaf | PBVH_UpdateTris;
           n3->bm_unique_verts = BLI_table_gset_new("bm_unique_verts");
           n3->bm_other_verts = BLI_table_gset_new("bm_other_verts");
@@ -3388,6 +3400,7 @@ static void pbvh_bmesh_compact_tree(PBVH *bvh)
         else if ((n1->flag & PBVH_Delete) && (n2->flag & PBVH_Delete)) {
           n->children_offset = 0;
           n->flag |= PBVH_Leaf | PBVH_UpdateTris;
+          n->bm_hive = 0; /* New hive needed. */
 
           if (!n->bm_unique_verts) {
             // should not happen
@@ -3632,6 +3645,7 @@ ATTR_NO_OPT static void pbvh_bmesh_balance_tree(PBVH *pbvh)
           PBVHNode *node2 = substack.pop_last();
 
           node2->flag |= PBVH_Delete;
+          blender::bke::pbvh::node_release_hive(pbvh, node2);
 
           if (node2->flag & PBVH_Leaf) {
             BMFace *f;
@@ -3699,6 +3713,8 @@ ATTR_NO_OPT static void pbvh_bmesh_balance_tree(PBVH *pbvh)
   MEM_SAFE_FREE(parentmap);
   MEM_SAFE_FREE(overlaps);
   MEM_SAFE_FREE(depthmap);
+
+  blender::bke::pbvh::defragment_pbvh(pbvh);
 }
 
 /* Fix any orphaned empty leaves that survived other stages of culling.*/
@@ -4015,6 +4031,7 @@ void after_stroke(PBVH *pbvh, bool force_balance)
   }
 
   pbvh_print_mem_size(pbvh);
+  blender::bke::pbvh::defragment_pbvh(pbvh);
 }
 }  // namespace blender::bke::dyntopo
 
@@ -4220,13 +4237,13 @@ BMesh *BKE_pbvh_reorder_bmesh(PBVH *pbvh)
     }
   }
 
-  BLI_mempool_iter loopiter;
-  BLI_mempool_iternew(pbvh->header.bm->lpool, &loopiter);
-  BMLoop *l = (BMLoop *)BLI_mempool_iterstep(&loopiter);
+  HiveIter loopiter;
+  BM_hive_iternew(pbvh->header.bm->lhive, &loopiter, BM_LOOP);
+  BMLoop *l = (BMLoop *)BM_hive_iterstep(&loopiter);
   BMEdge *e;
   BMFace *f;
 
-  for (i = 0; l; l = (BMLoop *)BLI_mempool_iterstep(&loopiter), i++) {
+  for (i = 0; l; l = (BMLoop *)BM_hive_iterstep(&loopiter), i++) {
     l->head.hflag &= ~flag;
   }
   BM_ITER_MESH (e, &iter, pbvh->header.bm, BM_EDGES_OF_MESH) {
@@ -4352,10 +4369,10 @@ BMesh *BKE_pbvh_reorder_bmesh(PBVH *pbvh)
     fidx[i] = (uint)f->head.index;
   }
 
-  BLI_mempool_iternew(pbvh->header.bm->lpool, &loopiter);
-  l = (BMLoop *)BLI_mempool_iterstep(&loopiter);
+  BM_hive_iternew(pbvh->header.bm->lhive, &loopiter, BM_LOOP);
+  l = (BMLoop *)BM_hive_iterstep(&loopiter);
 
-  for (i = 0; l; l = (BMLoop *)BLI_mempool_iterstep(&loopiter), i++) {
+  for (i = 0; l; l = (BMLoop *)BM_hive_iterstep(&loopiter), i++) {
     // handle orphaned loops
     if (!(l->head.hflag & flag)) {
       printf("warning in %s: orphaned loop!\n", __func__);
@@ -4958,5 +4975,175 @@ void update_sharp_boundary_bmesh(BMVert *v, int cd_boundary_flag, const float sh
   }
 
   BM_ELEM_CD_SET_INT(v, cd_boundary_flag, flag);
+}
+
+ATTR_NO_OPT void on_vert_move(BMVert *vold, BMVert *vnew, void *userdata, int hive)
+{
+  PBVH *pbvh = static_cast<PBVH *>(userdata);
+  int vert_ni = BM_ELEM_CD_GET_INT(vold, pbvh->cd_vert_node_offset);
+
+  BM_idmap_on_elem_moved(pbvh->bm_idmap, vold, vnew);
+
+  if (vert_ni != DYNTOPO_NODE_NONE) {
+    PBVHNode *node = pbvh->nodes + vert_ni;
+    node->flag |= PBVH_UpdateTris;
+
+    BLI_table_gset_remove(node->bm_unique_verts, static_cast<void *>(vold), nullptr);
+    BLI_table_gset_insert(node->bm_unique_verts, static_cast<void *>(vnew));
+  }
+
+  BMEdge *e = vnew->e;
+  do {
+    if (!e->l) {
+      continue;
+    }
+
+    BMLoop *l = e->l;
+    do {
+      int ni = BM_ELEM_CD_GET_INT(l->f, pbvh->cd_face_node_offset);
+      if (ni != DYNTOPO_NODE_NONE && ni != vert_ni) {
+        PBVHNode *node = pbvh->nodes + ni;
+
+        node->flag |= PBVH_UpdateTris;
+        BLI_table_gset_remove(node->bm_other_verts, static_cast<void *>(vold), nullptr);
+        BLI_table_gset_insert(node->bm_other_verts, static_cast<void *>(vnew));
+      }
+    } while ((l = l->radial_next) != e->l);
+  } while ((e = BM_DISK_EDGE_NEXT(e, vnew)) != vnew->e);
+}
+
+ATTR_NO_OPT void on_face_move(BMFace *fold, BMFace *fnew, void *userdata, int hive)
+{
+  PBVH *pbvh = static_cast<PBVH *>(userdata);
+  int face_ni = BM_ELEM_CD_GET_INT(fold, pbvh->cd_face_node_offset);
+
+  if (face_ni != DYNTOPO_NODE_NONE) {
+    PBVHNode *node = pbvh->nodes + face_ni;
+    node->flag |= PBVH_UpdateTris;
+
+    BLI_table_gset_remove(node->bm_faces, static_cast<void *>(fold), nullptr);
+    BLI_table_gset_insert(node->bm_faces, static_cast<void *>(fnew));
+  }
+}
+
+void set_hive_callbacks(PBVH *pbvh)
+{
+  BMesh *bm = pbvh->header.bm;
+
+  BLI_assert(bm);
+  bm->vhive_userdata = bm->ehive_userdata = bm->lhive_userdata = bm->fhive_userdata =
+      static_cast<void *>(pbvh);
+  bm->vhive_move_cb = on_vert_move;
+  bm->fhive_move_cb = on_face_move;
+}
+
+void node_ensure_hive(PBVH *pbvh, PBVHNode *node)
+{
+  if (node->bm_hive > 0) {
+    return;
+  }
+
+  if (pbvh->bm_free_hives.size() > 0) {
+    node->bm_hive = pbvh->bm_free_hives.pop_last();
+  }
+  else {
+    /* Leave hive 0 for scratch usage.*/
+    node->bm_hive = 1 + (pbvh->bm_tot_hives++);
+  }
+}
+
+void node_release_hive(PBVH *pbvh, PBVHNode *node)
+{
+  if (node->bm_hive > 0) {
+    pbvh->bm_free_hives.append(node->bm_hive);
+  }
+}
+
+void defragment_node(PBVH *pbvh, PBVHNode *node)
+{
+  BMesh *bm = pbvh->header.bm;
+
+  int ni = int(node - pbvh->nodes);
+  node_ensure_hive(pbvh, node);
+
+  VertHive *vhive = static_cast<VertHive *>(bm->vhive);
+  EdgeHive *ehive = static_cast<EdgeHive *>(bm->ehive);
+  LoopHive *lhive = static_cast<LoopHive *>(bm->lhive);
+  FaceHive *fhive = static_cast<FaceHive *>(bm->fhive);
+
+  vhive->ensure_hives(pbvh->bm_tot_hives + 1);
+  ehive->ensure_hives(pbvh->bm_tot_hives + 1);
+  lhive->ensure_hives(pbvh->bm_tot_hives + 1);
+  fhive->ensure_hives(pbvh->bm_tot_hives + 1);
+
+  bool modified = false;
+
+  /* Note: the hive callbacks will keep the PBVH nodes valid. */
+
+  BMFace *f;
+  TGSET_ITER (f, node->bm_faces) {
+    BMFace *old = f;
+    f = fhive->move(f, node->bm_hive);
+
+    modified |= f != old;
+
+    BM_idmap_on_elem_moved(pbvh->bm_idmap, old, f);
+
+    BMLoop *l = f->l_first;
+    do {
+      BMLoop *lold = l;
+      l = lhive->move(l, node->bm_hive);
+
+      modified |= l != lold;
+
+      BMLoop *l2 = l;
+      int max_ni = 0;
+      do {
+        int ni = BM_ELEM_CD_GET_INT(l2->f, pbvh->cd_face_node_offset);
+        max_ni = max_ii(max_ni, ni);
+      } while ((l2 = l2->radial_next) != l);
+
+      if (max_ni == ni) {
+        BMEdge *eold = l->e;
+
+        node_ensure_hive(pbvh, &pbvh->nodes[max_ni]);
+        ehive->move(l->e, pbvh->nodes[max_ni].bm_hive);
+
+        BM_idmap_on_elem_moved(pbvh->bm_idmap, eold, l->e);
+      }
+    } while ((l = l->next) != f->l_first);
+  }
+  TGSET_ITER_END;
+
+  BMVert *v;
+  TGSET_ITER (v, node->bm_unique_verts) {
+    BMVert *vold = v;
+    v = vhive->move(v, node->bm_hive);
+    BM_idmap_on_elem_moved(pbvh->bm_idmap, vold, v);
+
+    modified |= v != vold;
+  }
+  TGSET_ITER_END;
+
+  if (modified) {
+    node->flag |= PBVH_UpdateTris;
+  }
+
+  node->flag &= ~PBVH_Defragment;
+}
+
+void defragment_pbvh(PBVH *pbvh)
+{
+  set_hive_callbacks(pbvh);
+
+  for (int i : IndexRange(pbvh->totnode)) {
+    PBVHNode *node = &pbvh->nodes[i];
+
+    if (!(node->flag & PBVH_Leaf) || !(node->flag & PBVH_Defragment)) {
+      continue;
+    }
+
+    defragment_node(pbvh, node);
+  }
 }
 }  // namespace blender::bke::pbvh

@@ -373,7 +373,7 @@ void SCULPT_vertex_persistent_normal_get(SculptSession *ss, PBVHVertRef vertex, 
   SCULPT_vertex_normal_get(ss, vertex, no);
 }
 
-float SCULPT_vertex_mask_get(SculptSession *ss, PBVHVertRef vertex)
+ATTR_NO_OPT float SCULPT_vertex_mask_get(SculptSession *ss, PBVHVertRef vertex)
 {
   switch (BKE_pbvh_type(ss->pbvh)) {
     case PBVH_FACES:

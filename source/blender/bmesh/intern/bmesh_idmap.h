@@ -77,3 +77,19 @@ BLI_INLINE BMElem *BM_idmap_lookup(BMIdMap *map, int elem)
 #ifdef __cplusplus
 }
 #endif
+
+#ifdef __cplusplus
+template<typename T> inline void BM_idmap_on_elem_moved(BMIdMap *map, T *old_elem, T *new_elem)
+#else
+BLI_INLINE void BM_idmap_on_elem_moved(BMIdMap *map, BMElem *old_elem, BMElem *new_elem)
+#endif
+{
+  int id = BM_ELEM_CD_GET_INT(new_elem, map->cd_id_off[(int)new_elem->head.htype]);
+  if (id < 0 || id >= map->map_size || map->map[id] != reinterpret_cast<BMElem *>(old_elem)) {
+    //printf("%s: possible idmap corruption\n", __func__);
+  }
+
+  if (id >= 0 && id < map->map_size) {
+    map->map[id] = reinterpret_cast<BMElem *>(new_elem);
+  }
+}

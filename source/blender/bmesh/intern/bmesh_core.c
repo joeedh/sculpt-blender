@@ -452,7 +452,7 @@ BMFace *BM_face_create(BMesh *bm,
                        const eBMCreateFlag create_flag)
 {
   BMFace *f = NULL;
-  BMLoop *l, *startl, *lastl;
+  BMLoop *l;
   int i;
 
   BLI_assert((f_example == NULL) || (f_example->head.htype == BM_FACE));
@@ -473,20 +473,27 @@ BMFace *BM_face_create(BMesh *bm,
 
   f = bm_face_create__internal(bm);
 
-  startl = lastl = bm_face_boundary_add(bm, f, verts[0], edges[0], create_flag);
+  f->l_first = bm_face_boundary_add(bm, f, verts[0], edges[0], create_flag);
+  f->l_first->prev = NULL;
 
   for (i = 1; i < len; i++) {
     l = bm_loop_create(bm, verts[i], edges[i], f, NULL /* edges[i]->l */, create_flag);
 
     bmesh_radial_loop_append(edges[i], l);
 
-    l->prev = lastl;
-    lastl->next = l;
-    lastl = l;
+    l->prev = f->l_first;
+    f->l_first->next = l;
+    f->l_first = l;
   }
 
-  startl->prev = lastl;
-  lastl->next = startl;
+  BMLoop *l_first = f->l_first;
+  while (l_first->prev) {
+    l_first = l_first->prev;
+  }
+
+  l_first->prev = f->l_first;
+  f->l_first->next = l_first;
+  f->l_first = l_first;
 
   f->len = len;
 

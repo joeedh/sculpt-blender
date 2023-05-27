@@ -805,7 +805,7 @@ void BM_vert_interp_from_face(BMesh *bm, BMVert *v_dst, const BMFace *f_src)
 void BPy_bm_new_customdata_layout(BMesh *bm, CustomData *cdata, void *state, char htype);
 void *BPy_bm_new_customdata_layout_pre(BMesh *bm, CustomData *cdata, char htype);
 
-static void update_data_blocks(BMesh *bm, CustomData *olddata, CustomData *data)
+ATTR_NO_OPT static void update_data_blocks(BMesh *bm, CustomData *olddata, CustomData *data)
 {
   BMIter iter;
   BLI_mempool *oldpool = olddata->pool;

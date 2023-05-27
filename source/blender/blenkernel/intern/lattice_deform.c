@@ -391,12 +391,11 @@ static void lattice_deform_coords_impl(const Object *ob_lattice,
     BLI_parallel_mempool_settings_defaults(&settings);
 
     if (cd_dvert_offset != -1) {
-      BLI_task_parallel_mempool(
-          em_target->bm->vpool, &data, lattice_vert_task_editmesh, &settings);
+      BM_iter_parallel(em_target->bm, BM_VERT, lattice_vert_task_editmesh, &data, &settings);
     }
     else {
-      BLI_task_parallel_mempool(
-          em_target->bm->vpool, &data, lattice_vert_task_editmesh_no_dvert, &settings);
+      BM_iter_parallel(
+          em_target->bm, BM_VERT, lattice_vert_task_editmesh_no_dvert, &data, &settings);
     }
   }
   else {

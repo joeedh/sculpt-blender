@@ -46,7 +46,7 @@ template<typename HiveType> static void bm_hive_iternew(HiveType *hive, HiveIter
   *reinterpret_cast<typename HiveType::Iterator *>(iter->reserved) = hive->begin();
 }
 
-template<typename HiveType> static bool bm_hive_iterdone(HiveIter *iter)
+template<typename HiveType> ATTR_NO_OPT static bool bm_hive_iterdone(HiveIter *iter)
 {
   typename HiveType::Iterator *real_iter = reinterpret_cast<typename HiveType::Iterator *>(
       iter->reserved);
@@ -55,12 +55,15 @@ template<typename HiveType> static bool bm_hive_iterdone(HiveIter *iter)
   return *real_iter == hive->end();
 }
 
-template<typename HiveType> static void *bm_hive_iterstep(HiveIter *iter)
+template<typename HiveType> ATTR_NO_OPT static void *bm_hive_iterstep(HiveIter *iter)
 {
   typename HiveType::Iterator *real_iter = reinterpret_cast<typename HiveType::Iterator *>(
       iter->reserved);
 
-  return real_iter->done() ? nullptr : static_cast<void *>(*(*real_iter));
+  void *ret = real_iter->done() ? nullptr : static_cast<void *>(*(*real_iter));
+  real_iter->operator++();
+
+  return ret;
 }
 
 void BM_hive_iternew(void *hive, HiveIter *iter, char htype)
@@ -126,7 +129,6 @@ void *BM_hive_iterstep(HiveIter *iter)
 
 template<typename T, typename HiveType = VertHive>
 static void bm_task_parallel_memhive(void *vhive,
-                                     char htype,
                                      void *userdata,
                                      TaskParallelMempoolFunc func,
                                      const TaskParallelSettings *settings)
@@ -150,16 +152,52 @@ void BM_task_parallel_memhive(void *hive,
 {
   switch (htype) {
     case BM_VERT:
-      bm_task_parallel_memhive<BMVert, VertHive>(hive, htype, userdata, func, settings);
+      bm_task_parallel_memhive<BMVert, VertHive>(hive, userdata, func, settings);
       break;
     case BM_EDGE:
-      bm_task_parallel_memhive<BMEdge, EdgeHive>(hive, htype, userdata, func, settings);
+      bm_task_parallel_memhive<BMEdge, EdgeHive>(hive, userdata, func, settings);
       break;
     case BM_LOOP:
-      bm_task_parallel_memhive<BMLoop, LoopHive>(hive, htype, userdata, func, settings);
+      bm_task_parallel_memhive<BMLoop, LoopHive>(hive, userdata, func, settings);
       break;
     case BM_FACE:
-      bm_task_parallel_memhive<BMFace, FaceHive>(hive, htype, userdata, func, settings);
+      bm_task_parallel_memhive<BMFace, FaceHive>(hive, userdata, func, settings);
       break;
   }
+}
+
+BMVert *bm_alloc_vert(BMesh *bm)
+{
+  return static_cast<VertHive *>(bm->vhive)->alloc();
+}
+void bm_free_vert(BMesh *bm, BMVert *v)
+{
+  static_cast<VertHive *>(bm->vhive)->free(v);
+}
+
+BMEdge *bm_alloc_edge(BMesh *bm)
+{
+  return static_cast<EdgeHive *>(bm->ehive)->alloc();
+}
+void bm_free_edge(BMesh *bm, BMEdge *e)
+{
+  static_cast<EdgeHive *>(bm->ehive)->free(e);
+}
+
+BMLoop *bm_alloc_loop(BMesh *bm)
+{
+  return static_cast<LoopHive *>(bm->lhive)->alloc();
+}
+void bm_free_loop(BMesh *bm, BMLoop *l)
+{
+  static_cast<LoopHive *>(bm->lhive)->free(l);
+}
+
+BMFace *bm_alloc_face(BMesh *bm)
+{
+  return static_cast<FaceHive *>(bm->fhive)->alloc();
+}
+void bm_free_face(BMesh *bm, BMFace *f)
+{
+  static_cast<FaceHive *>(bm->fhive)->free(f);
 }

@@ -13,6 +13,9 @@
  * if absolutely necessary, see function definitions in code for
  * descriptive comments.  but seriously, don't use this stuff.
  */
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* LOOP CYCLE MANAGEMENT */
 /*****loop cycle functions, e.g. loops surrounding a face**** */
@@ -137,3 +140,7 @@ bool bmesh_disk_validate(int len, BMEdge *e, BMVert *v) ATTR_WARN_UNUSED_RESULT 
 #define BM_DEFAULT_IDMAP_SIZE (1 << 12)
 
 #include "intern/bmesh_structure_inline.h"
+
+#ifdef __cplusplus
+}
+#endif

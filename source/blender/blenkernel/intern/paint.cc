@@ -1384,10 +1384,10 @@ bool paint_calculate_rake_rotation(UnifiedPaintSettings *ups,
   return ok;
 }
 
-static bool sculpt_boundary_flags_ensure(Object *ob,
-                                         PBVH *pbvh,
-                                         int totvert,
-                                         bool force_update = false)
+ATTR_NO_OPT static bool sculpt_boundary_flags_ensure(Object *ob,
+                                                     PBVH *pbvh,
+                                                     int totvert,
+                                                     bool force_update = false)
 {
   SculptSession *ss = ob->sculpt;
   bool ret = false;

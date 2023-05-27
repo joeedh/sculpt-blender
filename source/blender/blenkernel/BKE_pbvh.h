@@ -226,8 +226,9 @@ typedef enum {
   PBVH_UpdateOtherVerts = 1 << 21,
   PBVH_TexLeaf = 1 << 22,
   PBVH_TopologyUpdated = 1 << 23, /* Used internally by pbvh_bmesh.c */
+  PBVH_Defragment = 1 << 24,
 } PBVHNodeFlags;
-ENUM_OPERATORS(PBVHNodeFlags, PBVH_TopologyUpdated);
+ENUM_OPERATORS(PBVHNodeFlags, PBVH_Defragment);
 
 typedef struct PBVHFrustumPlanes {
   float (*planes)[4];
@@ -548,7 +549,6 @@ struct CCGElem **BKE_pbvh_get_grids(const PBVH *pbvh);
 BLI_bitmap **BKE_pbvh_get_grid_visibility(const PBVH *pbvh);
 int BKE_pbvh_get_grid_num_verts(const PBVH *pbvh);
 int BKE_pbvh_get_grid_num_faces(const PBVH *pbvh);
-
 
 /* Node Access */
 
