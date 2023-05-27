@@ -4071,9 +4071,13 @@ bool get_original_vertex(SculptSession *ss,
   return retval;
 }
 
-void load_all_original(Object *ob)
+ATTR_NO_OPT void load_all_original(Object *ob)
 {
   SculptSession *ss = ob->sculpt;
+
+  if (ss->bm) {
+    BM_mesh_elem_table_ensure(ss->bm, BM_VERT | BM_EDGE | BM_FACE);
+  }
 
   int verts_count = BKE_sculptsession_vertex_count(ss);
   for (int i : IndexRange(verts_count)) {

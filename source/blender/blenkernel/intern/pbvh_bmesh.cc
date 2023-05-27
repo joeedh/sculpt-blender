@@ -5062,8 +5062,6 @@ void node_release_hive(PBVH *pbvh, PBVHNode *node)
 
 void defragment_node(PBVH *pbvh, PBVHNode *node)
 {
-  // return; //XXX
-
   BMesh *bm = pbvh->header.bm;
 
   int ni = int(node - pbvh->nodes);
@@ -5169,7 +5167,7 @@ void defragment_node(PBVH *pbvh, PBVHNode *node)
   node->flag &= ~PBVH_Defragment;
 }
 
-static void compact_hives(PBVH *pbvh)
+static bool compact_hives(PBVH *pbvh)
 {
   BMesh *bm = pbvh->header.bm;
   VertHive *vhive = static_cast<VertHive *>(bm->vhive);
@@ -5185,11 +5183,12 @@ static void compact_hives(PBVH *pbvh)
                                               nullptr;
   CustomDataHive *cd_fhive = bm->pdata.hive ? static_cast<CustomDataHive *>(bm->pdata.hive) :
                                               nullptr;
+  bool modified = false;
 
-  vhive->compact();
+  modified |= vhive->compact();
   ehive->compact();
   lhive->compact();
-  fhive->compact();
+  modified |= fhive->compact();
 
   if (cd_vhive) {
     cd_vhive->compact();
@@ -5203,10 +5202,16 @@ static void compact_hives(PBVH *pbvh)
   if (cd_fhive) {
     cd_fhive->compact();
   }
+
+  return modified;
 }
+
 void defragment_pbvh(PBVH *pbvh, bool partial)
 {
   set_hive_callbacks(pbvh);
+
+  // XXX
+  // return;
 
   /* Only defragment a set number of nodes */
   blender::RandomNumberGenerator rand(uint32_t(PIL_check_seconds_timer() * 100000.0));
@@ -5230,6 +5235,11 @@ void defragment_pbvh(PBVH *pbvh, bool partial)
     defragment_node(pbvh, node);
   }
 
-  compact_hives(pbvh);
+#if 0  // XXX
+  if (compact_hives(pbvh)) {
+    pbvh->header.bm->elem_index_dirty |= BM_VERT | BM_FACE;
+    pbvh->header.bm->elem_table_dirty |= BM_VERT | BM_FACE;
+  }
+#endif
 }
 }  // namespace blender::bke::pbvh

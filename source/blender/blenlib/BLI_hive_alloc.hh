@@ -189,12 +189,18 @@ class HiveAllocator {
       BLI_assert_unreachable();
     }
 
-    ATTR_NO_OPT bool has_elem(T *elem)
+    ATTR_NO_OPT bool has_elem(T *elem, int *r_chunk_i = nullptr)
     {
+      int i = 0;
       for (DynamicChunk &chunk : chunks) {
         if (elem >= chunk.data() && elem < chunk.end()) {
+          if (r_chunk_i) {
+            *r_chunk_i = i;
+          }
           return true;
         }
+
+        i++;
       }
 
       return false;
@@ -266,9 +272,10 @@ class HiveAllocator {
       return chunks.size() * chunksize * SizeOf::size(userdata);
     }
 
-    ATTR_NO_OPT void compact()
+    ATTR_NO_OPT bool compact()
     {
       std::vector<DynamicChunk> chunks2;
+      bool modified = false;
 
       for (DynamicChunk &chunk2 : chunks) {
         if (chunk2.used != 0) {
@@ -290,9 +297,12 @@ class HiveAllocator {
             }
           }
         }
+
+        modified = true;
       }
 
       chunks = chunks2;
+      return modified;
     }
   };
 
@@ -444,6 +454,20 @@ class HiveAllocator {
     return hives[hive].alloc();
   }
 
+  int get_chunk(T *elem)
+  {
+    int i = 0;
+    for (Hive &hive : hives) {
+      i += hive.chunks.size();
+      int i_out = 0;
+
+      if (hive.has_elem(elem, &i_out)) {
+        return i + i_out;
+      }
+    }
+    return -1;
+  }
+
   ATTR_NO_OPT void free(T *elem)
   {
     for (Hive &hive : hives) {
@@ -509,11 +533,15 @@ class HiveAllocator {
     return sum;
   }
 
-  ATTR_NO_OPT void compact()
+  ATTR_NO_OPT bool compact()
   {
+    bool modified = false;
+
     for (Hive &hive : hives) {
-      hive.compact();
+      modified |= hive.compact();
     }
+
+    return modified;
   }
 };
 }  // namespace blender

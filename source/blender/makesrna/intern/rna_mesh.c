@@ -3755,6 +3755,7 @@ static void rna_def_mesh(BlenderRNA *brna)
   prop = RNA_def_property(srna, "sculpt_ignore_uvs", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flag", ME_SCULPT_IGNORE_UVS);
   RNA_def_property_ui_text(prop, "Ignore UVs", "");
+  RNA_def_property_update(prop, 0, NULL);
 
   /* End Symmetry */
 

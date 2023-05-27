@@ -50,6 +50,8 @@
 #include "draw_pbvh.h"
 #include "gpu_private.h"
 
+#include "../../bmesh/intern/bmesh_hive_alloc_intern.hh"
+
 #define MAX_PBVH_BATCH_KEY 512
 #define MAX_PBVH_VBOS 16
 
@@ -927,9 +929,11 @@ struct PBVHBatches {
             &args->bm->vdata, CD_PROP_INT32, "vertex_id");
 
         foreach_bmesh([&](BMLoop *l) {
-          int *id = BM_ELEM_CD_PTR<int *>(l->v, cd_id);
+          //int id = *BM_ELEM_CD_PTR<int *>(l->v, cd_id);
+          //int id = static_cast<VertHive *>(args->bm->vhive)->get_chunk(l->v);
+          int id = static_cast<LoopHive *>(args->bm->lhive)->get_chunk(l);
 
-          *static_cast<int *>(GPU_vertbuf_raw_step(&access)) = *id;
+          *static_cast<int *>(GPU_vertbuf_raw_step(&access)) = id;
         });
         break;
       }
