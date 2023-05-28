@@ -63,6 +63,8 @@ class HiveAllocator {
       userdata = b.userdata;
       size = b.size;
       used = b.used;
+
+      return *this;
     }
 
     T &operator[](int index) noexcept
