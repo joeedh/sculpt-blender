@@ -2,6 +2,7 @@
 
 #include "MEM_guardedalloc.h"
 
+#include "BLI_asan.h"
 #include "BLI_assert.h"
 #include "BLI_compiler_attrs.h"
 #include "BLI_vector.hh"
@@ -11,6 +12,10 @@
 #include <vector>
 
 namespace blender {
+
+#ifdef WITH_ASAN
+constexpr int AsanPad = 16;
+#endif
 
 template<typename T, typename UserData = void *> struct ElemCallbacks {
   static void move_elem(T *old_loc, T *new_loc, UserData userdata, int hive) {}
@@ -47,6 +52,9 @@ class HiveAllocator {
     DynamicChunk(void *mem_, size_t size_, UserData userdata_) noexcept
         : mem(static_cast<char *>(mem_)), size(size_), userdata(userdata_)
     {
+#ifdef WITH_ASAN
+      BLI_asan_poison(mem_, size_);
+#endif
     }
 
     DynamicChunk(const DynamicChunk &b) noexcept
@@ -69,7 +77,20 @@ class HiveAllocator {
 
     T &operator[](int index) noexcept
     {
+#ifdef WITH_ASAN
+      size_t size = SizeOf::size(userdata) + AsanPad;
+      return *reinterpret_cast<T *>(mem + size * size_t(index));
+#else
       return *reinterpret_cast<T *>(mem + SizeOf::size(userdata) * size_t(index));
+#endif
+    }
+
+    void free_data()
+    {
+      if (mem) {
+        MEM_freeN(static_cast<void *>(mem));
+        mem = nullptr;
+      }
     }
 
     T *data()
@@ -99,10 +120,15 @@ class HiveAllocator {
     Hive(UserData userdata_, int index, int reserved = ChunkSize)
         : chunksize(reserved), userdata(userdata_), hive_index(index)
     {
-      DynamicChunk chunk(
-          MEM_malloc_arrayN(SizeOf::size(userdata), chunksize, "HiveAlloc elements"),
-          size_t(chunksize) * SizeOf::size(userdata),
-          userdata);
+#ifdef WITH_ASAN
+      size_t size = SizeOf::size(userdata) + AsanPad;
+#else
+      size_t size = SizeOf::size(userdata);
+#endif
+
+      DynamicChunk chunk(MEM_malloc_arrayN(size, chunksize, "HiveAlloc elements"),
+                         size_t(chunksize) * size,
+                         userdata);
 
       for (int i = chunksize - 1; i >= 0; i--) {
         freelist.append(i);
@@ -112,7 +138,7 @@ class HiveAllocator {
       chunks.push_back(chunk);
     }
 
-    ~Hive()
+    ATTR_NO_OPT ~Hive()
     {
       for (DynamicChunk &chunk : chunks) {
         if (!chunk.data()) {
@@ -126,7 +152,7 @@ class HiveAllocator {
         }
 
         if (chunk.data()) {
-          MEM_freeN(static_cast<void *>(chunk.data()));
+          chunk.free_data();
         }
       }
     }
@@ -178,7 +204,12 @@ class HiveAllocator {
         if (elem >= chunk.data() && elem < chunk.end()) {
           char *c1 = reinterpret_cast<char *>(chunk.data());
           char *c2 = reinterpret_cast<char *>(elem);
-          int idx = int(size_t(c2 - c1) / SizeOf::size(userdata));
+#ifdef WITH_ASAN
+          size_t size = SizeOf::size(userdata) + AsanPad;
+#else
+          size_t size = SizeOf::size(userdata);
+#endif
+          int idx = int(size_t(c2 - c1) / size);
 
           chunk.used--;
 
@@ -210,9 +241,14 @@ class HiveAllocator {
 
     void append_chunk()
     {
-      DynamicChunk chunk(MEM_malloc_arrayN(SizeOf::size(userdata), chunksize, "hive chunk"),
-                         SizeOf::size(userdata) * chunksize,
-                         userdata);
+#ifdef WITH_ASAN
+      size_t size = SizeOf::size(userdata) + AsanPad;
+#else
+      size_t size = SizeOf::size(userdata);
+#endif
+
+      DynamicChunk chunk(
+          MEM_malloc_arrayN(size, chunksize, "hive chunk"), size * chunksize, userdata);
 
       int start = chunks.size() * chunksize;
       int end = (chunks.size() + 1) * chunksize;
@@ -228,6 +264,10 @@ class HiveAllocator {
 
     void set_free_elem(T *elem)
     {
+#ifdef WITH_ASAN
+      BLI_asan_unpoison(static_cast<void *>(elem), SizeOf::size(userdata));
+#endif
+
       /* Make sure to corrupt BMHeader.htype by setting first 16 bytes
        * to 255. This is used as a way to detect freed elements.
        */
@@ -240,16 +280,28 @@ class HiveAllocator {
       ptr[1] = freeword[1];
       ptr[2] = freeword[2];
       ptr[3] = freeword[3];
+
+#ifdef WITH_ASAN
+      BLI_asan_poison(static_cast<void *>(elem), SizeOf::size(userdata));
+#endif
     }
 
     void clear_free_elem(T *elem)
     {
+#ifdef WITH_ASAN
+      BLI_asan_unpoison(static_cast<void *>(elem), SizeOf::size(userdata));
+#endif
+
       char *ptr = reinterpret_cast<char *>(elem);
       ptr[0] = ptr[1] = ptr[2] = ptr[3] = 0;
     }
 
     bool is_free(T *elem)
     {
+#ifdef WITH_ASAN
+      BLI_asan_unpoison(static_cast<void *>(elem), 4);
+#endif
+
       char *ptr = reinterpret_cast<char *>(elem);
       for (int i = 0; i < 4; i++) {
         if (ptr[i] != freeword[i]) {
@@ -257,6 +309,9 @@ class HiveAllocator {
         }
       }
 
+#ifdef WITH_ASAN
+      BLI_asan_poison(static_cast<void *>(elem), 4);
+#endif
       return true;
     }
 
@@ -271,7 +326,12 @@ class HiveAllocator {
 
     size_t get_mem_size()
     {
-      return chunks.size() * chunksize * SizeOf::size(userdata);
+      size_t size = SizeOf::size(userdata);
+#ifdef WITH_ASAN
+      size += AsanPad;
+#endif
+
+      return chunks.size() * chunksize * size;
     }
 
     bool compact()
@@ -286,7 +346,8 @@ class HiveAllocator {
       }
 
       if (chunks.size() != chunks2.size()) {
-        printf("HiveAllocator::Hive::compact: pruned %d chunks\n", int(chunks.size() - chunks2.size()));
+        printf("HiveAllocator::Hive::compact: pruned %d chunks\n",
+               int(chunks.size() - chunks2.size()));
 
         /* Regenerate free list */
         freelist.clear_and_shrink();
@@ -482,7 +543,7 @@ class HiveAllocator {
     BLI_assert_unreachable();
   }
 
-  T *move(T *elem, int new_hive)
+  ATTR_NO_OPT T *move(T *elem, int new_hive)
   {
     int old_hive = get_hive(elem);
 

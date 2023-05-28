@@ -5104,7 +5104,7 @@ void node_release_hive(PBVH *pbvh, PBVHNode *node)
   }
 }
 
-void defragment_node(PBVH *pbvh, PBVHNode *node)
+ATTR_NO_OPT void defragment_node(PBVH *pbvh, PBVHNode *node)
 {
   BMesh *bm = pbvh->header.bm;
 
@@ -5119,12 +5119,12 @@ void defragment_node(PBVH *pbvh, PBVHNode *node)
 
   CustomDataHive *cd_vhive = bm->vdata.hive ? static_cast<CustomDataHive *>(bm->vdata.hive) :
                                               nullptr;
-  //CustomDataHive *cd_ehive = bm->edata.hive ? static_cast<CustomDataHive *>(bm->edata.hive) :
+  // CustomDataHive *cd_ehive = bm->edata.hive ? static_cast<CustomDataHive *>(bm->edata.hive) :
   //                                            nullptr;
   CustomDataHive *cd_lhive = bm->ldata.hive ? static_cast<CustomDataHive *>(bm->ldata.hive) :
                                               nullptr;
-  //CustomDataHive *cd_fhive = bm->pdata.hive ? static_cast<CustomDataHive *>(bm->pdata.hive) :
-  //                                            nullptr;
+  CustomDataHive *cd_fhive = bm->pdata.hive ? static_cast<CustomDataHive *>(bm->pdata.hive) :
+                                              nullptr;
 
   bool modified = false;
 
@@ -5134,6 +5134,10 @@ void defragment_node(PBVH *pbvh, PBVHNode *node)
   TGSET_ITER (f, node->bm_faces) {
     BMFace *old = f;
     f = fhive->move(f, node->bm_hive);
+
+    if (cd_fhive) {
+      f->head.data = cd_fhive->move((int *)f->head.data, node->bm_hive);
+    }
 
     modified |= f != old;
 
@@ -5330,7 +5334,7 @@ void defragment_pbvh(PBVH *pbvh, bool partial)
     defragment_node(pbvh, node);
   }
 
-#if 0  // XXX
+#if 1  // XXX
   if (compact_hives(pbvh)) {
     pbvh->header.bm->elem_index_dirty |= BM_VERT | BM_FACE;
     pbvh->header.bm->elem_table_dirty |= BM_VERT | BM_FACE;

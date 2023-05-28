@@ -65,6 +65,10 @@
 /* only for customdata_data_transfer_interp_normal_normals */
 #include "data_transfer_intern.h"
 
+#ifdef WITH_ASAN
+//#define WITH_CD_ASAN
+#endif
+
 using blender::Array;
 using blender::float2;
 using blender::ImplicitSharingInfo;
@@ -2800,14 +2804,14 @@ static void customData_update_offsets(CustomData *data)
         size += 8 - (size & 7);
       }
 
-#ifdef WITH_ASAN
+#ifdef WITH_CD_ASAN
       offset += BM_ASAN_PAD;
 #endif
 
       layer->offset = offset;
       offset += size;
 
-#ifdef WITH_ASAN
+#ifdef WITH_CD_ASAN
       offset += BM_ASAN_PAD;
 #endif
     }
@@ -2828,7 +2832,7 @@ static void customData_update_offsets(CustomData *data)
         continue;
       }
 
-#ifdef WITH_ASAN
+#ifdef WITH_CD_ASAN
       offset += BM_ASAN_PAD;
 #endif
 
@@ -2842,7 +2846,7 @@ static void customData_update_offsets(CustomData *data)
       layer->offset = offset;
       offset += size;
 
-#ifdef WITH_ASAN
+#ifdef WITH_CD_ASAN
       offset += BM_ASAN_PAD;
 #endif
     }
@@ -2859,7 +2863,7 @@ static void customData_update_offsets(CustomData *data)
 
 void CustomData_bmesh_asan_poison(const CustomData *data, void *block)
 {
-#ifdef WITH_ASAN
+#ifdef WITH_CD_ASAN
   if (!block) {
     return;
   }
