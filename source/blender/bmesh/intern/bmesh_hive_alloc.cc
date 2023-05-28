@@ -51,7 +51,6 @@ template<typename HiveType> static bool bm_hive_iterdone(HiveIter *iter)
 {
   typename HiveType::Iterator *real_iter = reinterpret_cast<typename HiveType::Iterator *>(
       iter->reserved);
-  HiveType *hive = static_cast<HiveType *>(iter->hive);
 
   return real_iter->done();
 }
@@ -223,7 +222,6 @@ int customdata_hive_get_size(void *hive)
   return int(static_cast<CustomDataHive *>(hive)->get_mem_size());
 }
 
-void customdata_hive_set_owner(void *hive, CustomData *cdata)
+void customdata_hive_set_owner(void *, CustomData *) 
 {
-  // static_cast<CustomDataHive *>(hive)->set_userdata(cdata);
 }

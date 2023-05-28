@@ -17,7 +17,7 @@ template<typename T, typename UserData = void *> struct ElemCallbacks {
 };
 
 template<typename T> struct ElemSizeOf {
-  static size_t size(void *userdata) noexcept
+  static size_t size(void *) noexcept
   {
     return sizeof(T);
   }
@@ -286,7 +286,7 @@ class HiveAllocator {
       }
 
       if (chunks.size() != chunks2.size()) {
-        printf("HiveAllocator::Hive::compact: pruned %d chunks\n", chunks.size() - chunks2.size());
+        printf("HiveAllocator::Hive::compact: pruned %d chunks\n", int(chunks.size() - chunks2.size()));
 
         /* Regenerate free list */
         freelist.clear_and_shrink();

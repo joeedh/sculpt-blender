@@ -4978,7 +4978,7 @@ void update_sharp_boundary_bmesh(BMVert *v, int cd_boundary_flag, const float sh
   BM_ELEM_CD_SET_INT(v, cd_boundary_flag, flag);
 }
 
-void on_vert_move(BMVert *vold, BMVert *vnew, void *userdata, int hive)
+void on_vert_move(BMVert *vold, BMVert *vnew, void *userdata, int /*hive*/)
 {
   PBVH *pbvh = static_cast<PBVH *>(userdata);
   int vert_ni = BM_ELEM_CD_GET_INT(vold, pbvh->cd_vert_node_offset);
@@ -5013,7 +5013,7 @@ void on_vert_move(BMVert *vold, BMVert *vnew, void *userdata, int hive)
   } while ((e = BM_DISK_EDGE_NEXT(e, vnew)) != vnew->e);
 }
 
-void on_face_move(BMFace *fold, BMFace *fnew, void *userdata, int hive)
+void on_face_move(BMFace *fold, BMFace *fnew, void *userdata, int /*hive*/)
 {
   PBVH *pbvh = static_cast<PBVH *>(userdata);
   int face_ni = BM_ELEM_CD_GET_INT(fold, pbvh->cd_face_node_offset);
@@ -5119,12 +5119,12 @@ void defragment_node(PBVH *pbvh, PBVHNode *node)
 
   CustomDataHive *cd_vhive = bm->vdata.hive ? static_cast<CustomDataHive *>(bm->vdata.hive) :
                                               nullptr;
-  CustomDataHive *cd_ehive = bm->edata.hive ? static_cast<CustomDataHive *>(bm->edata.hive) :
-                                              nullptr;
+  //CustomDataHive *cd_ehive = bm->edata.hive ? static_cast<CustomDataHive *>(bm->edata.hive) :
+  //                                            nullptr;
   CustomDataHive *cd_lhive = bm->ldata.hive ? static_cast<CustomDataHive *>(bm->ldata.hive) :
                                               nullptr;
-  CustomDataHive *cd_fhive = bm->pdata.hive ? static_cast<CustomDataHive *>(bm->pdata.hive) :
-                                              nullptr;
+  //CustomDataHive *cd_fhive = bm->pdata.hive ? static_cast<CustomDataHive *>(bm->pdata.hive) :
+  //                                            nullptr;
 
   bool modified = false;
 

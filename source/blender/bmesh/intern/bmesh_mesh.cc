@@ -35,7 +35,7 @@ const BMAllocTemplate bm_mesh_chunksize_default = {512, 1024, 2048, 512};
 
 static void bm_alloc_toolflags(BMesh *bm);
 
-static void bm_mempool_init(BMesh *bm, const BMAllocTemplate *allocsize, const bool use_toolflags)
+static void bm_mempool_init(BMesh *bm, const BMAllocTemplate */*allocsize*/, const bool /*use_toolflags*/)
 {
   bm->vhive = make_vert_hive(bm);
   bm->ehive = make_edge_hive(bm);
@@ -793,6 +793,7 @@ int BM_mesh_elem_count(BMesh *bm, const char htype)
   }
 }
 
+/* XXX old function */
 void BM_mesh_remap(BMesh *bm,
                    const uint *vert_idx,
                    const uint *edge_idx,
@@ -813,8 +814,6 @@ void BM_mesh_remap(BMesh *bm,
 
   BM_mesh_elem_table_ensure(
       bm, (vert_idx ? BM_VERT : 0) | (edge_idx ? BM_EDGE : 0) | (face_idx ? BM_FACE : 0));
-
-  CustomData *cdatas[4] = {&bm->vdata, &bm->edata, &bm->ldata, &bm->pdata};
 
 #define DO_SWAP(ci, cdata, v, vp) *(v) = *(vp);
 
