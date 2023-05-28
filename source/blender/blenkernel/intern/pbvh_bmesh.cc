@@ -1612,9 +1612,9 @@ struct UpdateNormalsTaskData {
   int node_nr;
 };
 
-ATTR_NO_OPT static void pbvh_update_normals_task_cb(void *__restrict userdata,
-                                                    const int n,
-                                                    const TaskParallelTLS *__restrict /* tls */)
+static void pbvh_update_normals_task_cb(void *__restrict userdata,
+                                        const int n,
+                                        const TaskParallelTLS *__restrict /* tls */)
 {
   BMVert *v;
   BMFace *f;
@@ -3577,7 +3577,7 @@ static void pbvh_bmesh_compact_tree(PBVH *bvh)
 }
 
 /* Prunes leaf nodes that are too small or degenerate. */
-ATTR_NO_OPT static void pbvh_bmesh_balance_tree(PBVH *pbvh)
+static void pbvh_bmesh_balance_tree(PBVH *pbvh)
 {
   float *overlaps = MEM_cnew_array<float>(pbvh->totnode, "overlaps");
   PBVHNode **parentmap = MEM_cnew_array<PBVHNode *>(pbvh->totnode, "parentmap");
@@ -4978,7 +4978,7 @@ void update_sharp_boundary_bmesh(BMVert *v, int cd_boundary_flag, const float sh
   BM_ELEM_CD_SET_INT(v, cd_boundary_flag, flag);
 }
 
-ATTR_NO_OPT void on_vert_move(BMVert *vold, BMVert *vnew, void *userdata, int hive)
+void on_vert_move(BMVert *vold, BMVert *vnew, void *userdata, int hive)
 {
   PBVH *pbvh = static_cast<PBVH *>(userdata);
   int vert_ni = BM_ELEM_CD_GET_INT(vold, pbvh->cd_vert_node_offset);
@@ -5013,7 +5013,7 @@ ATTR_NO_OPT void on_vert_move(BMVert *vold, BMVert *vnew, void *userdata, int hi
   } while ((e = BM_DISK_EDGE_NEXT(e, vnew)) != vnew->e);
 }
 
-ATTR_NO_OPT void on_face_move(BMFace *fold, BMFace *fnew, void *userdata, int hive)
+void on_face_move(BMFace *fold, BMFace *fnew, void *userdata, int hive)
 {
   PBVH *pbvh = static_cast<PBVH *>(userdata);
   int face_ni = BM_ELEM_CD_GET_INT(fold, pbvh->cd_face_node_offset);

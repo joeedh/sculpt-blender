@@ -24,8 +24,8 @@
 #include "BKE_multires.h"
 
 #include "bmesh.h"
-#include "intern/bmesh_private.h"
 #include "intern/bmesh_hive_alloc_intern.h"
+#include "intern/bmesh_private.h"
 
 static void copy_cdata_simple(BMesh *UNUSED(bm),
                               CustomData *data_layer,
@@ -806,7 +806,7 @@ void BM_vert_interp_from_face(BMesh *bm, BMVert *v_dst, const BMFace *f_src)
 void BPy_bm_new_customdata_layout(BMesh *bm, CustomData *cdata, void *state, char htype);
 void *BPy_bm_new_customdata_layout_pre(BMesh *bm, CustomData *cdata, char htype);
 
-ATTR_NO_OPT static void update_data_blocks(BMesh *bm, CustomData *olddata, CustomData *data)
+static void update_data_blocks(BMesh *bm, CustomData *olddata, CustomData *data)
 {
   BMIter iter;
   void *oldpool = olddata->hive;

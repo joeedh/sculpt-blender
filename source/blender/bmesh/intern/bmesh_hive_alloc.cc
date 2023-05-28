@@ -47,7 +47,7 @@ template<typename HiveType> static void bm_hive_iternew(HiveType *hive, HiveIter
   *reinterpret_cast<typename HiveType::Iterator *>(iter->reserved) = hive->begin();
 }
 
-template<typename HiveType> ATTR_NO_OPT static bool bm_hive_iterdone(HiveIter *iter)
+template<typename HiveType> static bool bm_hive_iterdone(HiveIter *iter)
 {
   typename HiveType::Iterator *real_iter = reinterpret_cast<typename HiveType::Iterator *>(
       iter->reserved);
@@ -56,7 +56,7 @@ template<typename HiveType> ATTR_NO_OPT static bool bm_hive_iterdone(HiveIter *i
   return real_iter->done();
 }
 
-template<typename HiveType> ATTR_NO_OPT static void *bm_hive_iterstep(HiveIter *iter)
+template<typename HiveType> static void *bm_hive_iterstep(HiveIter *iter)
 {
   typename HiveType::Iterator *real_iter = reinterpret_cast<typename HiveType::Iterator *>(
       iter->reserved);
@@ -223,6 +223,7 @@ int customdata_hive_get_size(void *hive)
   return int(static_cast<CustomDataHive *>(hive)->get_mem_size());
 }
 
-void customdata_hive_set_owner(void *hive, CustomData *cdata) {
-  //static_cast<CustomDataHive *>(hive)->set_userdata(cdata);
+void customdata_hive_set_owner(void *hive, CustomData *cdata)
+{
+  // static_cast<CustomDataHive *>(hive)->set_userdata(cdata);
 }

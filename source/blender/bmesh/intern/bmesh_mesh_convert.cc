@@ -226,9 +226,7 @@ static void mesh_attributes_copy_to_bmesh_block(CustomData &data,
   }
 }
 
-ATTR_NO_OPT void BM_mesh_bm_from_me(BMesh *bm,
-                                    const Mesh *me,
-                                    const struct BMeshFromMeshParams *params)
+void BM_mesh_bm_from_me(BMesh *bm, const Mesh *me, const struct BMeshFromMeshParams *params)
 {
   if (!me) {
     /* Sanity check. */

@@ -1384,10 +1384,10 @@ bool paint_calculate_rake_rotation(UnifiedPaintSettings *ups,
   return ok;
 }
 
-ATTR_NO_OPT static bool sculpt_boundary_flags_ensure(Object *ob,
-                                                     PBVH *pbvh,
-                                                     int totvert,
-                                                     bool force_update = false)
+static bool sculpt_boundary_flags_ensure(Object *ob,
+                                         PBVH *pbvh,
+                                         int totvert,
+                                         bool force_update = false)
 {
   SculptSession *ss = ob->sculpt;
   bool ret = false;
@@ -4071,7 +4071,7 @@ bool get_original_vertex(SculptSession *ss,
   return retval;
 }
 
-ATTR_NO_OPT void load_all_original(Object *ob)
+void load_all_original(Object *ob)
 {
   SculptSession *ss = ob->sculpt;
 

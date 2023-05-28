@@ -10,7 +10,8 @@
 //#define AUTO_MOVE_CD_HIVES
 
 struct NullCallbacks {
-  static void move_elem(int *eold, int *enew, int totsize, int hive) {
+  static void move_elem(int *eold, int *enew, int totsize, int)
+  {
     memcpy(static_cast<void *>(enew), static_cast<void *>(eold), totsize);
   }
 };
@@ -22,11 +23,10 @@ struct CDHiveSizeof {
   }
 };
 /* TODO: move somewhere in blenkernel. */
-using CustomDataHive =
-    blender::HiveAllocator<int, NullCallbacks, int, 4098, CDHiveSizeof>;
+using CustomDataHive = blender::HiveAllocator<int, NullCallbacks, int, 4098, CDHiveSizeof>;
 
 struct VertCallbacks {
-  ATTR_NO_OPT static void move_elem(BMVert *vold, BMVert *vnew, BMesh *bm, int hive)
+  static void move_elem(BMVert *vold, BMVert *vnew, BMesh *bm, int hive)
   {
     bm->elem_index_dirty |= BM_VERT;
     bm->elem_table_dirty |= BM_VERT;
@@ -76,12 +76,12 @@ struct VertCallbacks {
 };
 
 struct EdgeCallbacks {
-  ATTR_NO_OPT static void move_elem(BMEdge *eold, BMEdge *enew, BMesh *bm, int hive)
+  static void move_elem(BMEdge *eold, BMEdge *enew, BMesh *bm, int hive)
   {
     bm->elem_index_dirty |= BM_EDGE;
     bm->elem_table_dirty |= BM_EDGE;
 
-#if 0 //def AUTO_MOVE_CD_HIVES
+#if 0  // def AUTO_MOVE_CD_HIVES
     if (bm->edata.hive) {
       CustomDataHive *cd_hive = static_cast<CustomDataHive *>(bm->edata.hive);
       cd_hive->ensure_hives(hive + 1);
@@ -109,9 +109,9 @@ struct EdgeCallbacks {
 };
 
 struct LoopCallbacks {
-  ATTR_NO_OPT static void move_elem(BMLoop *lold, BMLoop *lnew, BMesh *bm, int hive)
+  static void move_elem(BMLoop *lold, BMLoop *lnew, BMesh *bm, int hive)
   {
-#if 0 //def AUTO_MOVE_CD_HIVES
+#if 0  // def AUTO_MOVE_CD_HIVES
     if (bm->ldata.hive) {
       CustomDataHive *cd_hive = static_cast<CustomDataHive *>(bm->ldata.hive);
       cd_hive->ensure_hives(hive + 1);
@@ -149,12 +149,12 @@ struct LoopCallbacks {
 };
 
 struct FaceCallbacks {
-  ATTR_NO_OPT static void move_elem(BMFace *fold, BMFace *fnew, BMesh *bm, int hive)
+  static void move_elem(BMFace *fold, BMFace *fnew, BMesh *bm, int hive)
   {
     bm->elem_index_dirty |= BM_FACE;
     bm->elem_table_dirty |= BM_FACE;
 
-#if 0 //def AUTO_MOVE_CD_HIVES
+#if 0  // def AUTO_MOVE_CD_HIVES
     if (bm->pdata.hive) {
       CustomDataHive *cd_hive = static_cast<CustomDataHive *>(bm->pdata.hive);
       cd_hive->ensure_hives(hive + 1);
