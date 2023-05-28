@@ -573,6 +573,7 @@ void BKE_pbvh_vert_tag_update_normal_tri_area(PBVHNode *node);
 void BKE_pbvh_update_all_tri_areas(PBVH *pbvh);
 void BKE_pbvh_node_mark_update(PBVHNode *node);
 void BKE_pbvh_node_mark_update_mask(PBVHNode *node);
+void BKE_pbvh_node_mark_update_defrag(PBVHNode *node);
 void BKE_pbvh_node_mark_update_color(PBVHNode *node);
 void BKE_pbvh_vert_tag_update_normal_visibility(PBVHNode *node);
 void BKE_pbvh_node_mark_update_face_sets(PBVHNode *node);
@@ -1232,5 +1233,8 @@ Vector<PBVHNode *> search_gather(PBVH *pbvh,
                                  PBVHNodeFlags leaf_flag = PBVH_Leaf);
 Vector<PBVHNode *> gather_proxies(PBVH *pbvh);
 Vector<PBVHNode *> get_flagged_nodes(PBVH *pbvh, int flag);
+void defragment_pbvh(PBVH *pbvh, bool partial);
+void fragment_node(PBVH *pbvh, PBVHNode *node);
+void assign_hives(PBVH *pbvh);
 }  // namespace blender::bke::pbvh
 #endif

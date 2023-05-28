@@ -15,6 +15,7 @@
 #include "BLI_math_vector_types.hh"
 #include "BLI_rand.h"
 #include "BLI_task.h"
+#include "BLI_task.hh"
 #include "BLI_utildefines.h"
 
 #include "BLT_translation.h"
@@ -79,6 +80,8 @@
 #include "GPU_state.h"
 #include "GPU_vertex_buffer.h"
 #include "GPU_vertex_format.h"
+
+#include "PIL_time.h"
 
 #include "bmesh.h"
 #include "bmesh_log.h"
@@ -2037,6 +2040,147 @@ static void SCULPT_OT_reveal_all(wmOperatorType *ot)
   ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
 }
 
+enum TestModes { TEST_MODE_NONE = 0, TEST_MODE_SORT = 1, TEST_MODE_RANDOMIZE = 2 };
+
+static int sculpt_test_exec(bContext *C, wmOperator *op)
+{
+  Object *ob = CTX_data_active_object(C);
+  SculptSession *ss = ob->sculpt;
+  Depsgraph *depsgraph = CTX_data_depsgraph_pointer(C);
+
+  Mesh *mesh = BKE_object_get_original_mesh(ob);
+
+  BKE_sculpt_update_object_for_edit(depsgraph, ob, true, true, false);
+
+  if (!ss->pbvh) {
+    return OPERATOR_CANCELLED;
+  }
+
+  bool with_bmesh = BKE_pbvh_type(ss->pbvh) == PBVH_BMESH;
+  if (BKE_pbvh_type(ss->pbvh) != PBVH_BMESH) {
+    return OPERATOR_CANCELLED;
+  }
+
+  Vector<PBVHNode *> nodes = blender::bke::pbvh::search_gather(ss->pbvh, nullptr, nullptr);
+
+  if (nodes.is_empty()) {
+    return OPERATOR_CANCELLED;
+  }
+  SCULPT_undo_push_begin(ob, op);
+
+  SCULPT_stroke_id_next(ob);
+
+  for (PBVHNode *node : nodes) {
+    BKE_pbvh_node_mark_update(node);
+
+    if (!with_bmesh) {
+      SCULPT_undo_push_node(ob, node, SCULPT_UNDO_COORDS);
+    }
+  }
+
+  auto time_ms = []() { return float(PIL_check_seconds_timer() * 1000.0); };
+
+  blender::bke::pbvh::assign_hives(ss->pbvh);
+
+  double start = time_ms();
+  double time = start;
+
+  printf("\n\n\n========= Starting test.======= ");
+
+  switch (RNA_enum_get(op->ptr, "sort_mode")) {
+    case TEST_MODE_NONE:
+      break;
+    case TEST_MODE_SORT:
+      printf("Sorting. . .");
+      fflush(stdout);
+
+      for (PBVHNode *node : nodes) {
+        BKE_pbvh_node_mark_update_defrag(node);
+      }
+
+      blender::bke::pbvh::defragment_pbvh(ss->pbvh, false);
+      break;
+    case TEST_MODE_RANDOMIZE:
+      printf("Randomizing. . .");
+      fflush(stdout);
+
+      for (PBVHNode *node : nodes) {
+        blender::bke::pbvh::fragment_node(ss->pbvh, node);
+      }
+
+      break;
+  }
+
+  printf("%.3ms\n", time_ms() - time);
+
+  for (PBVHNode *node : nodes) {
+    BKE_pbvh_bmesh_check_tris(ss->pbvh, node);
+  }
+
+  start = time_ms();
+
+  int repeat = RNA_int_get(op->ptr, "repeat");
+  for (int i = 0; i < repeat; i++) {
+    time = time_ms();
+
+    blender::threading::parallel_for(nodes.index_range(), 1, [&](blender::IndexRange range) {
+      PBVHVertexIter vd;
+      bool do_reproject = SCULPT_need_reproject(ss);
+
+      for (int node_i : range) {
+        PBVHNode *node = nodes[node_i];
+        BKE_pbvh_vertex_iter_begin (ss->pbvh, node, vd, PBVH_ITER_UNIQUE) {
+          float3 oldco = vd.co;
+          float3 oldno = vd.fno;
+          float3 co;
+
+          SCULPT_neighbor_coords_average_interior(ss, co, vd.vertex, 0.25f, 0.5f, false);
+          copy_v3_v3(vd.co, co);
+
+          if (do_reproject) {
+            BKE_sculpt_reproject_cdata(ss, vd.vertex, oldco, oldno);
+          }
+        }
+        BKE_pbvh_vertex_iter_end;
+      }
+    });
+
+    printf("%3d: %.3fms\n", i, time_ms() - time);
+  }
+
+  printf("========== Done.  avg: %.3fms =============\n", (time_ms() - start) / float(repeat));
+
+  SCULPT_undo_push_end(ob);
+
+  SCULPT_tag_update_overlays(C);
+  DEG_id_tag_update(&ob->id, ID_RECALC_SHADING);
+  ED_region_tag_redraw(CTX_wm_region(C));
+
+  return OPERATOR_FINISHED;
+}
+
+static void SCULPT_OT_test(wmOperatorType *ot)
+{
+  /* Identifiers. */
+  ot->name = "Sculpt Test";
+  ot->idname = "SCULPT_OT_test";
+  ot->description = "Sculpt Performance Test";
+
+  /* Api callbacks. */
+  ot->exec = sculpt_test_exec;
+  ot->poll = SCULPT_mode_poll;
+
+  static EnumPropertyItem mode_items[] = {{TEST_MODE_NONE, "NONE", 0, "None", ""},
+                                          {TEST_MODE_SORT, "SORT", 0, "Sort", ""},
+                                          {TEST_MODE_RANDOMIZE, "RAND", 0, "Randomize", ""},
+                                          {0, nullptr, 0, nullptr, nullptr}};
+
+  RNA_def_enum(ot->srna, "sort_mode", mode_items, TEST_MODE_SORT, "Sort Mode", "");
+  RNA_def_int(ot->srna, "repeat", 100, 1, 1000, "Repeat", "", 1, 500);
+
+  ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
+}
+
 void ED_operatortypes_sculpt(void)
 {
   WM_operatortype_append(SCULPT_OT_brush_stroke);
@@ -2081,6 +2225,7 @@ void ED_operatortypes_sculpt(void)
   WM_operatortype_append(SCULPT_OT_mask_from_cavity);
   WM_operatortype_append(SCULPT_OT_regularize_rake_directions);
   WM_operatortype_append(SCULPT_OT_reveal_all);
+  WM_operatortype_append(SCULPT_OT_test);
 }
 
 void ED_keymap_sculpt(wmKeyConfig *keyconf)

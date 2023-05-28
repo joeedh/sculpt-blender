@@ -949,6 +949,15 @@ class VIEW3D_PT_sculpt_dyntopo(Panel, View3DPaintPanel):
             "detail_range"
         )
 
+        col.prop(sculpt, "use_flat_vcol_shading")
+
+        if 1:
+            sub.separator()
+            props = sub.operator("sculpt.test")
+            sub.prop(WindowManager.operator_properties_last("sculpt.test"), "repeat")
+            sub.prop(WindowManager.operator_properties_last("sculpt.test"), "sort_mode")
+            sub.separator()
+
         if 0:
             scene = context.scene
             def do_prop(name, text=None):
@@ -998,8 +1007,6 @@ class VIEW3D_PT_sculpt_dyntopo(Panel, View3DPaintPanel):
             "quality",
             expand=True
         )
-
-        col.prop(sculpt, "use_flat_vcol_shading")
 
 class VIEW3D_PT_sculpt_voxel_remesh(Panel, View3DPaintPanel):
     bl_context = ".sculpt_mode"  # dot on purpose (access from topbar)

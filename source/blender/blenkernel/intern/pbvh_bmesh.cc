@@ -5038,34 +5038,11 @@ void set_hive_callbacks(PBVH *pbvh)
   bm->fhive_move_cb = on_face_move;
 }
 
-void node_ensure_hive(PBVH *pbvh, PBVHNode *node)
-{
-  if (node->bm_hive > 0) {
-    return;
-  }
-
-  if (pbvh->bm_free_hives.size() > 0) {
-    node->bm_hive = pbvh->bm_free_hives.pop_last();
-  }
-  else {
-    /* Leave hive 0 for scratch usage.*/
-    node->bm_hive = 1 + (pbvh->bm_tot_hives++);
-  }
-}
-
-void node_release_hive(PBVH *pbvh, PBVHNode *node)
-{
-  if (node->bm_hive > 0) {
-    pbvh->bm_free_hives.append(node->bm_hive);
-  }
-}
-
-void defragment_node(PBVH *pbvh, PBVHNode *node)
+static void ensure_hive_setup(PBVH *pbvh)
 {
   BMesh *bm = pbvh->header.bm;
 
-  int ni = int(node - pbvh->nodes);
-  node_ensure_hive(pbvh, node);
+  set_hive_callbacks(pbvh);
 
   VertHive *vhive = static_cast<VertHive *>(bm->vhive);
   EdgeHive *ehive = static_cast<EdgeHive *>(bm->ehive);
@@ -5101,6 +5078,53 @@ void defragment_node(PBVH *pbvh, PBVHNode *node)
   ehive->ensure_hives(pbvh->bm_tot_hives + 1);
   lhive->ensure_hives(pbvh->bm_tot_hives + 1);
   fhive->ensure_hives(pbvh->bm_tot_hives + 1);
+}
+
+void node_ensure_hive(PBVH *pbvh, PBVHNode *node)
+{
+  if (node->bm_hive > 0) {
+    return;
+  }
+
+  if (pbvh->bm_free_hives.size() > 0) {
+    node->bm_hive = pbvh->bm_free_hives.pop_last();
+  }
+  else {
+    /* Leave hive 0 for scratch usage.*/
+    node->bm_hive = 1 + (pbvh->bm_tot_hives++);
+  }
+
+  ensure_hive_setup(pbvh);
+}
+
+void node_release_hive(PBVH *pbvh, PBVHNode *node)
+{
+  if (node->bm_hive > 0) {
+    pbvh->bm_free_hives.append(node->bm_hive);
+  }
+}
+
+void defragment_node(PBVH *pbvh, PBVHNode *node)
+{
+  BMesh *bm = pbvh->header.bm;
+
+  int ni = int(node - pbvh->nodes);
+  node_ensure_hive(pbvh, node);
+  ensure_hive_setup(pbvh);
+
+  VertHive *vhive = static_cast<VertHive *>(bm->vhive);
+  EdgeHive *ehive = static_cast<EdgeHive *>(bm->ehive);
+  LoopHive *lhive = static_cast<LoopHive *>(bm->lhive);
+  FaceHive *fhive = static_cast<FaceHive *>(bm->fhive);
+
+  CustomDataHive *cd_vhive = bm->vdata.hive ? static_cast<CustomDataHive *>(bm->vdata.hive) :
+                                              nullptr;
+  CustomDataHive *cd_ehive = bm->edata.hive ? static_cast<CustomDataHive *>(bm->edata.hive) :
+                                              nullptr;
+  CustomDataHive *cd_lhive = bm->ldata.hive ? static_cast<CustomDataHive *>(bm->ldata.hive) :
+                                              nullptr;
+  CustomDataHive *cd_fhive = bm->pdata.hive ? static_cast<CustomDataHive *>(bm->pdata.hive) :
+                                              nullptr;
 
   bool modified = false;
 
@@ -5206,9 +5230,80 @@ static bool compact_hives(PBVH *pbvh)
   return modified;
 }
 
+void fragment_node(PBVH *pbvh, PBVHNode *node)
+{
+  BMesh *bm = pbvh->header.bm;
+
+  /* Increase the number of hives */
+  pbvh->bm_tot_hives = max_ii(pbvh->bm_tot_hives, pbvh->totnode * 4);
+  ensure_hive_setup(pbvh);
+
+  node_ensure_hive(pbvh, node);
+
+  node->flag |= PBVH_UpdateTris | PBVH_RebuildDrawBuffers | PBVH_UpdateDrawBuffers |
+                PBVH_UpdateRedraw;
+
+  VertHive *vhive = static_cast<VertHive *>(bm->vhive);
+  EdgeHive *ehive = static_cast<EdgeHive *>(bm->ehive);
+  LoopHive *lhive = static_cast<LoopHive *>(bm->lhive);
+  FaceHive *fhive = static_cast<FaceHive *>(bm->fhive);
+
+  CustomDataHive *cd_vhive = bm->vdata.hive ? static_cast<CustomDataHive *>(bm->vdata.hive) :
+                                              nullptr;
+  CustomDataHive *cd_ehive = bm->edata.hive ? static_cast<CustomDataHive *>(bm->edata.hive) :
+                                              nullptr;
+  CustomDataHive *cd_lhive = bm->ldata.hive ? static_cast<CustomDataHive *>(bm->ldata.hive) :
+                                              nullptr;
+  CustomDataHive *cd_fhive = bm->pdata.hive ? static_cast<CustomDataHive *>(bm->pdata.hive) :
+                                              nullptr;
+
+  RandomNumberGenerator rand(uint32_t(PIL_check_seconds_timer() * 10000.0));
+  auto rand_hive = [&]() { return int(rand.get_float() * pbvh->bm_tot_hives * 0.99999f) + 1; };
+
+  BMFace *f;
+  TGSET_ITER (f, node->bm_faces) {
+    f = fhive->move(f, rand_hive());
+    if (cd_fhive) {
+      f->head.data = cd_fhive->move((int *)f->head.data, rand_hive());
+    }
+
+    BMLoop *l = f->l_first;
+    do {
+      l = lhive->move(l, rand_hive());
+      if (l->head.data) {
+        l->head.data = cd_lhive->move((int *)l->head.data, rand_hive());
+      }
+
+      vhive->move(l->v, rand_hive());
+      ehive->move(l->e, rand_hive());
+
+      if (l->v->head.data) {
+        l->v->head.data = cd_vhive->move((int *)l->v->head.data, rand_hive());
+      }
+
+      if (l->e->head.data) {
+        l->e->head.data = cd_ehive->move((int *)l->e->head.data, rand_hive());
+      }
+    } while ((l = l->next) != f->l_first);
+  }
+  TGSET_ITER_END;
+}
+
+void assign_hives(PBVH *pbvh)
+{
+  for (int i = 0; i < pbvh->totnode; i++) {
+    PBVHNode *node = &pbvh->nodes[i];
+    if (node->flag & PBVH_Leaf) {
+      node_ensure_hive(pbvh, node);
+    }
+  }
+
+  ensure_hive_setup(pbvh);
+}
+
 void defragment_pbvh(PBVH *pbvh, bool partial)
 {
-  set_hive_callbacks(pbvh);
+  ensure_hive_setup(pbvh);
 
   // XXX
   // return;

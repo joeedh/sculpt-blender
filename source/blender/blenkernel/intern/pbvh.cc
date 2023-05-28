@@ -2281,6 +2281,11 @@ void BKE_pbvh_node_mark_update_mask(PBVHNode *node)
   node->flag |= PBVH_UpdateMask | PBVH_UpdateDrawBuffers | PBVH_UpdateRedraw;
 }
 
+void BKE_pbvh_node_mark_update_defrag(PBVHNode *node)
+{
+  node->flag |= PBVH_Defragment;
+}
+
 void BKE_pbvh_node_mark_update_color(PBVHNode *node)
 {
   node->flag |= PBVH_UpdateColor | PBVH_UpdateDrawBuffers | PBVH_UpdateRedraw;

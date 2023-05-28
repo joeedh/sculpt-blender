@@ -506,5 +506,4 @@ void set_hive_callbacks(PBVH *pbvh);
 void node_release_hive(PBVH *pbvh, PBVHNode *node);
 void node_ensure_hive(PBVH *pbvh, PBVHNode *node);
 void defragment_node(PBVH *pbvh, PBVHNode *node);
-void defragment_pbvh(PBVH *pbvh, bool partial);
 }  // namespace blender::bke::pbvh
