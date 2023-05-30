@@ -5185,7 +5185,7 @@ bool defragment_node(PBVH *pbvh, PBVHNode *node)
   return modified;
 }
 
-static bool compact_hives(PBVH *pbvh)
+bool compact_hives(PBVH *pbvh)
 {
   BMesh *bm = pbvh->header.bm;
   VertHive *vhive = static_cast<VertHive *>(bm->vhive);
@@ -5229,7 +5229,7 @@ void fragment_node(PBVH *pbvh, PBVHNode *node)
   BMesh *bm = pbvh->header.bm;
 
   /* Increase the number of hives */
-  pbvh->bm_tot_hives = max_ii(pbvh->bm_tot_hives, pbvh->totnode * 4);
+  pbvh->bm_tot_hives = max_ii(pbvh->bm_tot_hives, pbvh->totnode * 2);
   ensure_hive_setup(pbvh);
 
   node_ensure_hive(pbvh, node);
@@ -5256,7 +5256,11 @@ void fragment_node(PBVH *pbvh, PBVHNode *node)
 
   BMFace *f;
   TGSET_ITER (f, node->bm_faces) {
+    BMFace *old = f;
+
     f = fhive->move(f, rand_hive());
+    BM_idmap_on_elem_moved(pbvh->bm_idmap, old, f);
+
     if (cd_fhive) {
       f->head.data = cd_fhive->move((int *)f->head.data, rand_hive());
     }
@@ -5268,8 +5272,14 @@ void fragment_node(PBVH *pbvh, PBVHNode *node)
         l->head.data = cd_lhive->move((int *)l->head.data, rand_hive());
       }
 
+      BMVert *vold = l->v;
+      BMEdge *eold = l->e;
+
       vhive->move(l->v, rand_hive());
       ehive->move(l->e, rand_hive());
+
+      BM_idmap_on_elem_moved(pbvh->bm_idmap, vold, l->v);
+      BM_idmap_on_elem_moved(pbvh->bm_idmap, eold, l->e);
 
       if (l->v->head.data) {
         l->v->head.data = cd_vhive->move((int *)l->v->head.data, rand_hive());
@@ -5281,6 +5291,8 @@ void fragment_node(PBVH *pbvh, PBVHNode *node)
     } while ((l = l->next) != f->l_first);
   }
   TGSET_ITER_END;
+
+  compact_hives(pbvh);
 }
 
 void assign_hives(PBVH *pbvh)
@@ -5362,13 +5374,19 @@ static void defragment_pbvh_partial(PBVH *pbvh, double time_limit_ms = 150)
       break;
     }
 
+    bool modified2 = false;
     if (is_face) {
-      modified |= defragment_node_face(pbvh, node, f, nullptr);
+      modified2 = defragment_node_face(pbvh, node, f, nullptr);
     }
     else {
-      modified |= defragment_node_vert(pbvh, node, v, nullptr);
+      modified2 = defragment_node_vert(pbvh, node, v, nullptr);
     }
 
+    if (modified2) {
+      node->flag |= PBVH_UpdateTris|PBVH_UpdateOtherVerts;
+    }
+
+    modified |= modified2;
     totdone++;
   }
 
@@ -5379,6 +5397,7 @@ static void defragment_pbvh_partial(PBVH *pbvh, double time_limit_ms = 150)
   }
 
   if (modified) {
+    compact_hives(pbvh);
     pbvh->header.bm->elem_index_dirty |= BM_VERT | BM_EDGE | BM_FACE;
     pbvh->header.bm->elem_table_dirty |= BM_VERT | BM_EDGE | BM_FACE;
   }
@@ -5405,6 +5424,7 @@ void defragment_pbvh(PBVH *pbvh, bool partial)
   }
 
   if (modified) {
+    compact_hives(pbvh);
     pbvh->header.bm->elem_index_dirty |= BM_VERT | BM_EDGE | BM_FACE;
     pbvh->header.bm->elem_table_dirty |= BM_VERT | BM_EDGE | BM_FACE;
   }

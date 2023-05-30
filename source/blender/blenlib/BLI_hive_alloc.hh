@@ -138,7 +138,7 @@ class HiveAllocator {
       chunks.push_back(chunk);
     }
 
-    ATTR_NO_OPT ~Hive()
+    ~Hive()
     {
       for (DynamicChunk &chunk : chunks) {
         if (!chunk.data()) {
@@ -194,6 +194,11 @@ class HiveAllocator {
 
     void free(T *elem)
     {
+      if (is_free(elem)) {
+        printf("%s: error, double free!\n", __func__);
+        return;
+      }
+
       elem->~T();
       set_free_elem(elem);
       used--;
@@ -336,6 +341,11 @@ class HiveAllocator {
 
     bool compact()
     {
+      /* Don't remove last chunk to avoid memory thrashing. */
+      if (chunks.size() <= 1) {
+        return false;
+      }
+
       std::vector<DynamicChunk> chunks2;
       bool modified = false;
 
@@ -543,7 +553,7 @@ class HiveAllocator {
     BLI_assert_unreachable();
   }
 
-  ATTR_NO_OPT T *move(T *elem, int new_hive)
+  T *move(T *elem, int new_hive)
   {
     int old_hive = get_hive(elem);
 
