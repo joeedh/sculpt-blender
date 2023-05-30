@@ -749,6 +749,7 @@ static void bmesh_undo_on_face_kill(BMFace *f, void *userdata)
   if (ni >= 0) {
     PBVHNode *node = BKE_pbvh_get_node(data->pbvh, ni);
     BKE_pbvh_bmesh_mark_node_regen(data->pbvh, node);
+    BKE_pbvh_node_mark_update_defrag(node);
   }
 
   BMLoop *l = f->l_first;
@@ -772,6 +773,7 @@ static void bmesh_undo_on_face_add(BMFace *f, void *userdata)
 
   int ni = BM_ELEM_CD_GET_INT(f, data->cd_face_node_offset);
   PBVHNode *node = BKE_pbvh_get_node(data->pbvh, ni);
+  BKE_pbvh_node_mark_update_defrag(node);
 
   BMLoop *l = f->l_first;
   do {
@@ -1373,6 +1375,8 @@ static int sculpt_undo_bmesh_restore(
         if (unode->type == SCULPT_UNDO_HIDDEN) {
           BKE_pbvh_update_vertex_data(ss->pbvh, PBVH_UpdateVisibility);
         }
+
+        blender::bke::pbvh::defragment_pbvh(ss->pbvh, true);
         ret = true;
       }
       break;

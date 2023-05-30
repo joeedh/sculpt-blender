@@ -83,6 +83,7 @@ using blender::float2;
 using blender::float3;
 using blender::IndexRange;
 using blender::Map;
+using blender::RandomNumberGenerator;
 using blender::Set;
 using blender::Vector;
 
@@ -5066,87 +5067,113 @@ void node_release_hive(PBVH *pbvh, PBVHNode *node)
   }
 }
 
-ATTR_NO_OPT void defragment_node(PBVH *pbvh, PBVHNode *node)
+static bool defragment_node_face(PBVH *pbvh, PBVHNode *node, BMFace *f, BMFace **r_newf)
 {
   BMesh *bm = pbvh->header.bm;
+  bool modified = false;
 
   int ni = int(node - pbvh->nodes);
-  node_ensure_hive(pbvh, node);
-  ensure_hive_setup(pbvh);
 
-  VertHive *vhive = static_cast<VertHive *>(bm->vhive);
   EdgeHive *ehive = static_cast<EdgeHive *>(bm->ehive);
   LoopHive *lhive = static_cast<LoopHive *>(bm->lhive);
   FaceHive *fhive = static_cast<FaceHive *>(bm->fhive);
 
-  CustomDataHive *cd_vhive = bm->vdata.hive ? static_cast<CustomDataHive *>(bm->vdata.hive) :
+  CustomDataHive *cd_ehive = bm->edata.hive ? static_cast<CustomDataHive *>(bm->edata.hive) :
                                               nullptr;
-  // CustomDataHive *cd_ehive = bm->edata.hive ? static_cast<CustomDataHive *>(bm->edata.hive) :
-  //                                            nullptr;
   CustomDataHive *cd_lhive = bm->ldata.hive ? static_cast<CustomDataHive *>(bm->ldata.hive) :
                                               nullptr;
   CustomDataHive *cd_fhive = bm->pdata.hive ? static_cast<CustomDataHive *>(bm->pdata.hive) :
                                               nullptr;
+  BMFace *old = f;
+  f = fhive->move(f, node->bm_hive);
+
+  if (cd_fhive) {
+    f->head.data = cd_fhive->move((int *)f->head.data, node->bm_hive);
+  }
+
+  modified |= f != old;
+
+  BM_idmap_on_elem_moved(pbvh->bm_idmap, old, f);
+
+  BMLoop *l = f->l_first;
+  do {
+    BMLoop *lold = l;
+    l = lhive->move(l, node->bm_hive);
+
+    if (l->head.data) {
+      l->head.data = static_cast<int *>(
+          cd_lhive->move(static_cast<int *>(l->head.data), node->bm_hive));
+    }
+
+    modified |= l != lold;
+
+    BMLoop *l2 = l;
+    int max_ni = 0;
+    do {
+      int ni = BM_ELEM_CD_GET_INT(l2->f, pbvh->cd_face_node_offset);
+      max_ni = max_ii(max_ni, ni);
+    } while ((l2 = l2->radial_next) != l);
+
+    if (max_ni == ni) {
+      BMEdge *eold = l->e;
+
+      node_ensure_hive(pbvh, &pbvh->nodes[max_ni]);
+      ehive->move(l->e, pbvh->nodes[max_ni].bm_hive);
+
+      BM_idmap_on_elem_moved(pbvh->bm_idmap, eold, l->e);
+    }
+  } while ((l = l->next) != f->l_first);
+
+  if (r_newf) {
+    *r_newf = f;
+  }
+
+  return modified;
+}
+
+static bool defragment_node_vert(PBVH *pbvh, PBVHNode *node, BMVert *v, BMVert **r_newv)
+{
+  bool modified = false;
+  BMesh *bm = pbvh->header.bm;
+
+  int ni = int(node - pbvh->nodes);
+  VertHive *vhive = static_cast<VertHive *>(bm->vhive);
+  CustomDataHive *cd_vhive = bm->vdata.hive ? static_cast<CustomDataHive *>(bm->vdata.hive) :
+                                              nullptr;
+  BMVert *vold = v;
+  v = vhive->move(v, node->bm_hive);
+  BM_idmap_on_elem_moved(pbvh->bm_idmap, vold, v);
+
+  if (v->head.data) {
+    v->head.data = static_cast<int *>(
+        cd_vhive->move(static_cast<int *>(v->head.data), node->bm_hive));
+  }
+
+  if (r_newv) {
+    *r_newv = v;
+  }
+
+  modified |= v != vold;
+
+  return modified;
+}
+bool defragment_node(PBVH *pbvh, PBVHNode *node)
+{
+  node_ensure_hive(pbvh, node);
+  ensure_hive_setup(pbvh);
 
   bool modified = false;
 
   /* Note: the hive callbacks will keep the PBVH nodes valid. */
-
   BMFace *f;
   TGSET_ITER (f, node->bm_faces) {
-    BMFace *old = f;
-    f = fhive->move(f, node->bm_hive);
-
-    if (cd_fhive) {
-      f->head.data = cd_fhive->move((int *)f->head.data, node->bm_hive);
-    }
-
-    modified |= f != old;
-
-    BM_idmap_on_elem_moved(pbvh->bm_idmap, old, f);
-
-    BMLoop *l = f->l_first;
-    do {
-      BMLoop *lold = l;
-      l = lhive->move(l, node->bm_hive);
-
-      if (l->head.data) {
-        l->head.data = static_cast<int *>(
-            cd_lhive->move(static_cast<int *>(l->head.data), node->bm_hive));
-      }
-
-      modified |= l != lold;
-
-      BMLoop *l2 = l;
-      int max_ni = 0;
-      do {
-        int ni = BM_ELEM_CD_GET_INT(l2->f, pbvh->cd_face_node_offset);
-        max_ni = max_ii(max_ni, ni);
-      } while ((l2 = l2->radial_next) != l);
-
-      if (max_ni == ni) {
-        BMEdge *eold = l->e;
-
-        node_ensure_hive(pbvh, &pbvh->nodes[max_ni]);
-        ehive->move(l->e, pbvh->nodes[max_ni].bm_hive);
-
-        BM_idmap_on_elem_moved(pbvh->bm_idmap, eold, l->e);
-      }
-    } while ((l = l->next) != f->l_first);
+    modified |= defragment_node_face(pbvh, node, f, nullptr);
   }
   TGSET_ITER_END;
 
   BMVert *v;
   TGSET_ITER (v, node->bm_unique_verts) {
-    BMVert *vold = v;
-    v = vhive->move(v, node->bm_hive);
-    BM_idmap_on_elem_moved(pbvh->bm_idmap, vold, v);
-
-    if (v->head.data) {
-      v->head.data = static_cast<int *>(
-          cd_vhive->move(static_cast<int *>(v->head.data), node->bm_hive));
-    }
-    modified |= v != vold;
+    modified |= defragment_node_vert(pbvh, node, v, nullptr);
   }
   TGSET_ITER_END;
 
@@ -5155,6 +5182,7 @@ ATTR_NO_OPT void defragment_node(PBVH *pbvh, PBVHNode *node)
   }
 
   node->flag &= ~PBVH_Defragment;
+  return modified;
 }
 
 static bool compact_hives(PBVH *pbvh)
@@ -5267,20 +5295,104 @@ void assign_hives(PBVH *pbvh)
   ensure_hive_setup(pbvh);
 }
 
+static void defragment_pbvh_partial(PBVH *pbvh, double time_limit_ms = 150)
+{
+  bool modified = false;
+
+  int totface = 0;
+  int totvert = 0;
+
+  Vector<PBVHNode *> nodes;
+  for (int i = 0; i < pbvh->totnode; i++) {
+    PBVHNode *node = &pbvh->nodes[i];
+
+    if ((node->flag & PBVH_Leaf) && (node->flag & PBVH_Defragment)) {
+      totvert += BLI_table_gset_len(node->bm_unique_verts);
+      totface += BLI_table_gset_len(node->bm_faces);
+      nodes.append(node);
+    }
+  }
+
+  RandomNumberGenerator rand(uint32_t(PIL_check_seconds_timer() * 10000.0));
+  double time = PIL_check_seconds_timer() * 1000.0;
+
+  double f_prob = totface > 0.0f ? double(totvert) / double(totface) : 0.0f;
+  int test_nr = totvert + totface;
+  Set<BMFace *> f_done;
+  Set<BMVert *> v_done;
+
+  int totdone = 0;
+
+  while (PIL_check_seconds_timer() * 1000.0 - time < time_limit_ms) {
+    PBVHNode *node = nullptr;
+    bool is_face = rand.get_float() > f_prob;
+    BMFace *f = nullptr;
+    BMVert *v = nullptr;
+    bool ok = false;
+
+    for (int i = 0; i < test_nr; i++) {
+      node = nodes[rand.get_uint32() % nodes.size()];
+
+      if (is_face) {
+        int rand_i = rand.get_uint32() % node->bm_faces->cur;
+        f = static_cast<BMFace *>(node->bm_faces->elems[rand_i]);
+        if (f && f_done.add(f)) {
+          ok = true;
+          break;
+        }
+        else {
+          f = nullptr;
+        }
+      }
+      else {
+        int rand_i = rand.get_uint32() % node->bm_unique_verts->cur;
+        v = static_cast<BMVert *>(node->bm_unique_verts->elems[rand_i]);
+        if (v && v_done.add(v)) {
+          ok = true;
+          break;
+        }
+        else {
+          v = nullptr;
+        }
+      }
+    }
+
+    if (!ok) {
+      /* Nothing found. */
+      break;
+    }
+
+    if (is_face) {
+      modified |= defragment_node_face(pbvh, node, f, nullptr);
+    }
+    else {
+      modified |= defragment_node_vert(pbvh, node, v, nullptr);
+    }
+
+    totdone++;
+  }
+
+  printf("totdone: %d out of %d, f_prob: %.4f\n", totdone, totvert + totface, float(f_prob));
+
+  for (PBVHNode *node : nodes) {
+    node->flag &= ~PBVH_Defragment;
+  }
+
+  if (modified) {
+    pbvh->header.bm->elem_index_dirty |= BM_VERT | BM_EDGE | BM_FACE;
+    pbvh->header.bm->elem_table_dirty |= BM_VERT | BM_EDGE | BM_FACE;
+  }
+}
+
 void defragment_pbvh(PBVH *pbvh, bool partial)
 {
   ensure_hive_setup(pbvh);
+  bool modified = false;
 
-  // XXX
-  // return;
-
-  /* Only defragment a set number of nodes */
-  blender::RandomNumberGenerator rand(uint32_t(PIL_check_seconds_timer() * 100000.0));
-  const int max_nodes = 5;
-  float prob = 1.0 / float(max_nodes);
-
-  // XXX
-  partial = false;
+  if (partial) {
+    defragment_pbvh_partial(pbvh);
+    return;
+  }
 
   for (int i : IndexRange(pbvh->totnode)) {
     PBVHNode *node = &pbvh->nodes[i];
@@ -5289,18 +5401,12 @@ void defragment_pbvh(PBVH *pbvh, bool partial)
       continue;
     }
 
-    if (partial && rand.get_float() > prob) {
-      continue;
-    }
-
-    defragment_node(pbvh, node);
+    modified |= defragment_node(pbvh, node);
   }
 
-#if 1  // XXX
-  if (compact_hives(pbvh)) {
-    pbvh->header.bm->elem_index_dirty |= BM_VERT | BM_FACE;
-    pbvh->header.bm->elem_table_dirty |= BM_VERT | BM_FACE;
+  if (modified) {
+    pbvh->header.bm->elem_index_dirty |= BM_VERT | BM_EDGE | BM_FACE;
+    pbvh->header.bm->elem_table_dirty |= BM_VERT | BM_EDGE | BM_FACE;
   }
-#endif
 }
 }  // namespace blender::bke::pbvh

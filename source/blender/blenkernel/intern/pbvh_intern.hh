@@ -5,9 +5,9 @@
 #include "BLI_compiler_compat.h"
 #include "BLI_ghash.h"
 #include "BLI_math_vector_types.hh"
+#include "BLI_offset_indices.hh"
 #include "BLI_span.hh"
 #include "BLI_vector.hh"
-#include "BLI_offset_indices.hh"
 
 #include "DNA_customdata_types.h"
 #include "DNA_material_types.h"
@@ -501,5 +501,5 @@ namespace blender::bke::pbvh {
 void set_hive_callbacks(PBVH *pbvh);
 void node_release_hive(PBVH *pbvh, PBVHNode *node);
 void node_ensure_hive(PBVH *pbvh, PBVHNode *node);
-void defragment_node(PBVH *pbvh, PBVHNode *node);
+bool defragment_node(PBVH *pbvh, PBVHNode *node);
 }  // namespace blender::bke::pbvh
