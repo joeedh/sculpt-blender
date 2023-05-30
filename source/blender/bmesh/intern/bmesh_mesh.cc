@@ -35,7 +35,9 @@ const BMAllocTemplate bm_mesh_chunksize_default = {512, 1024, 2048, 512};
 
 static void bm_alloc_toolflags(BMesh *bm);
 
-static void bm_mempool_init(BMesh *bm, const BMAllocTemplate */*allocsize*/, const bool /*use_toolflags*/)
+static void bm_mempool_init(BMesh *bm,
+                            const BMAllocTemplate * /*allocsize*/,
+                            const bool /*use_toolflags*/)
 {
   bm->vhive = make_vert_hive(bm);
   bm->ehive = make_edge_hive(bm);

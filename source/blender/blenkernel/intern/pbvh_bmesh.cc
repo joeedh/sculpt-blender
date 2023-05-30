@@ -2054,40 +2054,6 @@ static void pbvh_bmesh_create_nodes_fast_recursive_final(PBVH *pbvh,
 
 /***************************** Public API *****************************/
 
-struct FSetTemp {
-  BMVert *v;
-  int fset;
-  bool boundary;
-};
-
-int BKE_pbvh_do_fset_symmetry(int fset, const int symflag, const float *co)
-{
-  fset = abs(fset);
-
-  // don't affect base face set
-  if (fset == 1) {
-    return 1;
-  }
-
-  /*
-    flag symmetry by shifting by 24 bits;
-    surely we don't need more then 8 million face sets?
-  */
-  if (co[0] < 0.0f) {
-    fset |= (symflag & 1) << 24;
-  }
-
-  if (co[1] < 0.0f) {
-    fset |= (symflag & 2) << 24;
-  }
-
-  if (co[2] < 0.0f) {
-    fset |= (symflag & 4) << 24;
-  }
-
-  return fset;
-}
-
 //#define MV_COLOR_BOUNDARY
 
 #ifdef MV_COLOR_BOUNDARY
@@ -2152,7 +2118,6 @@ void BKE_pbvh_update_vert_boundary(int cd_faceset_offset,
                                    const int cd_flag,
                                    const int cd_valence,
                                    BMVert *v,
-                                   int bound_symmetry,
                                    const CustomData *ldata,
                                    const int totuv,
                                    const bool do_uvs,
@@ -2329,8 +2294,7 @@ void BKE_pbvh_update_vert_boundary(int cd_faceset_offset,
       }
 
       if (cd_faceset_offset != -1) {
-        int fset = BKE_pbvh_do_fset_symmetry(
-            BM_ELEM_CD_GET_INT(e->l->f, cd_faceset_offset), bound_symmetry, v2->co);
+        int fset = BM_ELEM_CD_GET_INT(e->l->f, cd_faceset_offset);
 
         bool ok = true;
         for (int i = 0; i < fsets.size(); i++) {
@@ -2349,8 +2313,7 @@ void BKE_pbvh_update_vert_boundary(int cd_faceset_offset,
       if (e->l->radial_next != e->l) {
         if (cd_faceset_offset != -1) {
           // fset = abs(BM_ELEM_CD_GET_INT(e->l->radial_next->f, cd_faceset_offset));
-          int fset2 = BKE_pbvh_do_fset_symmetry(
-              BM_ELEM_CD_GET_INT(e->l->radial_next->f, cd_faceset_offset), bound_symmetry, v2->co);
+          int fset2 = BM_ELEM_CD_GET_INT(e->l->radial_next->f, cd_faceset_offset);
 
           bool ok2 = true;
           for (int i = 0; i < fsets.size(); i++) {
@@ -2432,7 +2395,6 @@ void BKE_pbvh_recalc_bmesh_boundary(PBVH *pbvh)
                                   pbvh->cd_flag,
                                   pbvh->cd_valence,
                                   v,
-                                  pbvh->boundary_symmetry,
                                   &pbvh->header.bm->ldata,
                                   pbvh->flags & PBVH_IGNORE_UVS ? 0 : pbvh->totuv,
                                   pbvh->flags & PBVH_IGNORE_UVS,
@@ -2981,7 +2943,7 @@ bool BKE_pbvh_bmesh_check_tris(PBVH *pbvh, PBVHNode *node)
       PBVHTri *mat_tri = pbvh_tribuf_add_tri(mat_tribuf);
 
       tri->eflag = mat_tri->eflag = 0;
-
+      //
       for (int j = 0; j < 3; j++) {
         // BMLoop *l0 = loops[loops_idx[i][(j + 2) % 3]];
         BMLoop *l = loops[loops_idx[i][j]];
