@@ -2729,6 +2729,11 @@ static void pbvh_split_edges(
     BM_idmap_release(pbvh->bm_idmap, (BMElem *)e, true);
 
     BMVert *newv = BM_edge_split(pbvh->header.bm, e, e->v1, &newe, 0.5f);
+    int cd_stroke_id = eq_ctx->ss->attrs.stroke_id->bmesh_cd_offset;
+
+    /* Flag new vertex as not needing original data update, since we interpolated it. */
+    sculpt::stroke_id_test(eq_ctx->ss, {reinterpret_cast<intptr_t>(newv)}, STROKEID_USER_ORIGINAL);
+
     newe->head.hflag &= ~(SPLIT_TAG | BM_ELEM_TAG);
     e->head.hflag &= ~(SPLIT_TAG | BM_ELEM_TAG);
 
@@ -3057,7 +3062,7 @@ static void pbvh_split_edges(
 }
 void detail_size_set(PBVH *pbvh, float detail_size, float detail_range)
 {
-  pbvh->bm_detail_range = max_ff(detail_range, 0.1f);
+  pbvh->bm_detail_range = detail_range == 0.0f ? 0.4f : max_ff(detail_range, 0.1f);
   pbvh->bm_max_edge_len = detail_size;
   pbvh->bm_min_edge_len = pbvh->bm_max_edge_len * pbvh->bm_detail_range;
 }
