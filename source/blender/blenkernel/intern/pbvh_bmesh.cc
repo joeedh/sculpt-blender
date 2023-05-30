@@ -5119,6 +5119,8 @@ static bool defragment_node_face(PBVH *pbvh, PBVHNode *node, BMFace *f, BMFace *
 
       node_ensure_hive(pbvh, &pbvh->nodes[max_ni]);
       ehive->move(l->e, pbvh->nodes[max_ni].bm_hive);
+      l->e->head.data = cd_ehive->move(static_cast<int *>(l->e->head.data),
+                                       pbvh->nodes[max_ni].bm_hive);
 
       BM_idmap_on_elem_moved(pbvh->bm_idmap, eold, l->e);
     }
@@ -5383,7 +5385,7 @@ static void defragment_pbvh_partial(PBVH *pbvh, double time_limit_ms = 150)
     }
 
     if (modified2) {
-      node->flag |= PBVH_UpdateTris|PBVH_UpdateOtherVerts;
+      node->flag |= PBVH_UpdateTris | PBVH_UpdateOtherVerts;
     }
 
     modified |= modified2;

@@ -929,9 +929,10 @@ struct PBVHBatches {
             &args->bm->vdata, CD_PROP_INT32, "vertex_id");
 
         foreach_bmesh([&](BMLoop *l) {
-          //int id = *BM_ELEM_CD_PTR<int *>(l->v, cd_id);
-          //int id = static_cast<VertHive *>(args->bm->vhive)->get_chunk(l->v);
-          int id = static_cast<LoopHive *>(args->bm->lhive)->get_chunk(l);
+          // int id = *BM_ELEM_CD_PTR<int *>(l->v, cd_id);
+          // int id = static_cast<VertHive *>(args->bm->vhive)->get_chunk(l->v);
+          int id = static_cast<EdgeHive *>(args->bm->ehive)->get_chunk(l->e);
+          // int id = static_cast<LoopHive *>(args->bm->lhive)->get_chunk(l);
 
           *static_cast<int *>(GPU_vertbuf_raw_step(&access)) = id;
         });
