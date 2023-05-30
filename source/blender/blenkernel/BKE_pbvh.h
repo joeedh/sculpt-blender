@@ -26,22 +26,10 @@
 
 #include <stdint.h>
 
-//#define DEFRAGMENT_MEMORY
-
 #include "DNA_customdata_types.h"
 
 #ifdef __cplusplus
 extern "C" {
-#endif
-
-#if 0
-typedef struct SculptLoopRef {
-  intptr_t i;
-} SculptLoopRef;
-#endif
-
-#ifdef DEFRAGMENT_MEMORY
-#  include "BLI_smallhash.h"
 #endif
 
 struct BMesh;
@@ -153,7 +141,11 @@ typedef struct PBVHTriBuf {
   int totvert, totedge, tottri;
   int verts_size, edges_size, tris_size;
 
-  SmallHash vertmap;  // maps vertex ptrs to indices within verts
+#ifdef __cplusplus
+  blender::Map<uintptr_t, int> vertmap;
+#else
+  void *vertmap;
+#endif
 
   // private field
   intptr_t *loops;
@@ -559,7 +551,6 @@ void BKE_pbvh_bmesh_on_mesh_change(PBVH *pbvh);
 bool BKE_pbvh_bmesh_check_valence(PBVH *pbvh, PBVHVertRef vertex);
 void BKE_pbvh_bmesh_update_valence(PBVH *pbvh, PBVHVertRef vertex);
 void BKE_pbvh_bmesh_update_all_valence(PBVH *pbvh);
-void BKE_pbvh_bmesh_flag_all_disk_sort(PBVH *pbvh);
 bool BKE_pbvh_bmesh_mark_update_valence(PBVH *pbvh, PBVHVertRef vertex);
 
 /* if pbvh uses a split index buffer, will call BKE_pbvh_vert_tag_update_normal_triangulation;

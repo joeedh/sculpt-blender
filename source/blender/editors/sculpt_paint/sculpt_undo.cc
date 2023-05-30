@@ -85,7 +85,6 @@
 #include "bmesh_log.h"
 #include "sculpt_intern.hh"
 
-#define WHEN_GLOBAL_UNDO_WORKS
 /* Uncomment to print the undo stack in the console on push/undo/redo. */
 //#define SCULPT_UNDO_DEBUG
 
@@ -734,8 +733,7 @@ static void bmesh_undo_on_vert_add(BMVert *v, void *userdata)
   BM_ELEM_CD_SET_INT(v, data->cd_vert_node_offset, -1);
 
   *(int *)BM_ELEM_CD_GET_VOID_P(v, data->cd_boundary_flag) |= SCULPT_BOUNDARY_NEEDS_UPDATE;
-  *BM_ELEM_CD_PTR<uint8_t *>(v, data->cd_flags) |= SCULPTFLAG_NEED_DISK_SORT |
-                                                   SCULPTFLAG_NEED_VALENCE |
+  *BM_ELEM_CD_PTR<uint8_t *>(v, data->cd_flags) |= SCULPTFLAG_NEED_VALENCE |
                                                    SCULPTFLAG_NEED_TRIANGULATE;
 }
 
@@ -754,8 +752,7 @@ static void bmesh_undo_on_face_kill(BMFace *f, void *userdata)
 
   BMLoop *l = f->l_first;
   do {
-    *BM_ELEM_CD_PTR<uint8_t *>(l->v, data->cd_flags) |= SCULPTFLAG_NEED_DISK_SORT |
-                                                        SCULPTFLAG_NEED_VALENCE;
+    *BM_ELEM_CD_PTR<uint8_t *>(l->v, data->cd_flags) |= SCULPTFLAG_NEED_VALENCE;
     *BM_ELEM_CD_PTR<int *>(l->v, data->cd_boundary_flag) |= SCULPT_BOUNDARY_NEEDS_UPDATE;
   } while ((l = l->next) != f->l_first);
 
@@ -779,8 +776,7 @@ static void bmesh_undo_on_face_add(BMFace *f, void *userdata)
   do {
     *(int *)BM_ELEM_CD_GET_VOID_P(l->v, data->cd_boundary_flag) |= SCULPT_BOUNDARY_NEEDS_UPDATE;
 
-    *BM_ELEM_CD_PTR<uint8_t *>(l->v, data->cd_flags) |= SCULPTFLAG_NEED_DISK_SORT |
-                                                        SCULPTFLAG_NEED_VALENCE;
+    *BM_ELEM_CD_PTR<uint8_t *>(l->v, data->cd_flags) |= SCULPTFLAG_NEED_VALENCE;
 
     if (f->len > 3) {
       *BM_ELEM_CD_PTR<uint8_t *>(l->v, data->cd_flags) |= SCULPTFLAG_NEED_TRIANGULATE;
@@ -822,11 +818,9 @@ static void bmesh_undo_on_edge_kill(BMEdge *e, void *userdata)
   *(int *)BM_ELEM_CD_GET_VOID_P(e->v1, data->cd_boundary_flag) |= SCULPT_BOUNDARY_NEEDS_UPDATE;
   *(int *)BM_ELEM_CD_GET_VOID_P(e->v2, data->cd_boundary_flag) |= SCULPT_BOUNDARY_NEEDS_UPDATE;
 
-  *BM_ELEM_CD_PTR<uint8_t *>(e->v1, data->cd_flags) |= SCULPTFLAG_NEED_DISK_SORT |
-                                                       SCULPTFLAG_NEED_VALENCE |
+  *BM_ELEM_CD_PTR<uint8_t *>(e->v1, data->cd_flags) |= SCULPTFLAG_NEED_VALENCE |
                                                        SCULPTFLAG_NEED_TRIANGULATE;
-  *BM_ELEM_CD_PTR<uint8_t *>(e->v2, data->cd_flags) |= SCULPTFLAG_NEED_DISK_SORT |
-                                                       SCULPTFLAG_NEED_VALENCE |
+  *BM_ELEM_CD_PTR<uint8_t *>(e->v2, data->cd_flags) |= SCULPTFLAG_NEED_VALENCE |
                                                        SCULPTFLAG_NEED_TRIANGULATE;
 };
 ;
@@ -837,11 +831,9 @@ static void bmesh_undo_on_edge_add(BMEdge *e, void *userdata)
   *(int *)BM_ELEM_CD_GET_VOID_P(e->v1, data->cd_boundary_flag) |= SCULPT_BOUNDARY_NEEDS_UPDATE;
   *(int *)BM_ELEM_CD_GET_VOID_P(e->v2, data->cd_boundary_flag) |= SCULPT_BOUNDARY_NEEDS_UPDATE;
 
-  *BM_ELEM_CD_PTR<uint8_t *>(e->v1, data->cd_flags) |= SCULPTFLAG_NEED_DISK_SORT |
-                                                       SCULPTFLAG_NEED_VALENCE |
+  *BM_ELEM_CD_PTR<uint8_t *>(e->v1, data->cd_flags) |= SCULPTFLAG_NEED_VALENCE |
                                                        SCULPTFLAG_NEED_TRIANGULATE;
-  *BM_ELEM_CD_PTR<uint8_t *>(e->v2, data->cd_flags) |= SCULPTFLAG_NEED_DISK_SORT |
-                                                       SCULPTFLAG_NEED_VALENCE |
+  *BM_ELEM_CD_PTR<uint8_t *>(e->v2, data->cd_flags) |= SCULPTFLAG_NEED_VALENCE |
                                                        SCULPTFLAG_NEED_TRIANGULATE;
 }
 
@@ -1312,11 +1304,9 @@ static int sculpt_undo_bmesh_restore(
 {
   // handle transition from another undo type
 
-#ifdef WHEN_GLOBAL_UNDO_WORKS
   if (!ss->bm_log && ss->bm && unode->bm_entry) {  // && BKE_pbvh_type(ss->pbvh) == PBVH_BMESH) {
     ss->bm_log = BM_log_from_existing_entries_create(ss->bm, ss->bm_idmap, unode->bm_entry);
   }
-#endif
 
   if (ss->bm_log && ss->bm &&
       !ELEM(unode->type, SCULPT_UNDO_DYNTOPO_BEGIN, SCULPT_UNDO_DYNTOPO_END)) {
@@ -2969,11 +2959,6 @@ static void sculpt_undosys_step_decode(
          * (some) evaluated data. */
         BKE_scene_graph_evaluated_ensure(depsgraph, bmain);
 
-#ifndef WHEN_GLOBAL_UNDO_WORKS
-        /* Don't add sculpt topology undo steps when reading back undo state.
-         * The undo steps must enter/exit for us. */
-        me->flag &= ~ME_SCULPT_DYNAMIC_TOPOLOGY;
-#endif
         ED_object_sculptmode_enter_ex(bmain, depsgraph, scene, ob, true, nullptr, false);
       }
 
@@ -3149,58 +3134,6 @@ void ED_sculpt_undo_push_multires_mesh_end(bContext *C, const char *str)
 }
 
 /** \} */
-extern "C" void SCULPT_substep_undo(bContext * /*C*/, int /*dir*/)
-{
-  printf("%s: not working!\n", __func__);
-#if 0  // XXX
-  Scene *scene = CTX_data_scene(C);
-  Object *ob = CTX_data_active_object(C);
-
-  Depsgraph *depsgraph = CTX_data_ensure_evaluated_depsgraph(C);
-
-  if (!scene || !ob || !ob->sculpt) {
-    printf("not in sculpt mode\n");
-    return;
-  }
-
-  SculptSession *ss = ob->sculpt;
-
-  if (!ss->bm) {
-    printf("not in dyntopo mode\n");
-    return;
-  }
-
-  BmeshUndoData data = {ss->pbvh,
-                        ss->bm,
-                        false,
-                        false,
-                        ss->cd_face_node_offset,
-                        ss->cd_vert_node_offset,
-                        ss->attrs.boundary_flags->bmesh_cd_offset,
-                        false,
-                        false};
-
-  BMLogCallbacks callbacks = {bmesh_undo_on_vert_add,
-                              bmesh_undo_on_vert_kill,
-                              bmesh_undo_on_vert_change,
-                              bmesh_undo_on_edge_add,
-                              bmesh_undo_on_edge_kill,
-                              bmesh_undo_on_edge_change,
-                              bmesh_undo_on_face_add,
-                              bmesh_undo_on_face_kill,
-                              bmesh_undo_on_face_change,
-                              bmesh_undo_full_mesh,
-                              nullptr,
-                              (void *)&data};
-
-  BM_log_undo_single(ss->bm, ss->bm_log, &callbacks, nullptr);
-
-  BKE_sculpt_update_object_for_edit(depsgraph, ob, true, false, false);
-  DEG_id_tag_update(&ob->id, ID_RECALC_SHADING);
-#endif
-}
-
-void BM_log_get_changed(BMesh *bm, struct BMIdMap *idmap, BMLogEntry *_entry, SmallHash *sh);
 
 void ED_sculpt_fast_save_bmesh(Object *ob)
 {
@@ -3211,100 +3144,7 @@ void ED_sculpt_fast_save_bmesh(Object *ob)
     return;
   }
 
-#if 1
   struct BMeshToMeshParams params = {};
-
-  void BM_mesh_bm_to_me_threaded(
-      Main * bmain, Object * ob, BMesh * bm, Mesh * me, const struct BMeshToMeshParams *params);
-
   params.update_shapekey_indices = true;
-
-  // BM_mesh_bm_to_me_threaded(nullptr, ob, bm, (Mesh *)ob->data, &params);
   BM_mesh_bm_to_me(nullptr, bm, (Mesh *)ob->data, &params);
-#else
-  SculptUndoStep *last_step = nullptr;
-
-  UndoStack *ustack = ED_undo_stack_get();
-  UndoStep *us = ustack->step_active;
-
-  SmallHash elems;
-  BLI_smallhash_init(&elems);
-
-  bool bad = false;
-
-  if (!us) {
-    printf("no active undo step!");
-    bad = true;
-  }
-  else {
-    while (us) {
-      us = us->prev;
-
-      if (us->type == BKE_UNDOSYS_TYPE_SCULPT) {
-        SculptUndoStep *usculpt = (SculptUndoStep *)us;
-
-        LISTBASE_FOREACH (SculptUndoNode *, unode, &usculpt->data.nodes) {
-          if (unode->bm_entry) {
-            BM_log_get_changed(bm, ss->bm_idmap, unode->bm_entry, &elems);
-          }
-        }
-
-        if (usculpt->auto_saved) {
-          last_step = usculpt;
-          break;
-        }
-
-        if (!last_step) {
-          usculpt->auto_saved = true;
-        }
-
-        last_step = usculpt;
-      }
-    }
-  }
-
-  if (!last_step) {
-    bad = true;
-  }
-  else {
-    last_step->auto_saved = true;
-  }
-
-  if (bad) {
-    printf("%s: Failed to find sculpt undo stack entries\n", __func__);
-
-    /* Just save everything */
-    struct BMeshToMeshParams params = {0};
-    BM_mesh_bm_to_me(nullptr, bm, (Mesh *)ob->data, &params);
-    return;
-  }
-
-  int totv = 0, tote = 0, totl = 0, totf = 0;
-
-  BM_mesh_elem_table_ensure(bm, BM_VERT | BM_EDGE | BM_LOOP | BM_FACE);
-
-  SmallHashIter iter;
-  uintptr_t key;
-  void *val = BLI_smallhash_iternew(&elems, &iter, &key);
-  for (; val; val = BLI_smallhash_iternext(&iter, &key)) {
-    BMElem *elem = (BMElem *)key;
-
-    switch (elem->head.htype) {
-      case BM_VERT:
-        totv++;
-        break;
-      case BM_EDGE:
-        tote++;
-        break;
-      case BM_LOOP:
-        totl++;
-        break;
-      case BM_FACE:
-        totf++;
-        break;
-    }
-  }
-
-  BLI_smallhash_release(&elems);
-#endif
 }
