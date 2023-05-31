@@ -25,6 +25,8 @@ Topology rake:
 
 */
 
+#include "PIL_time.h"
+
 #include "MEM_guardedalloc.h"
 
 #include "BLI_alloca.h"
@@ -48,7 +50,6 @@ Topology rake:
 #include "BLI_set.hh"
 #include "BLI_vector.hh"
 
-#include "PIL_time.h"
 #include "atomic_ops.h"
 
 #include "DNA_material_types.h"
@@ -4566,8 +4567,10 @@ void assign_hives(PBVH *pbvh)
   ensure_hive_setup(pbvh);
 }
 
-static void defragment_pbvh_partial(PBVH *pbvh, double time_limit_ms = 150)
+void defragment_pbvh_partial(PBVH *pbvh, double time_limit_ms)
 {
+  ensure_hive_setup(pbvh);
+
   bool modified = false;
 
   int totface = 0;
@@ -4664,13 +4667,14 @@ static void defragment_pbvh_partial(PBVH *pbvh, double time_limit_ms = 150)
 
 void defragment_pbvh(PBVH *pbvh, bool partial)
 {
-  ensure_hive_setup(pbvh);
   bool modified = false;
 
   if (partial) {
     defragment_pbvh_partial(pbvh);
     return;
   }
+
+  ensure_hive_setup(pbvh);
 
   for (int i : IndexRange(pbvh->totnode)) {
     PBVHNode *node = &pbvh->nodes[i];

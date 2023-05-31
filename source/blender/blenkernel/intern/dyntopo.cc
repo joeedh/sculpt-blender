@@ -2393,6 +2393,8 @@ bool remesh_topology(BrushTester *brush_tester,
                      void *mask_cb_data,
                      int edge_limit_multiply)
 {
+  blender::bke::pbvh::defragment_pbvh_partial(ss->pbvh, 10);
+
   EdgeQueueContext eq_ctx(brush_tester,
                           ss,
                           pbvh,
