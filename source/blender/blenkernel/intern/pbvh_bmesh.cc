@@ -2403,7 +2403,6 @@ void BKE_pbvh_set_idmap(PBVH *pbvh, BMIdMap *idmap)
 void BKE_pbvh_build_bmesh(PBVH *pbvh,
                           Mesh *me,
                           BMesh *bm,
-                          bool smooth_shading,
                           BMLog *log,
                           BMIdMap *idmap,
                           const int cd_vert_node_offset,
@@ -2413,8 +2412,7 @@ void BKE_pbvh_build_bmesh(PBVH *pbvh,
                           const int /*cd_flag_offset*/,
                           const int /*cd_valence_offset*/,
                           const int cd_origco,
-                          const int cd_origno,
-                          bool fast_draw)
+                          const int cd_origno)
 {
   // coalese_pbvh(pbvh, bm);
 
@@ -2437,8 +2435,6 @@ void BKE_pbvh_build_bmesh(PBVH *pbvh,
 
   pbvh->mesh = me;
 
-  smooth_shading |= fast_draw;
-
   pbvh->header.bm = bm;
 
   blender::bke::dyntopo::detail_size_set(pbvh, 0.75f, 0.4f);
@@ -2460,14 +2456,6 @@ void BKE_pbvh_build_bmesh(PBVH *pbvh,
 
   BMIter iter;
   BMVert *v;
-
-  if (smooth_shading) {
-    pbvh->flags |= PBVH_DYNTOPO_SMOOTH_SHADING;
-  }
-
-  if (fast_draw) {
-    pbvh->flags |= PBVH_FAST_DRAW;
-  }
 
   /* bounding box array of all faces, no need to recalculate every time */
   BBC *bbc_array = MEM_cnew_array<BBC>(bm->totface, "BBC");
@@ -2935,7 +2923,6 @@ bool BKE_pbvh_bmesh_check_tris(PBVH *pbvh, PBVHNode *node)
         BMLoop *l = loops[loops_idx[i][j]];
         BMLoop *l2 = loops[loops_idx[i][(j + 1) % 3]];
 
-        void **val = nullptr;
         BMEdge *e = BM_edge_exists(l->v, l2->v);
 
         if (e) {
@@ -2943,7 +2930,9 @@ bool BKE_pbvh_bmesh_check_tris(PBVH *pbvh, PBVHNode *node)
           mat_tri->eflag |= 1 << j;
         }
 
-        uintptr_t loopkey = tri_loopkey(l, mat_nr, pbvh->cd_faceset_offset, cd_uvs, totuv);
+        void *loopkey = reinterpret_cast<void *>(
+            tri_loopkey(l, mat_nr, pbvh->cd_faceset_offset, cd_uvs, totuv));
+
         int &tri_v = node->tribuf->vertmap.lookup_or_add(loopkey, node->tribuf->totvert);
 
         /* Newly added to the set? */
@@ -3041,13 +3030,13 @@ bool BKE_pbvh_bmesh_check_tris(PBVH *pbvh, PBVHNode *node)
 
       l->e->head.hflag |= edgeflag;
 
-      int v1 = node->tribuf->vertmap.lookup_default((uintptr_t)l->e->v1, 0);
-      int v2 = node->tribuf->vertmap.lookup_default((uintptr_t)l->e->v2, 0);
+      int v1 = node->tribuf->vertmap.lookup_default((void *)l->e->v1, 0);
+      int v2 = node->tribuf->vertmap.lookup_default((void *)l->e->v2, 0);
 
       pbvh_tribuf_add_edge(node->tribuf, v1, v2);
 
-      v1 = mat_tribuf->vertmap.lookup_default((uintptr_t)l->e->v1, 0);
-      v2 = mat_tribuf->vertmap.lookup_default((uintptr_t)l->e->v2, 0);
+      v1 = mat_tribuf->vertmap.lookup_default((void *)l->e->v1, 0);
+      v2 = mat_tribuf->vertmap.lookup_default((void *)l->e->v2, 0);
 
       pbvh_tribuf_add_edge(mat_tribuf, v1, v2);
     } while ((l = l->next) != f->l_first);

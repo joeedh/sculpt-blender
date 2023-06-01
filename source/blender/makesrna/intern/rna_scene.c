@@ -713,6 +713,7 @@ static const EnumPropertyItem snap_to_items[] = {
 #  include "BKE_pointcache.h"
 #  include "BKE_scene.h"
 #  include "BKE_screen.h"
+#  include "BKE_simulation.h"
 #  include "BKE_unit.h"
 
 #  include "NOD_composite.h"
@@ -931,6 +932,8 @@ static void rna_Scene_fps_update(Main *bmain, Scene *UNUSED(active_scene), Point
    * however, changes in FPS actually modifies an original skip length,
    * so this we take care about here. */
   SEQ_sound_update_length(bmain, scene);
+  /* Reset simulation states because new frame interval doesn't apply anymore. */
+  BKE_simulation_reset_scene(scene);
 }
 
 static void rna_Scene_listener_update(Main *UNUSED(bmain), Scene *UNUSED(scene), PointerRNA *ptr)
@@ -3098,10 +3101,7 @@ static void rna_def_tool_settings(BlenderRNA *brna)
   RNA_def_struct_path_func(srna, "rna_ToolSettings_path");
   RNA_def_struct_ui_text(srna, "Tool Settings", "");
 
-  prop = RNA_def_property(srna, "save_temp_layers", PROP_BOOLEAN, PROP_NONE);
-  RNA_def_property_boolean_sdna(prop, NULL, "save_temp_layers", 1);
-  RNA_def_property_ui_text(prop, "Save Temp Layers", "");
-
+  /* NotForPR: used to debug interpolation of original coordinates in dyntopo. */
   prop = RNA_def_property(srna, "show_origco", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "show_origco", 1);
   RNA_def_property_ui_text(prop, "Show Original", "");

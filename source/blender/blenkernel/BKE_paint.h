@@ -728,7 +728,6 @@ struct SculptSession {
 
   int totuv;
 
-  bool bm_smooth_shading;
   bool ignore_uvs;
 
   /* Undo/redo log for dynamic topology sculpting */
@@ -853,8 +852,6 @@ struct SculptSession {
    */
   char needs_flush_to_id;
 
-  bool fast_draw; /* Hides facesets/masks and forces smooth to save GPU bandwidth. */
-
   /* This is a fixed-size array so we can pass pointers to its elements
    * to client code. This is important to keep bmesh offsets up to date.
    */
@@ -882,7 +879,6 @@ struct SculptSession {
   /* Used to derive initial tip rotation. */
   float last_grab_delta[3];
 
-  bool save_temp_layers;
   const float (*vert_normals)[3];
 
   int last_automasking_settings_hash;
@@ -1056,8 +1052,6 @@ bool BKE_object_attributes_active_color_fill(struct Object *ob,
 /** C accessor for #Object::sculpt::pbvh. */
 struct PBVH *BKE_object_sculpt_pbvh_get(struct Object *object);
 bool BKE_object_sculpt_use_dyntopo(const struct Object *object);
-void BKE_object_sculpt_dyntopo_smooth_shading_set(struct Object *object, bool value);
-void BKE_object_sculpt_fast_draw_set(struct Object *object, bool value);
 
 /* paint_canvas.cc */
 

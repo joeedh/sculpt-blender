@@ -79,7 +79,6 @@ static bool valid_pbvh_attr(int type)
     case CD_PROP_COLOR:
     case CD_PROP_BYTE_COLOR:
     case CD_PROP_FLOAT2:
-    case CD_PBVH_ID_TYPE:
       return true;
   }
 
@@ -216,7 +215,7 @@ struct PBVHBatches {
         break;
       }
       case PBVH_BMESH: {
-        count = args->flat_vcol_shading ? args->tribuf->tottri * 6 : args->tribuf->tottri;
+        count = args->tribuf->tottri;
       }
     }
 
@@ -761,7 +760,7 @@ struct PBVHBatches {
 
   void fill_vbo_bmesh(PBVHVbo &vbo, PBVH_GPU_Args *args)
   {
-    auto foreach_bmesh_normal = [&](std::function<void(BMLoop * l)> callback) {
+    auto foreach_bmesh = [&](std::function<void(BMLoop * l)> callback) {
       for (int i : IndexRange(args->tribuf->tottri)) {
         PBVHTri *tri = args->tribuf->tris + i;
         BMFace *f = reinterpret_cast<BMFace *>(tri->f.i);
@@ -776,115 +775,7 @@ struct PBVHBatches {
       }
     };
 
-    BMVert v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12;
-
-    auto foreach_bmesh_flat_vcol = [&](std::function<void(BMLoop * l)> callback) {
-      for (int i : IndexRange(args->tribuf->tottri)) {
-        PBVHTri *tri = args->tribuf->tris + i;
-
-        BMFace *f = reinterpret_cast<BMFace *>(tri->f.i);
-
-        if (BM_elem_flag_test(f, BM_ELEM_HIDDEN)) {
-          continue;
-        }
-
-        BMLoop *la = reinterpret_cast<BMLoop *>(tri->l[0]);
-        BMLoop *lb = reinterpret_cast<BMLoop *>(tri->l[1]);
-        BMLoop *lc = reinterpret_cast<BMLoop *>(tri->l[2]);
-
-        BMLoop l9 = *la, l1 = *la, l2 = *la;
-        BMLoop l3 = *lb, l4 = *lb, l5 = *lb;
-        BMLoop l6 = *lc, l7 = *lc, l8 = *lc;
-        BMLoop l10 = *la, l11 = *lb, l12 = *lc;
-
-        v9 = *la->v, v1 = *la->v, v2 = *la->v;
-        v3 = *lb->v, v4 = *lb->v, v5 = *lb->v;
-        v6 = *lc->v, v7 = *lc->v, v8 = *lc->v;
-        v10 = *la->v, v11 = *lb->v, v12 = *lc->v;
-
-        if (vbo.type == CD_PBVH_CO_TYPE) {
-          l1.v = &v1;
-          l2.v = &v2;
-          l3.v = &v3;
-          l4.v = &v4;
-          l5.v = &v5;
-          l6.v = &v6;
-          l7.v = &v7;
-          l8.v = &v8;
-          l9.v = &v9;
-          l10.v = &v10;
-          l11.v = &v11;
-          l12.v = &v12;
-
-          float3 cent = la->v->co;
-          cent += lb->v->co;
-          cent += lc->v->co;
-          cent *= 1.0f / 3.0f;
-
-          copy_v3_v3(v10.co, cent);
-          copy_v3_v3(v11.co, cent);
-          copy_v3_v3(v12.co, cent);
-
-          float3 cent1 = la->v->co;
-          cent1 += lb->v->co;
-          cent1 *= 0.5f;
-          copy_v3_v3(v2.co, cent1);
-          copy_v3_v3(v3.co, cent1);
-
-          float3 cent2 = lb->v->co;
-          cent2 += lc->v->co;
-          cent2 *= 0.5f;
-          copy_v3_v3(v5.co, cent2);
-          copy_v3_v3(v6.co, cent2);
-
-          float3 cent3 = lc->v->co;
-          cent3 += la->v->co;
-          cent3 *= 0.5f;
-          copy_v3_v3(v8.co, cent3);
-          copy_v3_v3(v9.co, cent3);
-        }
-
-        /*    v4
-              b
-           v3   v5
-          v2 cents v6
-          a          c
-        v1   v9  v8   v7
-        */
-        callback(&l7);
-        callback(&l8);
-        callback(&l6);
-        callback(&l8);
-        callback(&l12);
-        callback(&l6);
-
-        callback(&l1);
-        callback(&l2);
-        callback(&l9);
-        callback(&l2);
-        callback(&l10);
-        callback(&l9);
-
-        callback(&l4);
-        callback(&l5);
-        callback(&l3);
-        callback(&l5);
-        callback(&l11);
-        callback(&l3);
-      }
-    };
-
-    std::function<void(std::function<void(BMLoop *)>)> foreach_bmesh;
-
-    if (args->flat_vcol_shading) {
-      foreach_bmesh = foreach_bmesh_flat_vcol;
-    }
-    else {
-      foreach_bmesh = foreach_bmesh_normal;
-    }
-
-    faces_count = args->flat_vcol_shading ? args->tribuf->tottri * 6 : args->tribuf->tottri;
-    tris_count = faces_count;
+    faces_count = tris_count = args->tribuf->tottri;
 
     int existing_num = GPU_vertbuf_get_vertex_len(vbo.vert_buf);
     void *existing_data = GPU_vertbuf_get_data(vbo.vert_buf);
@@ -924,21 +815,6 @@ struct PBVHBatches {
 #endif
 
     switch (vbo.type) {
-      case CD_PBVH_ID_TYPE: {
-        const int cd_id = CustomData_get_offset_named(
-            &args->bm->vdata, CD_PROP_INT32, "vertex_id");
-
-        foreach_bmesh([&](BMLoop *l) {
-          // int id = *BM_ELEM_CD_PTR<int *>(l->v, cd_id);
-          // int id = static_cast<VertHive *>(args->bm->vhive)->get_chunk(l->v);
-          int id = static_cast<EdgeHive *>(args->bm->ehive)->get_chunk(l->e);
-          // int id = static_cast<LoopHive *>(args->bm->lhive)->get_chunk(l);
-
-          *static_cast<int *>(GPU_vertbuf_raw_step(&access)) = id;
-        });
-        break;
-      }
-
       case CD_PROP_FLOAT2: {
         const int cd_uv = CustomData_get_offset_named(
             &args->bm->ldata, CD_PROP_FLOAT2, vbo.name.c_str());
@@ -956,6 +832,30 @@ struct PBVHBatches {
         const bool do_loop = vbo.domain == ATTR_DOMAIN_CORNER;
 
         const int cd_color = CustomData_get_offset_named(cdata, CD_PROP_COLOR, vbo.name.c_str());
+
+        if (vbo.name == "sculpt_ids" && !do_loop) {
+          foreach_bmesh([&](BMLoop *l) {
+            // int id = *BM_ELEM_CD_PTR<int *>(l->v, cd_id);
+            // int id = static_cast<VertHive *>(args->bm->vhive)->get_chunk(l->v);
+            int id = static_cast<EdgeHive *>(args->bm->ehive)->get_chunk(l->e);
+            // int id = static_cast<LoopHive *>(args->bm->lhive)->get_chunk(l);
+
+            float4 col;
+            float f = float(double(id) / 256.0);
+            f -= floorf(f);
+
+            col[0] = col[1] = col[2] = col[3] = f;
+
+            color[0] = unit_float_to_ushort_clamp(col[0]);
+            color[1] = unit_float_to_ushort_clamp(col[1]);
+            color[2] = unit_float_to_ushort_clamp(col[2]);
+            color[3] = unit_float_to_ushort_clamp(col[3]);
+
+            *static_cast<ushort4 *>(GPU_vertbuf_raw_step(&access)) = color;
+          });
+
+          break;
+        }
 
         foreach_bmesh([&](BMLoop *l) {
           MPropCol *col;
@@ -1167,11 +1067,6 @@ struct PBVHBatches {
         break;
       case CD_PBVH_MASK_TYPE:
         GPU_vertformat_attr_add(&format, "msk", GPU_COMP_U8, 1, GPU_FETCH_INT_TO_FLOAT_UNIT);
-        break;
-      case CD_PBVH_ID_TYPE:
-        name = "vertex_id";
-        GPU_vertformat_attr_add(&format, "eid", GPU_COMP_I32, 1, GPU_FETCH_INT);
-        need_aliases = false;
         break;
       case CD_PROP_FLOAT:
         GPU_vertformat_attr_add(&format, "f", GPU_COMP_F32, 1, GPU_FETCH_FLOAT);

@@ -1981,7 +1981,7 @@ class VIEW3D_MT_paint_gpencil(Menu):
         layout.operator("gpencil.vertex_color_brightness_contrast", text="Brightness/Contrast")
 
 
-class VIEW3D_MT_select_gpencil(Menu):
+class VIEW3D_MT_select_edit_gpencil(Menu):
     bl_label = "Select"
 
     def draw(self, context):
@@ -5414,6 +5414,13 @@ class VIEW3D_MT_edit_gpencil_showhide(Menu):
         layout.operator("gpencil.hide", text="Hide Inactive Layers").unselected = True
 
 
+class VIEW3D_MT_edit_greasepencil(Menu):
+    bl_label = "Grease Pencil"
+
+    def draw(self, _context):
+        pass
+
+
 class VIEW3D_MT_edit_curves(Menu):
     bl_label = "Curves"
 
@@ -6850,9 +6857,6 @@ class VIEW3D_PT_overlay_sculpt(Panel):
         sub.active = overlay.show_sculpt_face_sets
         row.prop(overlay, "sculpt_mode_face_sets_opacity", text="Face Sets")
 
-        row = layout.row(align=True)
-        row.prop(overlay, "show_sculpt_ids")
-
 class VIEW3D_PT_overlay_sculpt_curves(Panel):
     bl_space_type = 'VIEW_3D'
     bl_context = ".curves_sculpt"
@@ -8165,7 +8169,7 @@ classes = (
     VIEW3D_MT_edit_lattice_context_menu,
     VIEW3D_MT_select_edit_lattice,
     VIEW3D_MT_select_edit_armature,
-    VIEW3D_MT_select_gpencil,
+    VIEW3D_MT_select_edit_gpencil,
     VIEW3D_MT_select_paint_mask,
     VIEW3D_MT_select_paint_mask_vertex,
     VIEW3D_MT_edit_curves_select_more_less,
@@ -8269,6 +8273,7 @@ classes = (
     VIEW3D_MT_gpencil_simplify,
     VIEW3D_MT_gpencil_autoweights,
     VIEW3D_MT_gpencil_edit_context_menu,
+    VIEW3D_MT_edit_greasepencil,
     VIEW3D_MT_edit_curve,
     VIEW3D_MT_edit_curve_ctrlpoints,
     VIEW3D_MT_edit_curve_segments,

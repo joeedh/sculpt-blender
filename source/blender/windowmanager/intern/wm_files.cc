@@ -291,7 +291,7 @@ static void wm_window_match_keep_current_wm(const bContext *C,
   bScreen *screen = nullptr;
 
   /* match oldwm to new dbase, only old files */
-  wm->initialized &= ~WM_WINDOW_IS_INIT;
+  wm->init_flag &= ~WM_INIT_FLAG_WINDOW;
 
   /* when loading without UI, no matching needed */
   if (load_ui && (screen = CTX_wm_screen(C))) {
@@ -386,7 +386,7 @@ static void wm_window_match_replace_by_file_wm(bContext *C,
   oldwm->userconf = nullptr;
 
   /* ensure making new keymaps and set space types */
-  wm->initialized = 0;
+  wm->init_flag = 0;
   wm->winactive = nullptr;
 
   /* Clearing drawable of before deleting any context
@@ -2052,7 +2052,10 @@ static void wm_autosave_location(char filepath[FILE_MAX])
   BLI_path_join(filepath, FILE_MAX, tempdir_base, filename);
 }
 
-/* TODO: Move to appropriate headers */
+/* NotForPR: In order to make testing less painful,
+ * flush the sculpt mesh prior to autosave.  Since this comes with a
+ * performance cost it must be removed prior to the final merge.
+ */
 void ED_sculpt_fast_save_bmesh(Object *ob);
 struct MemFileUndoStep;
 MemFileUndoData *memfile_get_step_data(struct MemFileUndoStep *us);
@@ -2177,15 +2180,15 @@ void wm_autosave_delete(void)
   wm_autosave_location(filepath);
 
   if (BLI_exists(filepath)) {
-    char str[FILE_MAX];
-    BLI_path_join(str, sizeof(str), BKE_tempdir_base(), BLENDER_QUIT_FILE);
+    char filepath_quit[FILE_MAX];
+    BLI_path_join(filepath_quit, sizeof(filepath_quit), BKE_tempdir_base(), BLENDER_QUIT_FILE);
 
     /* For global undo; remove temporarily saved file, otherwise rename. */
     if (U.uiflag & USER_GLOBALUNDO) {
       BLI_delete(filepath, false, false);
     }
     else {
-      BLI_rename_overwrite(filepath, str);
+      BLI_rename_overwrite(filepath, filepath_quit);
     }
   }
 }

@@ -37,8 +37,6 @@ static void bm_idmap_debug_check_init(BMesh *bm)
 
 static void idmap_log_message(const char *fmt, ...)
 {
-  char msg[64];
-
   va_list args;
   va_start(args, fmt);
   vprintf(fmt, args);
@@ -94,6 +92,7 @@ static const char elem_names[9][16] = {
     "face",       // 8
 };
 
+#ifdef DEBUG_BM_IDMAP
 static const char *get_type_name(char htype)
 {
   if (htype <= 0 || htype >= 9) {
@@ -102,6 +101,7 @@ static const char *get_type_name(char htype)
 
   return elem_names[int(htype)];
 }
+#endif
 
 template<typename T> static constexpr char get_elem_type()
 {
@@ -337,14 +337,7 @@ void BM_idmap_check_attributes(BMIdMap *idmap)
       idx = CustomData_get_named_layer_index(cdata, CD_PROP_INT32, name);
     }
 
-    if (!cdata->layers[idx].default_data) {
-      cdata->layers[idx].default_data = MEM_cnew<MIntProperty>("MIntProperty");
-    }
-
     cdata->layers[idx].flag |= CD_FLAG_ELEM_NOINTERP | CD_FLAG_ELEM_NOCOPY;
-
-    int *default_data = static_cast<int *>(cdata->layers[idx].default_data);
-    *default_data = BM_ID_NONE;
 
     idmap->cd_id_off[type] = cdata->layers[idx].offset;
   };
