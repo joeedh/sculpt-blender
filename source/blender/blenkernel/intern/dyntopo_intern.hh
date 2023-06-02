@@ -134,7 +134,7 @@ inline bool bm_elem_is_free(BMElem *elem, int htype)
 /* Slightly relax geometry by this factor along surface tangents
  * to improve convergence of dyntopo remesher.
  */
-#define DYNTOPO_SAFE_SMOOTH_FAC 0.01f
+#define DYNTOPO_SAFE_SMOOTH_FAC 0.05f
 
 #ifdef USE_EDGEQUEUE_EVEN_SUBDIV
 #  include "BKE_global.h"
@@ -257,6 +257,7 @@ struct EdgeQueueContext {
 
   PBVHTopologyUpdateMode mode;
   bool reproject_cdata;
+  bool surface_relax;
 
   bool updatePBVH = false;
   int steps[2];
@@ -278,7 +279,7 @@ struct EdgeQueueContext {
 
   ~EdgeQueueContext();
   EdgeQueueContext(BrushTester *brush_tester,
-                   struct SculptSession *ss,
+                   Object *ob,
                    PBVH *pbvh,
                    PBVHTopologyUpdateMode mode,
                    bool use_frontface,
@@ -420,24 +421,27 @@ ENUM_OPERATORS(eValidateFaceFlags, CHECK_FACE_MANIFOLD);
 
 #ifndef CHECKMESH
 
-template<typename T> inline bool validate_elem(PBVH *pbvh, T *elem){return true};
-inline bool validate_vert(PBVH *pbvh, BMVert *v, eValidateVertFlags flags = CHECK_VERT_NONE)
+template<typename T> inline bool validate_elem(PBVH *, T *)
 {
   return true;
 }
-inline bool validate_edge(PBVH *pbvh, BMEdge *e)
+inline bool validate_vert(PBVH *, BMVert *, eValidateVertFlags)
 {
   return true;
 }
-inline bool validate_loop(PBVH *pbvh, BMLoop *l)
+inline bool validate_edge(PBVH *, BMEdge *)
 {
   return true;
 }
-inline bool validate_face(PBVH *pbvh, BMFace *f, eValidateFaceFlags flags = CHECK_FACE_NONE)
+inline bool validate_loop(PBVH *, BMLoop *)
 {
   return true;
 }
-inline bool check_face_is_manifold(PBVH *pbvh, BMFace *f)
+inline bool validate_face(PBVH *, BMFace *, eValidateFaceFlags)
+{
+  return true;
+}
+inline bool check_face_is_manifold(PBVH *, BMFace *)
 {
   return true;
 }
@@ -550,9 +554,7 @@ ATTR_NO_OPT static bool check_face_is_manifold(PBVH *pbvh, BMFace *f)
   return true;
 }
 
-ATTR_NO_OPT static bool validate_face(PBVH *pbvh,
-                                      BMFace *f,
-                                      eValidateFaceFlags flags = CHECK_FACE_NONE)
+ATTR_NO_OPT static bool validate_face(PBVH *pbvh, BMFace *f, eValidateFaceFlags flags)
 {
   if (!validate_elem<BMFace>(pbvh, f)) {
     return false;
@@ -581,7 +583,7 @@ ATTR_NO_OPT static bool validate_face(PBVH *pbvh,
     return false;
   }
 
-  if (!BLI_table_gset_has(node->bm_faces, static_cast<void *>(f))) {
+  if (!node->bm_faces->contains(f)) {
     printf("face is not in node->bm_faces.\n");
     return false;
   }
@@ -589,9 +591,7 @@ ATTR_NO_OPT static bool validate_face(PBVH *pbvh,
   return ok;
 }
 
-ATTR_NO_OPT static bool validate_vert(PBVH *pbvh,
-                                      BMVert *v,
-                                      eValidateVertFlags flags = CHECK_VERT_NONE)
+ATTR_NO_OPT static bool validate_vert(PBVH *pbvh, BMVert *v, eValidateVertFlags flags)
 {
   using namespace blender::bke::dyntopo::debug;
 
@@ -642,11 +642,11 @@ ATTR_NO_OPT static bool validate_vert(PBVH *pbvh,
     return false;
   }
 
-  if (!BLI_table_gset_haskey(node->bm_unique_verts, static_cast<void *>(v))) {
+  if (!node->bm_unique_verts->contains(v)) {
     printf("Vertex %p is not in node->bm_unique_verts\n");
     return false;
   }
-  if (BLI_table_gset_haskey(node->bm_other_verts, static_cast<void *>(v))) {
+  if (node->bm_other_verts->contains(v)) {
     printf("Vertex %p is inside of node->bm_other_verts\n");
     return false;
   }

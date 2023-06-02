@@ -949,14 +949,13 @@ class VIEW3D_PT_sculpt_dyntopo(Panel, View3DPaintPanel):
             "detail_range"
         )
 
-        col.prop(sculpt, "use_flat_vcol_shading")
-
         if 1:
             sub.separator()
             props = sub.operator("sculpt.test")
             sub.prop(WindowManager.operator_properties_last("sculpt.test"), "repeat")
             sub.prop(WindowManager.operator_properties_last("sculpt.test"), "sort_mode")
             sub.separator()
+        sub.prop(context.object.data, "sculpt_dyntopo_relax")
 
         if 0:
             scene = context.scene

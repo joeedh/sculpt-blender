@@ -4645,12 +4645,13 @@ void CustomData_bmesh_interp_n(CustomData *data,
   typeInfo->interp(src_blocks_ofs, weights, sub_weights, count, dst_block_ofs);
 }
 
-void CustomData_bmesh_interp(CustomData *data,
-                             const void **src_blocks,
-                             const float *weights,
-                             const float *sub_weights,
-                             int count,
-                             void *dst_block)
+void CustomData_bmesh_interp_ex(CustomData *data,
+                                const void **src_blocks,
+                                const float *weights,
+                                const float *sub_weights,
+                                int count,
+                                void *dst_block,
+                                eCustomDataMask typemask)
 {
   if (count <= 0) {
     return;
@@ -4686,6 +4687,10 @@ void CustomData_bmesh_interp(CustomData *data,
 
     const LayerTypeInfo *typeInfo = layerType_getInfo(eCustomDataType(layer->type));
 
+    if (!(CD_TYPE_AS_MASK(layer->type) & typemask)) {
+      continue;
+    }
+
     if (layer->flag & CD_FLAG_ELEM_NOINTERP) {
       if (layer->flag & CD_FLAG_ELEM_NOCOPY) {
         continue;
@@ -4720,6 +4725,17 @@ void CustomData_bmesh_interp(CustomData *data,
   if (!ELEM(default_weights, nullptr, default_weights_buf)) {
     MEM_freeN(default_weights);
   }
+}
+void CustomData_bmesh_interp(CustomData *data,
+                             const void **src_blocks,
+                             const float *weights,
+                             const float *sub_weights,
+                             int count,
+                             void *dst_block)
+
+{
+  eCustomDataMask typemask = eCustomDataMask((1ULL << CD_NUMTYPES) - 1ULL);
+  CustomData_bmesh_interp_ex(data, src_blocks, weights, sub_weights, count, dst_block, typemask);
 }
 
 void CustomData_file_write_info(const eCustomDataType type,

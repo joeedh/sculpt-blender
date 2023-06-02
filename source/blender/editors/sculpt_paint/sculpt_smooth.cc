@@ -497,7 +497,8 @@ void SCULPT_bmesh_four_neighbor_average(SculptSession *ss,
       madd_v3_v3fl(avg_co, co2, fac);
       tot_co += fac;
       continue;
-    } else if (boundary != SCULPT_BOUNDARY_NONE) {
+    }
+    else if (boundary != SCULPT_BOUNDARY_NONE) {
       if (boundary & smooth_mask) {
         float fac = weighted ? areas[area_i] : 1.0f;
         float vec[3], co3[3];
@@ -505,7 +506,7 @@ void SCULPT_bmesh_four_neighbor_average(SculptSession *ss,
         sub_v3_v3v3(vec, co2, co1);
         copy_v3_v3(co3, co1);
         madd_v3_v3fl(co3, no1, dot_v3v3(vec, no1));
-        
+
         madd_v3_v3fl(avg_co, co3, fac);
         tot_co += fac;
       }
@@ -925,7 +926,8 @@ void SCULPT_smooth(
     data.strength = strength;
 
     TaskParallelSettings settings;
-    BKE_pbvh_parallel_range_settings(&settings, true, nodes.size());
+    //XXX
+    BKE_pbvh_parallel_range_settings(&settings, false, nodes.size());
     BLI_task_parallel_range(0, nodes.size(), &data, do_smooth_brush_task_cb_ex, &settings);
   }
 }
