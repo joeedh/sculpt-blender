@@ -1629,6 +1629,7 @@ void pbvh_bmesh_normals_update(PBVH *pbvh, Span<PBVHNode *> nodes)
     datas[i].cd_vert_node_offset = pbvh->cd_vert_node_offset;
     datas[i].cd_face_node_offset = pbvh->cd_face_node_offset;
 
+    pbvh_bmesh_check_other_verts(nodes[i]);
     BKE_pbvh_bmesh_check_tris(pbvh, nodes[i]);
   }
 
@@ -4003,8 +4004,8 @@ void on_vert_move(BMVert *vold, BMVert *vnew, void *userdata, int /*hive*/)
     PBVHNode *node = pbvh->nodes + vert_ni;
     node->flag |= PBVH_UpdateTris;
 
-    BLI_table_gset_remove(node->bm_unique_verts, static_cast<void *>(vold), nullptr);
-    BLI_table_gset_insert(node->bm_unique_verts, static_cast<void *>(vnew));
+    node->bm_unique_verts->remove(vold);
+    node->bm_unique_verts->add(vnew);
   }
 
   BMEdge *e = vnew->e;
@@ -4019,9 +4020,10 @@ void on_vert_move(BMVert *vold, BMVert *vnew, void *userdata, int /*hive*/)
       if (ni != DYNTOPO_NODE_NONE && ni != vert_ni) {
         PBVHNode *node = pbvh->nodes + ni;
 
-        node->flag |= PBVH_UpdateTris;
-        BLI_table_gset_remove(node->bm_other_verts, static_cast<void *>(vold), nullptr);
-        BLI_table_gset_insert(node->bm_other_verts, static_cast<void *>(vnew));
+        node->flag |= PBVH_UpdateTris|PBVH_UpdateOtherVerts;
+
+        node->bm_other_verts->remove(vold);
+        node->bm_other_verts->add(vnew);
       }
     } while ((l = l->radial_next) != e->l);
   } while ((e = BM_DISK_EDGE_NEXT(e, vnew)) != vnew->e);
@@ -4036,8 +4038,8 @@ void on_face_move(BMFace *fold, BMFace *fnew, void *userdata, int /*hive*/)
     PBVHNode *node = pbvh->nodes + face_ni;
     node->flag |= PBVH_UpdateTris;
 
-    BLI_table_gset_remove(node->bm_faces, static_cast<void *>(fold), nullptr);
-    BLI_table_gset_insert(node->bm_faces, static_cast<void *>(fnew));
+    node->bm_faces->remove(fold);
+    node->bm_faces->add(fnew);
   }
 }
 
@@ -4218,17 +4220,13 @@ bool defragment_node(PBVH *pbvh, PBVHNode *node)
   bool modified = false;
 
   /* Note: the hive callbacks will keep the PBVH nodes valid. */
-  BMFace *f;
-  TGSET_ITER (f, node->bm_faces) {
+  for (BMFace *f : *node->bm_faces) {
     modified |= defragment_node_face(pbvh, node, f, nullptr);
   }
-  TGSET_ITER_END;
 
-  BMVert *v;
-  TGSET_ITER (v, node->bm_unique_verts) {
+  for (BMVert *v : *node->bm_unique_verts) {
     modified |= defragment_node_vert(pbvh, node, v, nullptr);
   }
-  TGSET_ITER_END;
 
   if (modified) {
     node->flag |= PBVH_UpdateTris;
@@ -4307,8 +4305,7 @@ void fragment_node(PBVH *pbvh, PBVHNode *node)
   RandomNumberGenerator rand(uint32_t(PIL_check_seconds_timer() * 10000.0));
   auto rand_hive = [&]() { return int(rand.get_float() * pbvh->bm_tot_hives * 0.99999f) + 1; };
 
-  BMFace *f;
-  TGSET_ITER (f, node->bm_faces) {
+  for (BMFace *f : *node->bm_faces) {
     BMFace *old = f;
 
     f = fhive->move(f, rand_hive());
@@ -4343,7 +4340,6 @@ void fragment_node(PBVH *pbvh, PBVHNode *node)
       }
     } while ((l = l->next) != f->l_first);
   }
-  TGSET_ITER_END;
 
   compact_hives(pbvh);
 }
@@ -4373,9 +4369,12 @@ void defragment_pbvh_partial(PBVH *pbvh, double time_limit_ms)
   for (int i = 0; i < pbvh->totnode; i++) {
     PBVHNode *node = &pbvh->nodes[i];
 
-    if ((node->flag & PBVH_Leaf) && (node->flag & PBVH_Defragment)) {
-      totvert += BLI_table_gset_len(node->bm_unique_verts);
-      totface += BLI_table_gset_len(node->bm_faces);
+    bool ok = (node->flag & PBVH_Leaf) && (node->flag & PBVH_Defragment);
+    ok = ok && node->bm_faces->size() > 0 && node->bm_unique_verts->size() > 0;
+
+    if (ok) {
+      totvert += node->bm_unique_verts->size();
+      totface += node->bm_faces->size();
       nodes.append(node);
     }
   }
@@ -4401,25 +4400,18 @@ void defragment_pbvh_partial(PBVH *pbvh, double time_limit_ms)
       node = nodes[rand.get_uint32() % nodes.size()];
 
       if (is_face) {
-        int rand_i = rand.get_uint32() % node->bm_faces->cur;
-        f = static_cast<BMFace *>(node->bm_faces->elems[rand_i]);
-        if (f && f_done.add(f)) {
+        f = node->bm_faces->get_random_elem(rand);
+        if (f_done.add(f)) {
           ok = true;
           break;
-        }
-        else {
-          f = nullptr;
         }
       }
       else {
-        int rand_i = rand.get_uint32() % node->bm_unique_verts->cur;
-        v = static_cast<BMVert *>(node->bm_unique_verts->elems[rand_i]);
-        if (v && v_done.add(v)) {
+        v = node->bm_unique_verts->get_random_elem(rand);
+
+        if (v_done.add(v)) {
           ok = true;
           break;
-        }
-        else {
-          v = nullptr;
         }
       }
     }

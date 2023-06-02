@@ -11,6 +11,7 @@
 
 #include "BLI_compiler_attrs.h"
 #include "BLI_map.hh"
+#include "BLI_rand.hh"
 #include "BLI_set.hh"
 #include "BLI_vector.hh"
 
@@ -26,6 +27,22 @@ template<typename T> class DyntopoSet {
   }
   DyntopoSet() {}
   DyntopoSet(const DyntopoSet &) = delete;
+
+  T *get_random_elem(RandomNumberGenerator &rand)
+  {
+    if (elem_to_index_.size() == 0) {
+      return nullptr;
+    }
+
+    int i;
+    int size = index_to_elem_.size();
+
+    do {
+      i = rand.get_uint32() % size;
+    } while (index_to_elem_[i] == nullptr);
+
+    return index_to_elem_[i];
+  }
 
   struct iterator {
     iterator() : set_(nullptr), i_(-1) {}
