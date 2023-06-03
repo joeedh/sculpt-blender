@@ -3968,7 +3968,7 @@ static void sculpt_topology_update(Sculpt *sd,
     // mode |= PBVH_Collapse | PBVH_Subdivide;
   }
 
-  int edge_multiply = 1 + int(ss->cached_dyntopo.quality * 50.0f);
+  int edge_multiply = 1 + int(powf(ss->cached_dyntopo.quality, 3.0f) * 50.0f);
 
   SculptSearchSphereData sdata{};
   sdata.ss = ss, sdata.sd = sd, sdata.ob = ob;
@@ -6409,8 +6409,7 @@ static void sculpt_stroke_update_step(bContext *C,
   else { /* Relative mode. */
     blender::bke::dyntopo::detail_size_set(ss->pbvh,
                                            (ss->cache->radius / ss->cache->dyntopo_pixel_radius) *
-                                               (ss->cached_dyntopo.detail_size * U.pixelsize) /
-                                               ss->cached_dyntopo.detail_range,
+                                               (ss->cached_dyntopo.detail_size * U.pixelsize),
                                            ss->cached_dyntopo.detail_range);
   }
 

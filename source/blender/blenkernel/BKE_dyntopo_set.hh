@@ -88,7 +88,6 @@ template<typename T> class DyntopoSet {
   void remove(T *key)
   {
     if (!elem_to_index_.contains(key)) {
-      //printf("DyntopoSet::remove: key not in set\n");
       return;
     }
 
