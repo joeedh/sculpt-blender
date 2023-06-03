@@ -841,12 +841,13 @@ struct PBVHBatches {
 
           foreach_bmesh([&](BMLoop *l) {
             int id1 = static_cast<VertHive *>(args->bm->vhive)->get_chunk(l->v);
-            int id2 = static_cast<EdgeHive *>(args->bm->ehive)->get_chunk(l->e);
-            int id3 = static_cast<LoopHive *>(args->bm->lhive)->get_chunk(l);
+            //int id2 = static_cast<EdgeHive *>(args->bm->ehive)->get_chunk(l->e);
+            //int id3 = static_cast<LoopHive *>(args->bm->lhive)->get_chunk(l);
 
             color[0] = unit_float_to_ushort_clamp(id_color(id1));
-            color[1] = unit_float_to_ushort_clamp(id_color(id2));
-            color[2] = unit_float_to_ushort_clamp(id_color(id3));
+            color[1] = color[2] = color[0];
+            //color[1] = unit_float_to_ushort_clamp(id_color(id2));
+            //color[2] = unit_float_to_ushort_clamp(id_color(id3));
             color[3] = 65535;
 
             *static_cast<ushort4 *>(GPU_vertbuf_raw_step(&access)) = color;
