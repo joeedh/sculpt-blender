@@ -335,6 +335,12 @@ static void bm_vert_attrs_copy(
     copy_v3_v3(v_dst->no, v_src->no);
   }
 
+  if (bm_src == bm_dst && !v_dst->head.data) {
+    CustomData_bmesh_alloc_block(
+        &bm_dst->vdata, &v_dst->head.data, bm_vert_hive_get(bm_dst, v_dst));
+    CustomData_bmesh_set_default(&bm_dst->vdata, &v_dst->head.data);
+  }
+
   CustomData_bmesh_free_block_data_exclude_by_type(
       &bm_dst->vdata, v_dst->head.data, mask_exclude | CD_TOOLFLAGS);
   CustomData_bmesh_copy_data_exclude_by_type(&bm_src->vdata,
@@ -352,8 +358,16 @@ static void bm_edge_attrs_copy(
     return;
   }
 
-  CustomData_bmesh_free_block_data_exclude_by_type(
-      &bm_dst->edata, e_dst->head.data, mask_exclude | CD_TOOLFLAGS);
+  if (bm_src == bm_dst && !e_dst->head.data) {
+    CustomData_bmesh_alloc_block(
+        &bm_dst->edata, &e_dst->head.data, bm_edge_hive_get(bm_dst, e_dst));
+    CustomData_bmesh_set_default(&bm_dst->edata, &e_dst->head.data);
+  }
+  else {
+    CustomData_bmesh_free_block_data_exclude_by_type(
+        &bm_dst->edata, e_dst->head.data, mask_exclude | CD_TOOLFLAGS);
+  }
+
   CustomData_bmesh_copy_data_exclude_by_type(&bm_src->edata,
                                              &bm_dst->edata,
                                              e_src->head.data,
@@ -369,8 +383,16 @@ static void bm_loop_attrs_copy(
     return;
   }
 
-  CustomData_bmesh_free_block_data_exclude_by_type(
-      &bm_dst->ldata, l_dst->head.data, mask_exclude | CD_TOOLFLAGS);
+  if (bm_src == bm_dst && !l_dst->head.data) {
+    CustomData_bmesh_alloc_block(
+        &bm_dst->ldata, &l_dst->head.data, bm_loop_hive_get(bm_dst, l_dst));
+    CustomData_bmesh_set_default(&bm_dst->ldata, &l_dst->head.data);
+  }
+  else {
+    CustomData_bmesh_free_block_data_exclude_by_type(
+        &bm_dst->ldata, l_dst->head.data, mask_exclude | CD_TOOLFLAGS);
+  }
+
   CustomData_bmesh_copy_data_exclude_by_type(&bm_src->ldata,
                                              &bm_dst->ldata,
                                              l_src->head.data,
@@ -389,8 +411,15 @@ static void bm_face_attrs_copy(
     copy_v3_v3(f_dst->no, f_src->no);
   }
 
-  CustomData_bmesh_free_block_data_exclude_by_type(
-      &bm_dst->pdata, f_dst->head.data, mask_exclude | CD_TOOLFLAGS);
+  if (bm_src == bm_dst && !f_dst->head.data) {
+    CustomData_bmesh_alloc_block(
+        &bm_dst->pdata, &f_dst->head.data, bm_face_hive_get(bm_dst, f_dst));
+    CustomData_bmesh_set_default(&bm_dst->pdata, &f_dst->head.data);
+  }
+  else {
+    CustomData_bmesh_free_block_data_exclude_by_type(
+        &bm_dst->pdata, f_dst->head.data, mask_exclude | CD_TOOLFLAGS);
+  }
   CustomData_bmesh_copy_data_exclude_by_type(&bm_src->pdata,
                                              &bm_dst->pdata,
                                              f_src->head.data,

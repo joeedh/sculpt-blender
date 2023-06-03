@@ -251,7 +251,7 @@ static void mesh_attributes_copy_to_bmesh_block(CustomData &data,
                                                 const int mesh_index,
                                                 BMHeader &header)
 {
-  CustomData_bmesh_alloc_block(&data, &header.data);
+  CustomData_bmesh_alloc_block(&data, &header.data, 0);
   for (const MeshToBMeshLayerInfo &info : copy_info) {
     if (info.mesh_data) {
       CustomData_data_copy_value(info.type,

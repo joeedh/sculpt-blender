@@ -92,7 +92,6 @@ static const char elem_names[9][16] = {
     "face",       // 8
 };
 
-#ifdef DEBUG_BM_IDMAP
 static const char *get_type_name(char htype)
 {
   if (htype <= 0 || htype >= 9) {
@@ -101,7 +100,6 @@ static const char *get_type_name(char htype)
 
   return elem_names[int(htype)];
 }
-#endif
 
 template<typename T> static constexpr char get_elem_type()
 {
@@ -520,7 +518,15 @@ void BM_idmap_release(BMIdMap *idmap, BMElem *elem, bool clear_id)
     return;
   };
   if (id < 0 || id >= idmap->map_size || (idmap->map[id] && idmap->map[id] != elem)) {
-    idmap_log_message("%s: id corruptions\n", __func__);
+    idmap_log_message("%s: id corruptions: id=%d elem=%p (a %s)\n",
+                      __func__,
+                      id,
+                      elem,
+                      get_type_name(elem->head.htype));
+
+    if (id < 0 || id >= idmap->map_size) {
+      return;
+    }
   }
   else {
     idmap->map[id] = nullptr;

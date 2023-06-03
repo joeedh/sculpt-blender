@@ -73,12 +73,13 @@ Topology rake:
 #include "../../bmesh/intern/bmesh_hive_alloc_intern.hh"
 
 #include <cmath>
+#include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 
 using blender::Span;
 
-#include <cstdarg>
+#include <chrono>
 
 using blender::float2;
 using blender::float3;
@@ -128,16 +129,8 @@ void pbvh_bmesh_check_nodes_simple(PBVH *pbvh)
   }
 }
 
-void pbvh_bmesh_check_nodes(PBVH *pbvh)
+ATTR_NO_OPT void pbvh_bmesh_check_nodes(PBVH *pbvh)
 {
-  for (int i = 0; i < pbvh->totnode; i++) {
-    PBVHNode *node = pbvh->nodes + i;
-
-    if (node->flag & PBVH_Leaf) {
-      pbvh_bmesh_check_other_verts(node);
-    }
-  }
-
   BMVert *v;
   BMIter iter;
 
@@ -145,7 +138,7 @@ void pbvh_bmesh_check_nodes(PBVH *pbvh)
     int ni = BM_ELEM_CD_GET_INT(v, pbvh->cd_vert_node_offset);
 
     if (ni >= 0 && (!v->e || !v->e->l)) {
-      _debugprint("wire vert had node reference: %p (type %d)\n", v, v->head.htype);
+      //_debugprint("wire vert had node reference: %p (type %d)\n", v, v->head.htype);
       // BM_ELEM_CD_SET_INT(v, pbvh->cd_vert_node_offset, DYNTOPO_NODE_NONE);
     }
 
@@ -173,10 +166,11 @@ void pbvh_bmesh_check_nodes(PBVH *pbvh)
     }
 
     BKE_pbvh_bmesh_check_valence(pbvh, (PBVHVertRef){.i = (intptr_t)v});
+    int valence = BM_ELEM_CD_GET_INT(v, pbvh->cd_valence);
 
-    if (BM_vert_edge_count(v) != BM_ELEM_CD_GET_INT(v, pbvh->cd_valence)) {
+    if (BM_vert_edge_count(v) != valence) {
       _debugprint("cached vertex valence mismatch; old: %d, should be: %d\n",
-                  mv->valence,
+                  valence,
                   BM_vert_edge_count(v));
     }
   }
@@ -200,6 +194,11 @@ void pbvh_bmesh_check_nodes(PBVH *pbvh)
     }
 
     for (BMVert *v : *node->bm_unique_verts) {
+      if (BM_elem_is_free((BMElem *)v, BM_VERT)) {
+        printf("bm_unique_verts has freed vertex.\n");
+        continue;
+      }
+
       int ni = BM_ELEM_CD_GET_INT(v, pbvh->cd_vert_node_offset);
 
       if (ni != i) {
@@ -233,7 +232,38 @@ void pbvh_bmesh_check_nodes(PBVH *pbvh)
       }
     }
 
-    for (BMVert *v : node->bm_other_verts) {
+    for (BMVert *v : *node->bm_other_verts) {
+      BMIter iter;
+      BMFace *f = nullptr;
+
+      if (BM_elem_is_free((BMElem *)v, BM_VERT)) {
+        printf("bm_other_verts has freed vertex.\n");
+        continue;
+      }
+
+      int ni = int(node - pbvh->nodes);
+
+      bool ok = false;
+      BM_ITER_ELEM (f, &iter, v, BM_FACES_OF_VERT) {
+        if (BM_ELEM_CD_GET_INT(f, pbvh->cd_face_node_offset) == ni) {
+          if (!node->bm_faces->contains(f)) {
+            _debugprint("Node does not contain f, but f has a node index to it\n");
+            continue;
+          }
+
+          ok = true;
+          break;
+        }
+      }
+
+      if (!ok) {
+        int ni = BM_ELEM_CD_GET_INT(v, pbvh->cd_vert_node_offset);
+        _debugprint(
+            "v is in node.bm_other_verts but none of its faces are in node.bm_faces. owning node "
+            "(not this one): %d\n",
+            ni);
+      }
+
       if (!v || v->head.htype != BM_VERT) {
         _debugprint("corruption in pbvh! bm_other_verts\n");
       }
@@ -637,41 +667,28 @@ static void pbvh_bmesh_vert_ownership_transfer(PBVH *pbvh, PBVHNode *new_owner, 
 void pbvh_bmesh_vert_remove(PBVH *pbvh, BMVert *v)
 {
   /* never match for first time */
-  int f_node_index_prev = DYNTOPO_NODE_NONE;
   const int updateflag = PBVH_UpdateDrawBuffers | PBVH_UpdateBB | PBVH_UpdateTris |
-                         PBVH_UpdateNormals | PBVH_UpdateOtherVerts;
+                         PBVH_UpdateNormals;
 
-  PBVHNode *v_node = pbvh_bmesh_node_from_vert(pbvh, v);
-
-  if (v_node && v_node->bm_unique_verts) {
-    v_node->bm_unique_verts->remove(v);
-    v_node->flag |= (PBVHNodeFlags)updateflag;
+  int ni = BM_ELEM_CD_GET_INT(v, pbvh->cd_vert_node_offset);
+  if (ni != DYNTOPO_NODE_NONE) {
+    PBVHNode *node = pbvh->nodes + ni;
+    node->bm_unique_verts->remove(v);
+    node->flag |= (PBVHNodeFlags)updateflag;
   }
 
   BM_ELEM_CD_SET_INT(v, pbvh->cd_vert_node_offset, DYNTOPO_NODE_NONE);
 
-  /* Have to check each neighboring face's node */
   BMFace *f;
-  BM_FACES_OF_VERT_ITER_BEGIN (f, v) {
-    const int f_node_index = pbvh_bmesh_node_index_from_face(pbvh, f);
-
-    if (f_node_index == DYNTOPO_NODE_NONE) {
-      continue;
-    }
-
-    /* Faces often share the same node,
-     * quick check to avoid redundant set removal calls.
-     */
-    if (f_node_index_prev != f_node_index) {
-      f_node_index_prev = f_node_index;
-
-      PBVHNode *f_node = &pbvh->nodes[f_node_index];
-      f_node->flag |= (PBVHNodeFlags)updateflag;  // flag update of bm_other_verts
-
-      BLI_assert(!f_node->bm_unique_verts->contains(v));
+  BMIter iter;
+  BM_ITER_ELEM (f, &iter, v, BM_FACES_OF_VERT) {
+    int ni2 = BM_ELEM_CD_GET_INT(f, pbvh->cd_face_node_offset);
+    if (ni2 != DYNTOPO_NODE_NONE) {
+      PBVHNode *node = pbvh->nodes + ni2;
+      node->flag |= PBVHNodeFlags(updateflag);
+      node->bm_other_verts->remove(v);
     }
   }
-  BM_FACES_OF_VERT_ITER_END;
 }
 
 void pbvh_bmesh_face_remove(
@@ -690,27 +707,49 @@ void pbvh_bmesh_face_remove(
   /* Check if any of this face's vertices need to be removed
    * from the node */
   if (check_verts) {
-    BMLoop *l_first = BM_FACE_FIRST_LOOP(f);
-    BMLoop *l_iter = l_first;
+    int ni = int(f_node - pbvh->nodes);
+
+    BMLoop *l = f->l_first;
     do {
-      BMVert *v = l_iter->v;
-      if (pbvh_bmesh_node_vert_use_count_is_equal(pbvh, f_node, v, 1)) {
-        if (BM_ELEM_CD_GET_INT(v, pbvh->cd_vert_node_offset) == f_node - pbvh->nodes) {
-          /* Find a different node that uses 'v' */
-          PBVHNode *new_node = pbvh_bmesh_vert_other_node_find(pbvh, v);
+      BMIter iter;
+      BMFace *f2;
 
-          if (new_node) {
-            pbvh_bmesh_vert_ownership_transfer(pbvh, new_node, v);
-          }
-          else if (ensure_ownership_transfer && !BM_vert_face_count_is_equal(v, 1)) {
-            pbvh_bmesh_vert_remove(pbvh, v);
+      bool owns_vert = BM_ELEM_CD_GET_INT(l->v, pbvh->cd_vert_node_offset) == ni;
+      bool ok = false;
 
-            f_node->flag |= PBVH_RebuildNodeVerts | PBVH_UpdateOtherVerts;
-            // printf("failed to find new_node\n");
-          }
+      int new_ni = DYNTOPO_NODE_NONE;
+
+      BM_ITER_ELEM (f2, &iter, l->v, BM_FACES_OF_VERT) {
+        int ni2 = BM_ELEM_CD_GET_INT(f2, pbvh->cd_face_node_offset);
+        if (f2 != f && ni2 == ni) {
+          ok = true;
+        }
+
+        if (ni2 != DYNTOPO_NODE_NONE && ni2 != ni) {
+          new_ni = ni2;
         }
       }
-    } while ((l_iter = l_iter->next) != l_first);
+
+      if (!ok) {
+        if (owns_vert) {
+          f_node->bm_unique_verts->remove(l->v);
+
+          if (ensure_ownership_transfer && new_ni != DYNTOPO_NODE_NONE) {
+            PBVHNode *new_node = &pbvh->nodes[new_ni];
+
+            new_node->bm_other_verts->remove(l->v);
+            new_node->bm_unique_verts->add(l->v);
+            BM_ELEM_CD_SET_INT(l->v, pbvh->cd_vert_node_offset, new_ni);
+          }
+          else {
+            BM_ELEM_CD_SET_INT(l->v, pbvh->cd_vert_node_offset, DYNTOPO_NODE_NONE);
+          }
+        }
+        else {
+          f_node->bm_other_verts->remove(l->v);
+        }
+      }
+    } while ((l = l->next) != f->l_first);
   }
 
   /* Remove face from node and top level */
@@ -724,7 +763,7 @@ void pbvh_bmesh_face_remove(
 
   /* mark node for update */
   f_node->flag |= PBVH_UpdateDrawBuffers | PBVH_UpdateNormals | PBVH_UpdateTris |
-                  PBVH_UpdateOtherVerts | PBVH_UpdateTriAreas | PBVH_UpdateCurvatureDir;
+                  PBVH_UpdateTriAreas | PBVH_UpdateCurvatureDir;
 
   bm_logstack_pop();
 }
@@ -1066,14 +1105,14 @@ void bke_pbvh_insert_face_finalize(PBVH *pbvh, BMFace *f, const int ni)
   node->bm_faces->add(f);
 
   PBVHNodeFlags updateflag = PBVH_UpdateTris | PBVH_UpdateBB | PBVH_UpdateDrawBuffers |
-                             PBVH_UpdateCurvatureDir | PBVH_UpdateOtherVerts;
-  updateflag |= PBVH_UpdateColor | PBVH_UpdateMask | PBVH_UpdateNormals | PBVH_UpdateOriginalBB;
+                             PBVH_UpdateCurvatureDir | PBVH_UpdateColor | PBVH_UpdateTriAreas;
+  updateflag |= PBVH_UpdateMask | PBVH_UpdateNormals | PBVH_UpdateOriginalBB;
   updateflag |= PBVH_UpdateVisibility | PBVH_UpdateRedraw | PBVH_RebuildDrawBuffers |
-                PBVH_UpdateTriAreas | PBVH_Defragment;
+                PBVH_Defragment;
 
   node->flag |= updateflag;
 
-  // ensure verts are in pbvh
+  /* Ensure verts are in pbvh. */
   BMLoop *l = f->l_first;
   do {
     const int ni2 = BM_ELEM_CD_GET_INT(l->v, pbvh->cd_vert_node_offset);
@@ -1082,8 +1121,9 @@ void bke_pbvh_insert_face_finalize(PBVH *pbvh, BMFace *f, const int ni)
     BB_expand(&node->orig_vb, BM_ELEM_CD_PTR<float *>(l->v, pbvh->cd_origco));
 
     if (ni2 == DYNTOPO_NODE_NONE) {
-      BM_ELEM_CD_SET_INT(l->v, pbvh->cd_vert_node_offset, ni);
+      node->bm_other_verts->remove(l->v);
       node->bm_unique_verts->add(l->v);
+      BM_ELEM_CD_SET_INT(l->v, pbvh->cd_vert_node_offset, ni);
     }
     else {
       PBVHNode *node2 = pbvh->nodes + ni2;
@@ -4020,7 +4060,7 @@ void on_vert_move(BMVert *vold, BMVert *vnew, void *userdata, int /*hive*/)
       if (ni != DYNTOPO_NODE_NONE && ni != vert_ni) {
         PBVHNode *node = pbvh->nodes + ni;
 
-        node->flag |= PBVH_UpdateTris|PBVH_UpdateOtherVerts;
+        node->flag |= PBVH_UpdateTris | PBVH_UpdateOtherVerts;
 
         node->bm_other_verts->remove(vold);
         node->bm_other_verts->add(vnew);
@@ -4360,6 +4400,14 @@ void defragment_pbvh_partial(PBVH *pbvh, double time_limit_ms)
 {
   ensure_hive_setup(pbvh);
 
+  using TimePoint =
+      std::chrono::time_point<std::chrono::high_resolution_clock, std::chrono::milliseconds>;
+
+  auto time_point = [&]() {
+    return std::chrono::time_point_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now());
+  };
+
   bool modified = false;
 
   int totface = 0;
@@ -4379,8 +4427,8 @@ void defragment_pbvh_partial(PBVH *pbvh, double time_limit_ms)
     }
   }
 
-  RandomNumberGenerator rand(uint32_t(PIL_check_seconds_timer() * 10000.0));
-  double time = PIL_check_seconds_timer() * 1000.0;
+  RandomNumberGenerator rand(uint32_t(PIL_check_seconds_timer() * 100000.0));
+  TimePoint time = time_point();
 
   double f_prob = totface > 0.0f ? double(totvert) / double(totface) : 0.0f;
   int test_nr = totvert + totface;
@@ -4388,8 +4436,10 @@ void defragment_pbvh_partial(PBVH *pbvh, double time_limit_ms)
   Set<BMVert *> v_done;
 
   int totdone = 0;
+  std::chrono::milliseconds time_limit((int(time_limit_ms)));
+  float time1 = PIL_check_seconds_timer() * 1000.0;
 
-  while (PIL_check_seconds_timer() * 1000.0 - time < time_limit_ms) {
+  while (time_point() - time < time_limit) {
     PBVHNode *node = nullptr;
     bool is_face = rand.get_float() > f_prob;
     BMFace *f = nullptr;
@@ -4437,6 +4487,10 @@ void defragment_pbvh_partial(PBVH *pbvh, double time_limit_ms)
     totdone++;
   }
 
+  printf("%dms %.2f %.2f\n",
+         (time_point() - time).count(),
+         float(PIL_check_seconds_timer() * 1000.0 - time1),
+         time_limit_ms);
   printf("totdone: %d out of %d, f_prob: %.4f\n", totdone, totvert + totface, float(f_prob));
 
   for (PBVHNode *node : nodes) {

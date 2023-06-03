@@ -227,7 +227,7 @@ class HiveAllocator {
       BLI_assert_unreachable();
     }
 
-    bool has_elem(T *elem, int *r_chunk_i = nullptr)
+    bool has_elem(const T *elem, int *r_chunk_i = nullptr)
     {
       int i = 0;
       for (DynamicChunk &chunk : chunks) {
@@ -269,25 +269,23 @@ class HiveAllocator {
 
     void set_free_elem(T *elem)
     {
+      void *ptr = static_cast<void *>(elem);
+
 #ifdef WITH_ASAN
-      BLI_asan_unpoison(static_cast<void *>(elem), SizeOf::size(userdata));
+      BLI_asan_unpoison(ptr, SizeOf::size(userdata));
 #endif
 
       /* Make sure to corrupt BMHeader.htype by setting first 16 bytes
        * to 255. This is used as a way to detect freed elements.
        */
-      if (SizeOf::size(userdata) > 16) {
-        memset(static_cast<void *>(elem), 255, 16);
+      if (SizeOf::size(userdata) >= 16) {
+        memcpy(POINTER_OFFSET(ptr, 4), static_cast<const void *>("WORDDEADBADD"), 12);
       }
 
-      char *ptr = reinterpret_cast<char *>(elem);
-      ptr[0] = freeword[0];
-      ptr[1] = freeword[1];
-      ptr[2] = freeword[2];
-      ptr[3] = freeword[3];
+      memcpy(ptr, static_cast<const void *>(freeword), 4);
 
 #ifdef WITH_ASAN
-      BLI_asan_poison(static_cast<void *>(elem), SizeOf::size(userdata));
+      BLI_asan_poison(ptr, SizeOf::size(userdata));
 #endif
     }
 
@@ -301,13 +299,13 @@ class HiveAllocator {
       ptr[0] = ptr[1] = ptr[2] = ptr[3] = 0;
     }
 
-    bool is_free(T *elem)
+    bool is_free(const T *elem)
     {
 #ifdef WITH_ASAN
-      BLI_asan_unpoison(static_cast<void *>(elem), 4);
+      BLI_asan_unpoison(static_cast<void *>(const_cast<T *>(elem)), 4);
 #endif
 
-      char *ptr = reinterpret_cast<char *>(elem);
+      const char *ptr = reinterpret_cast<const char *>(elem);
       for (int i = 0; i < 4; i++) {
         if (ptr[i] != freeword[i]) {
           return false;
@@ -315,7 +313,7 @@ class HiveAllocator {
       }
 
 #ifdef WITH_ASAN
-      BLI_asan_poison(static_cast<void *>(elem), 4);
+      BLI_asan_poison(static_cast<void *>(const_cast<T *>(elem)), 4);
 #endif
       return true;
     }
@@ -380,19 +378,6 @@ class HiveAllocator {
   };
 
   std::vector<Hive> hives;
-
-  int get_hive(T *elem)
-  {
-    int i = 0;
-    for (Hive &hive : hives) {
-      if (hive.has_elem(elem)) {
-        return i;
-      }
-      i++;
-    }
-
-    return -1;
-  }
 
  public:
   class Iterator {
@@ -501,9 +486,32 @@ class HiveAllocator {
     return hives[hive];
   }
 
+  int find_hive(const T *elem)
+  {
+    if (hives.size() == 1) {
+      return 0;
+    }
+
+    int i = 0;
+    for (Hive &hive : hives) {
+      if (hive.has_elem(elem)) {
+        return i;
+      }
+      i++;
+    }
+
+    printf("Elem not in hive\n");
+
+    return -1;
+  }
   int hives_count()
   {
     return hives.size();
+  }
+
+  int max_hive()
+  {
+    return hives.size() == 0 ? 0 : hives.size() - 1;
   }
 
   void ensure_hives(int count)
@@ -513,15 +521,10 @@ class HiveAllocator {
     }
   }
 
-  T *alloc(int hive = -1)
+  T *alloc(int hive = 0)
   {
     if (hives.size() == 0) {
       add_hive();
-    }
-
-    if (hive == -1) {
-      // XXX rotate through the hives?
-      hive = 0;
     }
 
     return hives[hive].alloc();
@@ -555,7 +558,7 @@ class HiveAllocator {
 
   T *move(T *elem, int new_hive)
   {
-    int old_hive = get_hive(elem);
+    int old_hive = find_hive(elem);
 
     if (old_hive == new_hive) {
       return elem;

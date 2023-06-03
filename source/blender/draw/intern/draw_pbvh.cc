@@ -833,23 +833,21 @@ struct PBVHBatches {
 
         const int cd_color = CustomData_get_offset_named(cdata, CD_PROP_COLOR, vbo.name.c_str());
 
-        if (vbo.name == "sculpt_ids" && !do_loop) {
-          foreach_bmesh([&](BMLoop *l) {
-            // int id = *BM_ELEM_CD_PTR<int *>(l->v, cd_id);
-            // int id = static_cast<VertHive *>(args->bm->vhive)->get_chunk(l->v);
-            int id = static_cast<EdgeHive *>(args->bm->ehive)->get_chunk(l->e);
-            // int id = static_cast<LoopHive *>(args->bm->lhive)->get_chunk(l);
-
-            float4 col;
+        if (vbo.name == "sculpt_hives" && !do_loop) {
+          auto id_color = [&](int id) {
             float f = float(double(id) / 256.0);
-            f -= floorf(f);
+            return f - floorf(f);
+          };
 
-            col[0] = col[1] = col[2] = col[3] = f;
+          foreach_bmesh([&](BMLoop *l) {
+            int id1 = static_cast<VertHive *>(args->bm->vhive)->get_chunk(l->v);
+            int id2 = static_cast<EdgeHive *>(args->bm->ehive)->get_chunk(l->e);
+            int id3 = static_cast<LoopHive *>(args->bm->lhive)->get_chunk(l);
 
-            color[0] = unit_float_to_ushort_clamp(col[0]);
-            color[1] = unit_float_to_ushort_clamp(col[1]);
-            color[2] = unit_float_to_ushort_clamp(col[2]);
-            color[3] = unit_float_to_ushort_clamp(col[3]);
+            color[0] = unit_float_to_ushort_clamp(id_color(id1));
+            color[1] = unit_float_to_ushort_clamp(id_color(id2));
+            color[2] = unit_float_to_ushort_clamp(id_color(id3));
+            color[3] = 65535;
 
             *static_cast<ushort4 *>(GPU_vertbuf_raw_step(&access)) = color;
           });

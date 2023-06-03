@@ -1265,7 +1265,7 @@ void BMLogSetDiff::swap_verts(BMesh *bm,
                               blender::Map<BMID<BMVert>, BMLogVert *> verts,
                               BMLogCallbacks *callbacks)
 {
-  void *old_customdata = bm->vdata.hive ? customdata_hive_alloc(bm->vdata.hive) : nullptr;
+  void *old_customdata = bm->vdata.hive ? customdata_hive_alloc(bm->vdata.hive, 0) : nullptr;
 
   const int cd_id = entry->idmap->cd_id_off[BM_VERT];
 
@@ -1398,7 +1398,7 @@ void BMLogSetDiff::swap_edges(BMesh *bm,
                               blender::Map<BMID<BMEdge>, BMLogEdge *> edges,
                               BMLogCallbacks *callbacks)
 {
-  void *old_customdata = entry->edata.hive ? customdata_hive_alloc(bm->edata.hive) : nullptr;
+  void *old_customdata = entry->edata.hive ? customdata_hive_alloc(bm->edata.hive, 0) : nullptr;
 
   for (BMLogEdge *le : edges.values()) {
     BMEdge *e = entry->get_elem_from_id(bm, le->id);
@@ -1504,7 +1504,7 @@ void BMLogSetDiff::swap_faces(BMesh *bm,
                               blender::Map<BMID<BMFace>, BMLogFace *> faces,
                               BMLogCallbacks *callbacks)
 {
-  void *old_customdata = entry->pdata.hive ? customdata_hive_alloc(bm->pdata.hive) : nullptr;
+  void *old_customdata = entry->pdata.hive ? customdata_hive_alloc(bm->pdata.hive, 0) : nullptr;
 
   const int cd_id = entry->idmap->cd_id_off[BM_FACE];
 

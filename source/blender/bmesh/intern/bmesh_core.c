@@ -37,6 +37,14 @@
 
 #include <stdarg.h>
 
+static BMFace *bm_face_create(BMesh *bm,
+                              BMVert **verts,
+                              BMEdge **edges,
+                              const int len,
+                              const BMFace *f_example,
+                              const eBMCreateFlag create_flag,
+                              int hive);
+
 /* use so valgrinds memcheck alerts us when undefined index is used.
  * TESTING ONLY! */
 // #define USE_DEBUG_INDEX_MEMCHECK
@@ -93,7 +101,8 @@ BMVert *BM_vert_create(BMesh *bm,
                        const BMVert *v_example,
                        const eBMCreateFlag create_flag)
 {
-  BMVert *v = bm_alloc_vert(bm);
+  int hive = v_example ? bm_vert_hive_get(bm, v_example) : 0;
+  BMVert *v = bm_alloc_vert(bm, hive);
 
   BLI_assert((v_example == NULL) || (v_example->head.htype == BM_VERT));
   BLI_assert(!(create_flag & 1));
@@ -147,6 +156,7 @@ BMVert *BM_vert_create(BMesh *bm,
       }
     }
     else {
+      CustomData_bmesh_alloc_block(&bm->vdata, &v->head.data, hive);
       CustomData_bmesh_set_default(&bm->vdata, &v->head.data);
 
       zero_v3(v->no);
@@ -173,8 +183,12 @@ BMVert *BM_vert_create(BMesh *bm,
   return v;
 }
 
-BMEdge *BM_edge_create(
-    BMesh *bm, BMVert *v1, BMVert *v2, const BMEdge *e_example, const eBMCreateFlag create_flag)
+static BMEdge *bm_edge_create(BMesh *bm,
+                              BMVert *v1,
+                              BMVert *v2,
+                              const BMEdge *e_example,
+                              const eBMCreateFlag create_flag,
+                              int hive)
 {
   BMEdge *e;
 
@@ -187,7 +201,11 @@ BMEdge *BM_edge_create(
     return e;
   }
 
-  e = bm_alloc_edge(bm);
+  if (hive == -1) {
+    hive = e_example ? bm_edge_hive_get(bm, e_example) : 0;
+  }
+
+  e = bm_alloc_edge(bm, hive);
 
   /* --- assign all members --- */
   e->head.data = NULL;
@@ -224,6 +242,7 @@ BMEdge *BM_edge_create(
       BM_elem_attrs_copy(bm, bm, e_example, e);
     }
     else {
+      CustomData_bmesh_alloc_block(&bm->edata, &e->head.data, hive);
       CustomData_bmesh_set_default(&bm->edata, &e->head.data);
     }
   }
@@ -240,6 +259,12 @@ BMEdge *BM_edge_create(
   return e;
 }
 
+BMEdge *BM_edge_create(
+    BMesh *bm, BMVert *v1, BMVert *v2, const BMEdge *e_example, const eBMCreateFlag create_flag)
+{
+  return bm_edge_create(bm, v1, v2, e_example, create_flag, -1);
+}
+
 /**
  * \note In most cases a \a l_example should be NULL,
  * since this is a low level API and we shouldn't attempt to be clever and guess what's intended.
@@ -250,11 +275,12 @@ static BMLoop *bm_loop_create(BMesh *bm,
                               BMEdge *e,
                               BMFace *f,
                               const BMLoop *l_example,
-                              const eBMCreateFlag create_flag)
+                              const eBMCreateFlag create_flag,
+                              int hive)
 {
   BMLoop *l = NULL;
 
-  l = bm_alloc_loop(bm);
+  l = bm_alloc_loop(bm, hive);
 
   BLI_assert((l_example == NULL) || (l_example->head.htype == BM_LOOP));
   BLI_assert(!(create_flag & 1));
@@ -298,12 +324,20 @@ static BMLoop *bm_loop_create(BMesh *bm,
 
   if (!(create_flag & BM_CREATE_SKIP_CD)) {
     if (l_example) {
+      CustomData_bmesh_alloc_block(&bm->ldata, &l->head.data, hive);
+
+      /* We still have to call set default to initialize any CD_FLAG_NOCOPY layers.*/
+      CustomData_bmesh_set_default(&bm->ldata, &l->head.data);
+
+      /* Ensure any heap data created by set default is freed. */
+      CustomData_bmesh_free_block_data(&bm->ldata, l->head.data);
+
       /* no need to copy attrs, just handle customdata */
       // BM_elem_attrs_copy(bm, bm, l_example, l);
-      CustomData_bmesh_free_block_data(&bm->ldata, l->head.data);
       CustomData_bmesh_copy_data(&bm->ldata, &bm->ldata, l_example->head.data, &l->head.data);
     }
     else {
+      CustomData_bmesh_alloc_block(&bm->ldata, &l->head.data, hive);
       CustomData_bmesh_set_default(&bm->ldata, &l->head.data);
     }
   }
@@ -311,13 +345,17 @@ static BMLoop *bm_loop_create(BMesh *bm,
   return l;
 }
 
-static BMLoop *bm_face_boundary_add(
-    BMesh *bm, BMFace *f, BMVert *startv, BMEdge *starte, const eBMCreateFlag create_flag)
+static BMLoop *bm_face_boundary_add(BMesh *bm,
+                                    BMFace *f,
+                                    BMVert *startv,
+                                    BMEdge *starte,
+                                    const eBMCreateFlag create_flag,
+                                    int hive)
 {
 #ifdef USE_BMESH_HOLES
   BMLoopList *lst = BLI_mempool_calloc(bm->looplistpool);
 #endif
-  BMLoop *l = bm_loop_create(bm, startv, starte, f, NULL /* starte->l */, create_flag);
+  BMLoop *l = bm_loop_create(bm, startv, starte, f, NULL /* starte->l */, create_flag, hive);
 
   bmesh_radial_loop_append(starte, l);
 
@@ -379,7 +417,8 @@ BMFace *BM_face_copy(
     i++;
   } while ((l_iter = l_iter->next) != l_first);
 
-  f_copy = BM_face_create(bm_dst, verts, edges, f->len, NULL, BM_CREATE_SKIP_CD);
+  int hive = bm_dst == bm_src ? bm_face_hive_get(bm_dst, f) : -1;
+  f_copy = bm_face_create(bm_dst, verts, edges, f->len, NULL, BM_CREATE_SKIP_CD, hive);
 
   BM_elem_attrs_copy(bm_src, bm_dst, f, f_copy);
   bm_elem_check_toolflags(bm_dst, (BMElem *)f_copy);
@@ -401,11 +440,11 @@ BMFace *BM_face_copy(
  *
  * \note Caller needs to handle customdata.
  */
-BLI_INLINE BMFace *bm_face_create__internal(BMesh *bm)
+BLI_INLINE BMFace *bm_face_create__internal(BMesh *bm, int hive)
 {
   BMFace *f;
 
-  f = bm_alloc_face(bm);
+  f = bm_alloc_face(bm, hive);
 
   /* --- assign all members --- */
   f->head.data = NULL;
@@ -444,13 +483,30 @@ BLI_INLINE BMFace *bm_face_create__internal(BMesh *bm)
   return f;
 }
 
-BMFace *BM_face_create(BMesh *bm,
-                       BMVert **verts,
-                       BMEdge **edges,
-                       const int len,
-                       const BMFace *f_example,
-                       const eBMCreateFlag create_flag)
+static BMFace *bm_face_create(BMesh *bm,
+                              BMVert **verts,
+                              BMEdge **edges,
+                              const int len,
+                              const BMFace *f_example,
+                              const eBMCreateFlag create_flag,
+                              int hive)
 {
+  if (hive == -1) {
+    if (f_example) {
+      hive = bm_face_hive_get(bm, f_example);
+    }
+    else {
+      hive = 0;
+
+      for (int i = 0; i < len; i++) {
+        if (edges[i]->l) {
+          hive = bm_face_hive_get(bm, edges[i]->l->f);
+          break;
+        }
+      }
+    }
+  }
+
   BMFace *f = NULL;
   BMLoop *l;
   int i;
@@ -471,13 +527,13 @@ BMFace *BM_face_create(BMesh *bm,
     }
   }
 
-  f = bm_face_create__internal(bm);
+  f = bm_face_create__internal(bm, hive);
 
-  f->l_first = bm_face_boundary_add(bm, f, verts[0], edges[0], create_flag);
+  f->l_first = bm_face_boundary_add(bm, f, verts[0], edges[0], create_flag, hive);
   f->l_first->prev = NULL;
 
   for (i = 1; i < len; i++) {
-    l = bm_loop_create(bm, verts[i], edges[i], f, NULL /* edges[i]->l */, create_flag);
+    l = bm_loop_create(bm, verts[i], edges[i], f, NULL /* edges[i]->l */, create_flag, hive);
 
     bmesh_radial_loop_append(edges[i], l);
 
@@ -502,6 +558,7 @@ BMFace *BM_face_create(BMesh *bm,
       BM_elem_attrs_copy(bm, bm, f_example, f);
     }
     else {
+      CustomData_bmesh_alloc_block(&bm->pdata, &f->head.data, hive);
       CustomData_bmesh_set_default(&bm->pdata, &f->head.data);
       zero_v3(f->no);
     }
@@ -525,6 +582,16 @@ BMFace *BM_face_create(BMesh *bm,
   BM_CHECK_ELEMENT(f);
 
   return f;
+}
+
+BMFace *BM_face_create(BMesh *bm,
+                       BMVert **verts,
+                       BMEdge **edges,
+                       const int len,
+                       const BMFace *f_example,
+                       const eBMCreateFlag create_flag)
+{
+  return bm_face_create(bm, verts, edges, len, f_example, create_flag, -1);
 }
 
 BMFace *BM_face_create_verts(BMesh *bm,
@@ -1398,14 +1465,14 @@ error:
   return NULL;
 }
 
-static BMFace *bm_face_create__sfme(BMesh *bm, BMFace *f_example)
+static BMFace *bm_face_create__sfme(BMesh *bm, BMFace *f_example, int hive)
 {
   BMFace *f;
 #ifdef USE_BMESH_HOLES
   BMLoopList *lst;
 #endif
 
-  f = bm_face_create__internal(bm);
+  f = bm_face_create__internal(bm, hive);
 
 #ifdef USE_BMESH_HOLES
   lst = BLI_mempool_calloc(bm->looplistpool);
@@ -1453,12 +1520,17 @@ BMFace *bmesh_kernel_split_face_make_edge(BMesh *bm,
 
   BLI_assert(f == l_v1->f && f == l_v2->f);
 
-  /* allocate new edge between v1 and v2 */
-  e = BM_edge_create(bm, v1, v2, e_example, no_double ? BM_CREATE_NO_DOUBLE : BM_CREATE_NOP);
+  int ehive = bm_edge_hive_get(bm, l_v1->e);
 
-  f2 = bm_face_create__sfme(bm, f);
-  l_f1 = bm_loop_create(bm, v2, e, f, l_v2, 0);
-  l_f2 = bm_loop_create(bm, v1, e, f2, l_v1, 0);
+  /* allocate new edge between v1 and v2 */
+  e = bm_edge_create(
+      bm, v1, v2, e_example, no_double ? BM_CREATE_NO_DOUBLE : BM_CREATE_NOP, ehive);
+
+  int fhive = bm_face_hive_get(bm, f);
+
+  f2 = bm_face_create__sfme(bm, f, fhive);
+  l_f1 = bm_loop_create(bm, v2, e, f, l_v2, 0, fhive);
+  l_f2 = bm_loop_create(bm, v1, e, f2, l_v1, 0, fhive);
 
   l_f1->prev = l_v2->prev;
   l_f2->prev = l_v1->prev;
@@ -1612,6 +1684,11 @@ BMVert *bmesh_kernel_split_edge_make_vert(BMesh *bm, BMVert *tv, BMEdge *e, BMEd
   BMESH_ASSERT(edok != false);
 #endif
 
+  int fhive = 0;
+  if (e->l) {
+    fhive = bm_face_hive_get(bm, e->l->f);
+  }
+
   /* Split the radial cycle if present */
   l_next = e->l;
   e->l = NULL;
@@ -1629,7 +1706,7 @@ BMVert *bmesh_kernel_split_edge_make_vert(BMesh *bm, BMVert *tv, BMEdge *e, BMEd
       l_next = l_next != l_next->radial_next ? l_next->radial_next : NULL;
       bmesh_radial_loop_unlink(l);
 
-      l_new = bm_loop_create(bm, NULL, NULL, l->f, l, 0);
+      l_new = bm_loop_create(bm, NULL, NULL, l->f, l, 0, fhive);
       l_new->prev = l;
       l_new->next = l->next;
       l_new->prev->next = l_new;

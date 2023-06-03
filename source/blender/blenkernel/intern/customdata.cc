@@ -4140,16 +4140,19 @@ void CustomData_bmesh_free_block_data(CustomData *data, void *block)
   }
 }
 
-void CustomData_bmesh_alloc_block(CustomData *data, void **block)
+void CustomData_bmesh_alloc_block(CustomData *data, void **block, int hive)
 {
   if (*block) {
     CustomData_bmesh_free_block(data, block);
   }
 
   if (data->totsize > 0) {
-    *block = static_cast<void *>(static_cast<CustomDataHive *>(data->hive)->alloc());
+    CustomDataHive *hivealloc = static_cast<CustomDataHive *>(data->hive);
+    hive = min_ii(hive, hivealloc->max_hive());
+    *block = static_cast<void *>(hivealloc->alloc(hive));
 
-    /* Clear toolflags pointer when created for the first time. */
+    /* Clear toolflags pointer when created for the
+     * first time. */
     int cd_tflags = data->typemap[CD_TOOLFLAGS];
     if (cd_tflags != -1) {
       cd_tflags = data->layers[cd_tflags].offset;
@@ -4207,7 +4210,7 @@ static void CustomData_bmesh_set_default_n(CustomData *data, void **block, const
 void CustomData_bmesh_set_default(CustomData *data, void **block)
 {
   if (*block == nullptr) {
-    CustomData_bmesh_alloc_block(data, block);
+    CustomData_bmesh_alloc_block(data, block, 0);
   }
 
   for (int i = 0; i < data->totlayer; i++) {
@@ -4250,7 +4253,7 @@ void CustomData_bmesh_swap_data(CustomData *source,
   int dest_i_start = 0;
 
   if (*dest_block == nullptr) {
-    CustomData_bmesh_alloc_block(dest, dest_block);
+    CustomData_bmesh_alloc_block(dest, dest_block, 0);
 
     if (*dest_block) {
       memset(*dest_block, 0, dest->totsize);
@@ -4334,7 +4337,7 @@ void CustomData_bmesh_copy_data_exclude_by_type(const CustomData *source,
   bool was_new = false;
 
   if (*dest_block == nullptr) {
-    CustomData_bmesh_alloc_block(dest, dest_block);
+    CustomData_bmesh_alloc_block(dest, dest_block, 0);
 
     if (*dest_block) {
       memset(*dest_block, 0, dest->totsize);

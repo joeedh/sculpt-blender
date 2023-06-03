@@ -1097,6 +1097,8 @@ bool destroy_nonmanifold_fins(PBVH *pbvh, BMEdge *e_root)
     }
   }
 
+  pbvh_bmesh_check_nodes(pbvh);
+
   bm_logstack_pop();
   return true;
 #else
@@ -2273,7 +2275,7 @@ void EdgeQueueContext::step()
       }
 
       modified = true;
-      pbvh_bmesh_collapse_edge(pbvh, e, e->v1, e->v2, nullptr, nullptr, this);
+      pbvh_bmesh_collapse_edge(pbvh, e, e->v1, e->v2, this);
       flushed_ = true;
       VALIDATE_LOG(pbvh->bm_log);
       break;
@@ -2338,7 +2340,7 @@ bool remesh_topology(BrushTester *brush_tester,
                      void *mask_cb_data,
                      int edge_limit_multiply)
 {
-  blender::bke::pbvh::defragment_pbvh_partial(pbvh, 10);
+  blender::bke::pbvh::defragment_pbvh_partial(pbvh, 5);
 
   EdgeQueueContext eq_ctx(brush_tester,
                           ob,

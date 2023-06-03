@@ -223,7 +223,7 @@ static void collapse_ring_callback_pre(BMElem *elem, void *userdata)
     case BM_FACE: {
       BMFace *f = reinterpret_cast<BMFace *>(elem);
       BM_log_face_removed(bm, data->pbvh->bm_log, f);
-      pbvh_bmesh_face_remove(data->pbvh, f, false, false, false);
+      pbvh_bmesh_face_remove(data->pbvh, f, false, true, false);
       BM_idmap_release(data->pbvh->bm_idmap, elem, false);
       break;
     }
@@ -286,13 +286,13 @@ static void collapse_ring_callback_post(BMElem *elem, void *userdata)
   }
 }
 
-ATTR_NO_OPT static void vert_ring_do(BMVert *v,
-                                     BMVert *v_extra,
-                                     void (*callback)(BMElem *elem, void *userdata),
-                                     void *userdata,
-                                     int /*tag*/,
-                                     int /*facetag*/,
-                                     int /*depth*/)
+static void vert_ring_do(BMVert *v,
+                         BMVert *v_extra,
+                         void (*callback)(BMElem *elem, void *userdata),
+                         void *userdata,
+                         int /*tag*/,
+                         int /*facetag*/,
+                         int /*depth*/)
 {
   blender::Set<BMFace *, 128> faces;
 
@@ -557,13 +557,8 @@ bool pbvh_bmesh_collapse_edge_uvs(
  * This function is rather complicated.  It has to
  * snap UVs, log geometry and free ids.
  */
-BMVert *pbvh_bmesh_collapse_edge(PBVH *pbvh,
-                                 BMEdge *e,
-                                 BMVert *v1,
-                                 BMVert *v2,
-                                 GHash *deleted_verts,
-                                 BLI_Buffer * /*deleted_faces*/,
-                                 EdgeQueueContext *eq_ctx)
+BMVert *pbvh_bmesh_collapse_edge(
+    PBVH *pbvh, BMEdge *e, BMVert *v1, BMVert *v2, EdgeQueueContext *eq_ctx)
 {
   bm_logstack_push();
 
@@ -587,6 +582,8 @@ BMVert *pbvh_bmesh_collapse_edge(PBVH *pbvh,
 
   check_vert_fan_are_tris(pbvh, e->v1);
   check_vert_fan_are_tris(pbvh, e->v2);
+
+  pbvh_bmesh_check_nodes(pbvh);
 
   pbvh_check_vert_boundary(pbvh, v1);
   pbvh_check_vert_boundary(pbvh, v2);
@@ -628,12 +625,10 @@ BMVert *pbvh_bmesh_collapse_edge(PBVH *pbvh,
   BKE_pbvh_bmesh_check_origdata(eq_ctx->ss, v_conn, pbvh->stroke_id);
   BKE_pbvh_bmesh_check_origdata(eq_ctx->ss, v_del, pbvh->stroke_id);
 
-  if (deleted_verts) {
-    BLI_ghash_insert(deleted_verts, (void *)v_del, nullptr);
-  }
-
   /* Remove topology from PBVH and insert into bmlog. */
   vert_ring_do(e->v1, e->v2, collapse_ring_callback_pre, &tdata, tag, facetag, log_rings - 1);
+
+  pbvh_bmesh_check_nodes(pbvh);
 
   /* Snap UVS. */
   bool uvs_snapped = pbvh_bmesh_collapse_edge_uvs(pbvh, e, v_conn, v_del, eq_ctx);

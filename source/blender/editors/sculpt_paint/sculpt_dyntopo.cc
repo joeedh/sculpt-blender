@@ -189,7 +189,12 @@ void SCULPT_dynamic_topology_enable_ex(Main *bmain,
   /* Enable dynamic topology. */
   me->flag |= ME_SCULPT_DYNAMIC_TOPOLOGY;
 
-  BKE_sculpt_ensure_idmap(ob);
+  if (!ss->bm_idmap) {
+    BKE_sculpt_ensure_idmap(ob);
+  }
+  else {
+    BM_idmap_check_ids(ob->sculpt->bm_idmap);
+  }
 
   /* Enable logging for undo/redo. */
   if (!ss->bm_log) {

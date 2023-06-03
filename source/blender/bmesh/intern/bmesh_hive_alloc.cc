@@ -166,62 +166,74 @@ void BM_task_parallel_memhive(void *hive,
   }
 }
 
-BMVert *bm_alloc_vert(BMesh *bm)
+BMVert *bm_alloc_vert(BMesh *bm, int hive)
 {
-  return static_cast<VertHive *>(bm->vhive)->alloc();
+  return static_cast<VertHive *>(bm->vhive)->alloc(hive);
 }
 void bm_free_vert(BMesh *bm, BMVert *v)
 {
   static_cast<VertHive *>(bm->vhive)->free(v);
 }
-
-BMEdge *bm_alloc_edge(BMesh *bm)
+int bm_vert_hive_get(struct BMesh *bm, const BMVert *v)
 {
-  return static_cast<EdgeHive *>(bm->ehive)->alloc();
+  return max_ii(static_cast<VertHive *>(bm->vhive)->find_hive(v), 0);
+}
+
+BMEdge *bm_alloc_edge(BMesh *bm, int hive)
+{
+  return static_cast<EdgeHive *>(bm->ehive)->alloc(hive);
 }
 void bm_free_edge(BMesh *bm, BMEdge *e)
 {
   static_cast<EdgeHive *>(bm->ehive)->free(e);
 }
-
-BMLoop *bm_alloc_loop(BMesh *bm)
+int bm_edge_hive_get(struct BMesh *bm, const BMEdge *e)
 {
-  return static_cast<LoopHive *>(bm->lhive)->alloc();
+  return max_ii(static_cast<EdgeHive *>(bm->ehive)->find_hive(e), 0);
+}
+
+BMLoop *bm_alloc_loop(BMesh *bm, int hive)
+{
+  return static_cast<LoopHive *>(bm->lhive)->alloc(hive);
 }
 void bm_free_loop(BMesh *bm, BMLoop *l)
 {
   static_cast<LoopHive *>(bm->lhive)->free(l);
 }
-
-BMFace *bm_alloc_face(BMesh *bm)
+int bm_loop_hive_get(struct BMesh *bm, const BMLoop *l)
 {
-  return static_cast<FaceHive *>(bm->fhive)->alloc();
+  return max_ii(static_cast<LoopHive *>(bm->lhive)->find_hive(l), 0);
+}
+
+BMFace *bm_alloc_face(BMesh *bm, int hive)
+{
+  return static_cast<FaceHive *>(bm->fhive)->alloc(hive);
 }
 void bm_free_face(BMesh *bm, BMFace *f)
 {
   static_cast<FaceHive *>(bm->fhive)->free(f);
 }
-
-void *customdata_hive_alloc(void *hive)
+int bm_face_hive_get(struct BMesh *bm, const BMFace *f)
 {
-  return static_cast<void *>(static_cast<CustomDataHive *>(hive)->alloc());
+  return max_ii(static_cast<FaceHive *>(bm->fhive)->find_hive(f), 0);
 }
 
-void customdata_hive_free(void *hive, void *ptr)
+void *customdata_hive_alloc(void *hivealloc, int hive)
 {
-  static_cast<CustomDataHive *>(hive)->free(static_cast<int *>(ptr));
+  return static_cast<void *>(static_cast<CustomDataHive *>(hivealloc)->alloc(hive));
 }
 
-void customdata_hive_destroy(void *hive)
+void customdata_hive_free(void *hivealloc, void *ptr)
 {
-  MEM_delete<CustomDataHive>(static_cast<CustomDataHive *>(hive));
+  static_cast<CustomDataHive *>(hivealloc)->free(static_cast<int *>(ptr));
 }
 
-int customdata_hive_get_size(void *hive)
+void customdata_hive_destroy(void *hivealloc)
 {
-  return int(static_cast<CustomDataHive *>(hive)->get_mem_size());
+  MEM_delete<CustomDataHive>(static_cast<CustomDataHive *>(hivealloc));
 }
 
-void customdata_hive_set_owner(void *, CustomData *) 
+int customdata_hive_get_size(void *hivealloc)
 {
+  return int(static_cast<CustomDataHive *>(hivealloc)->get_mem_size());
 }

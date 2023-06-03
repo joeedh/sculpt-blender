@@ -602,7 +602,7 @@ void CustomData_clear_layer_flag(struct CustomData *data, eCustomDataType type, 
 
 void CustomData_bmesh_set_default(struct CustomData *data, void **block);
 void CustomData_bmesh_free_block(struct CustomData *data, void **block);
-void CustomData_bmesh_alloc_block(struct CustomData *data, void **block);
+void CustomData_bmesh_alloc_block(struct CustomData *data, void **block, int hive);
 
 /**
  * Same as #CustomData_bmesh_free_block but zero the memory rather than freeing.
