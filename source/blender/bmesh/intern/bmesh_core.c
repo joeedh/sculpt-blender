@@ -2014,7 +2014,7 @@ static const char *get_err_code_str(BMeshInternalError code)
 }
 #  undef _
 
-static char *get_err_str(int err)
+char *bm_get_err_str(int err)
 {
   static char buf[1024];
   buf[0] = 0;
@@ -2022,6 +2022,7 @@ static char *get_err_str(int err)
   for (int i = 0; i < 27; i++) {
     if (err & (1 << i)) {
       strcat(buf, get_err_code_str(1 << i));
+      strcat(buf, "|");
     }
   }
 
@@ -2217,10 +2218,8 @@ static char *bm_save_local_obj_text(
       BMVert *v = stack[si].v;
       int startdepth = stack[si].depth;
 
-      void **val;
-
-      if (!BLI_smallhash_ensure_p(&elemset, (uintptr_t)v, &val)) {
-        *val = NULL;
+      if (!BLI_smallhash_haskey(&elemset, (uintptr_t)v)) {
+        BLI_smallhash_insert(&elemset, (uintptr_t)v, NULL);
         BLI_array_append(vs, v);
       }
 
@@ -2230,10 +2229,10 @@ static char *bm_save_local_obj_text(
 
       BMEdge *e = v->e;
       do {
-        if (!BLI_smallhash_ensure_p(&visit, (uintptr_t)e, &val)) {
+        if (!BLI_smallhash_haskey(&visit, (uintptr_t)e)) {
+          BLI_smallhash_insert(&visit, (uintptr_t)e, NULL);
           BLI_array_grow_one(stack);
 
-          *val = NULL;
           stack[si].v = e->v1;
           stack[si].depth = startdepth + 1;
           si++;
@@ -2251,18 +2250,18 @@ static char *bm_save_local_obj_text(
 
         BMLoop *l = e->l;
         do {
-          if (!BLI_smallhash_ensure_p(&visit, (uintptr_t)l->f, &val)) {
-            if (!BLI_smallhash_ensure_p(&elemset, (uintptr_t)l->f, &val)) {
-              *val = NULL;
+          if (!BLI_smallhash_haskey(&visit, (uintptr_t)l->f)) {
+            if (!BLI_smallhash_haskey(&elemset, (uintptr_t)l->f)) {
+              BLI_smallhash_insert(&elemset, (uintptr_t)l->f, NULL);
               BLI_array_append(fs, l->f);
             }
 
             BMLoop *l2 = l;
             do {
-              if (!BLI_smallhash_ensure_p(&visit, (uintptr_t)l->v, &val)) {
+              if (BLI_smallhash_haskey(&visit, (uintptr_t)l->v)) {
+                BLI_smallhash_insert(&visit, (uintptr_t)l->f, NULL);
                 BLI_array_grow_one(stack);
 
-                *val = NULL;
                 stack[si].v = l->v;
                 stack[si].depth = startdepth + 1;
                 si++;
@@ -2375,16 +2374,126 @@ static char *bm_save_local_obj_text(
 
 static void trigger_jvke_error(int err, char *obj_text)
 {
-  printf("========= ERROR %s============\n\n%s\n\n", get_err_str(err), obj_text);
+  printf("========= ERROR %s============\n\n%s\n\n", bm_get_err_str(err), obj_text);
 }
+
+int bmesh_elem_check_all(void *elem, char htype)
+{
+  int err = 0;
+
+  if (BM_elem_is_free((BMElem *)elem, htype)) {
+    printf("Element was freed!\n");
+    return 1;
+  }
+
+  switch (htype) {
+    case BM_VERT: {
+      BMVert *v = (BMVert *)elem;
+      if ((err = bmesh_elem_check(v, BM_VERT))) {
+        return err;
+      }
+
+      if (!v->e) {
+        break;
+      }
+
+      BMEdge *e = v->e;
+      do {
+        if ((err = bmesh_elem_check(e, BM_EDGE))) {
+          return err;
+        }
+
+        BMLoop *l = e->l;
+        if (!l) {
+          continue;
+        }
+
+        do {
+          if ((err = bmesh_elem_check(l, BM_LOOP))) {
+            return err;
+          }
+          if ((err = bmesh_elem_check(l->f, BM_FACE))) {
+            return err;
+          }
+
+          BMLoop *l2 = l;
+          do {
+            if ((err = bmesh_elem_check(l2, BM_LOOP))) {
+              return err;
+            }
+            if ((err = bmesh_elem_check(l2->e, BM_EDGE))) {
+              return err;
+            }
+            if ((err = bmesh_elem_check(l2->v, BM_VERT))) {
+              return err;
+            }
+            if ((err = bmesh_elem_check(l2->radial_next->e, BM_EDGE))) {
+              return err;
+            }
+            if ((err = bmesh_elem_check(l2->radial_next->v, BM_VERT))) {
+              return err;
+            }
+            if ((err = bmesh_elem_check(l2->radial_next->f, BM_FACE))) {
+              return err;
+            }
+          } while ((l2 = l2->next) != l);
+        } while ((l = l->radial_next) != e->l);
+      } while ((e = BM_DISK_EDGE_NEXT(e, v)) != v->e);
+
+      break;
+    }
+    case BM_EDGE: {
+      BMEdge *e = elem;
+
+      if ((err = bmesh_elem_check(elem, htype))) {
+        return err;
+      }
+
+      BMLoop *l = e->l;
+      if (!l) {
+        break;
+      }
+
+      int count = 0;
+      do {
+        if (count++ > 10) {
+          return 1 << IS_LOOP_WRONG_RADIAL_LENGTH;
+        }
+      } while ((l = l->radial_next) != e->l);
+
+      break;
+    }
+    case BM_LOOP: {
+      if ((err = bmesh_elem_check(elem, htype))) {
+        return err;
+      }
+      break;
+    }
+    case BM_FACE: {
+      if ((err = bmesh_elem_check(elem, htype))) {
+        return err;
+      }
+      break;
+    }
+  }
+
+  return err;
+}
+
+static void jvke_check_recursive(BMVert *v, int depth, char *saved_obj, SmallHash *visit);
 
 char *_last_local_obj = NULL;
 
 #  define JVKE_CHECK_ELEMENT(elem) \
     { \
-      int err = 0; \
-      if ((err = bmesh_elem_check(elem, (elem)->head.htype))) { \
-        trigger_jvke_error(err, saved_obj); \
+      if (0 && elem->head.htype == BM_VERT) { \
+        jvke_check_recursive((BMVert *)elem, 2, saved_obj, NULL); \
+      } \
+      else { \
+        int err = 0; \
+        if ((err = bmesh_elem_check_all(elem, (elem)->head.htype))) { \
+          trigger_jvke_error(err, saved_obj); \
+        } \
       } \
     }
 #else
@@ -2472,6 +2581,90 @@ static void bmesh_kernel_check_val3_vert(BMesh *bm, BMEdge *e)
   bm_logstack_pop();
 }
 
+#ifdef JVKE_DEBUG
+static void check_visit(void *velem, SmallHash *visit, char *saved_obj)
+{
+  if (BLI_smallhash_haskey(visit, (uintptr_t)velem)) {
+    return;
+  }
+  BLI_smallhash_insert(visit, (uintptr_t)velem, NULL);
+
+  BMElem *elem = (BMElem *)velem;
+  bmesh_elem_check_all(elem, elem->head.htype);
+}
+
+#  define JVKE_CHECK_ELEMENT_REC(elem) check_visit(elem, visit, saved_obj)
+
+static void jvke_check_recursive(BMVert *v, int depth, char *saved_obj, SmallHash *visit)
+{
+  SmallHash sh;
+  bool was_first = false;
+
+  if (!v->e) {
+    return;
+  }
+
+  if (!visit) {
+    visit = &sh;
+    BLI_smallhash_init(&sh);
+    was_first = true;
+  }
+
+  BMEdge *e2 = v->e;
+  do {
+    JVKE_CHECK_ELEMENT_REC(e2);
+    if (depth > 0) {
+      jvke_check_recursive(BM_edge_other_vert(e2, v), depth - 1, saved_obj, visit);
+    }
+
+    if (e2->l) {
+      JVKE_CHECK_ELEMENT_REC(e2->l->f);
+
+      BMLoop *l = e2->l;
+      do {
+        JVKE_CHECK_ELEMENT_REC(l->v);
+        JVKE_CHECK_ELEMENT_REC(l->e);
+        JVKE_CHECK_ELEMENT_REC(l->f);
+
+        if (depth > 0) {
+          jvke_check_recursive(l->v, depth - 1, saved_obj, visit);
+        }
+      } while ((l = l->radial_next) != e2->l);
+    }
+  } while ((e2 = BM_DISK_EDGE_NEXT(e2, v)) != v->e);
+
+  if (was_first) {
+    BLI_smallhash_release(visit);
+  }
+}
+#endif
+
+static void check_mesh_radial(BMesh *bm)
+{
+  return;
+  BMIter iter;
+  BMEdge *e;
+  BM_ITER_MESH (e, &iter, bm, BM_EDGES_OF_MESH) {
+    int count = 0;
+    BMLoop *l = e->l;
+
+    if (!l) {
+      continue;
+    }
+
+    do {
+      if (BM_elem_is_free((BMElem *)l, BM_LOOP)) {
+        printf("Freed loop in edge %p radial cycle\n", e);
+      }
+
+      if (count++ > 100) {
+        printf("Corrupted radial cycle for %p\n", e);
+        break;
+      }
+    } while ((l = l->radial_next) != e->l);
+  }
+}
+
 /**
  * \brief Join Vert Kill Edge (JVKE)
  *
@@ -2490,7 +2683,7 @@ static void bmesh_kernel_check_val3_vert(BMesh *bm, BMEdge *e)
  * +-+-+-+    +-+-+-+
  * </pre>
  */
-BMVert *bmesh_kernel_join_vert_kill_edge(
+ATTR_NO_OPT BMVert *bmesh_kernel_join_vert_kill_edge(
     BMesh *bm, BMEdge *e, BMVert *v_kill, const bool do_del, const bool combine_flags)
 {
   BMVert *v_conn = BM_edge_other_vert(e, v_kill);
@@ -2509,7 +2702,12 @@ BMVert *bmesh_kernel_join_vert_kill_edge(
 #endif
 
   /* Free any surrounding valence-3 rings disconnected from the edge. */
-  bmesh_kernel_check_val3_vert(bm, e);
+  // XXX bmesh_kernel_check_val3_vert(bm, e);
+
+  if (BM_elem_is_free((BMElem *)e, BM_EDGE)) {
+    printf("%s: error: e was freed\n", __func__);
+    return NULL;
+  }
 
   BMFace **fs = NULL;
   BMEdge **deles = NULL;
@@ -2523,6 +2721,8 @@ BMVert *bmesh_kernel_join_vert_kill_edge(
 
   JVKE_CHECK_ELEMENT(v_conn);
   JVKE_CHECK_ELEMENT(v_del);
+
+  check_mesh_radial(bm);
 
   /* first clear tags */
   for (int i = 0; i < 2; i++) {
@@ -2555,6 +2755,8 @@ BMVert *bmesh_kernel_join_vert_kill_edge(
     } while ((e2 = BM_DISK_EDGE_NEXT(e2, v)) != v->e);
   }
 
+  check_mesh_radial(bm);
+
   /* now build face list */
   for (int i = 0; i < 2; i++) {
     BMVert *v = i ? v_del : v_conn;
@@ -2586,7 +2788,9 @@ BMVert *bmesh_kernel_join_vert_kill_edge(
     } while ((e2 = BM_DISK_EDGE_NEXT(e2, v)) != v->e);
   }
 
-  /* unlink loops */
+  check_mesh_radial(bm);
+
+  /* Unlink loops. */
   for (int i = 0; i < BLI_array_len(fs); i++) {
     BMFace *f = fs[i];
     BMLoop *l = f->l_first;
@@ -2596,6 +2800,7 @@ BMVert *bmesh_kernel_join_vert_kill_edge(
 
       l->radial_next->radial_prev = l->radial_prev;
       l->radial_prev->radial_next = l->radial_next;
+      BMLoop *ln = l->radial_prev;
 
       if (l == e2->l) {
         e2->l = l->radial_next;
@@ -2604,10 +2809,24 @@ BMVert *bmesh_kernel_join_vert_kill_edge(
       if (l == e2->l) {
         e2->l = NULL;
       }
+
+      if (ln != l) {
+        BMLoop *l2 = ln;
+        int count = 0;
+
+        do {
+          if (count++ > 20) {
+            printf("radial error\n");
+            break;
+          }
+        } while ((l2 = l2->radial_next) != ln);
+      }
     } while ((l = l->next) != f->l_first);
   }
 
-  /* swap verts */
+  check_mesh_radial(bm);
+
+  /* Swap verts. */
   for (int i = 0; i < BLI_array_len(fs); i++) {
     BMFace *f = fs[i];
     BMLoop *l = f->l_first, *lnext = NULL;
@@ -2630,7 +2849,7 @@ BMVert *bmesh_kernel_join_vert_kill_edge(
         }
 
         if (v_other == v_conn) {
-          /* flag for later selection */
+          /* Flag for later selection. */
           if (!BM_ELEM_API_FLAG_TEST(l->e, tag)) {
             BLI_array_append(deles, l->e);
           }
@@ -2642,7 +2861,6 @@ BMVert *bmesh_kernel_join_vert_kill_edge(
 
           if ((e3 = BM_edge_exists(v_conn, v_other))) {
             if (combine_flags) {
-              /* TODO: stop flagging sharp edges by the abscene of the BM_ELEM_SMOOTH flag*/
               bool remove_smooth = !BM_elem_flag_test(l->e, BM_ELEM_SMOOTH);
               remove_smooth = remove_smooth || !BM_elem_flag_test(e3, BM_ELEM_SMOOTH);
 
@@ -2653,7 +2871,7 @@ BMVert *bmesh_kernel_join_vert_kill_edge(
               }
             }
 
-            /* flag for later deletion */
+            /* Flag for later deletion. */
             if (!BM_ELEM_API_FLAG_TEST(l->e, tag)) {
               BLI_array_append(deles, l->e);
             }
@@ -2670,6 +2888,8 @@ BMVert *bmesh_kernel_join_vert_kill_edge(
     } while ((l = lnext) != f->l_first);
   }
 
+  check_mesh_radial(bm);
+
   for (int i = 0; i < BLI_array_len(deles); i++) {
     BMEdge *e2 = deles[i];
 
@@ -2678,14 +2898,10 @@ BMVert *bmesh_kernel_join_vert_kill_edge(
       continue;
     }
 
-    e2->l = NULL;
-
-    if (deles[i]->l) {
-      printf("%s: edge is not cleared\n", __func__);
-    }
-
-    BM_edge_kill(bm, deles[i]);
+    BM_edge_kill(bm, e2);
   }
+
+  check_mesh_radial(bm);
 
   for (int i = 0; i < BLI_array_len(fs); i++) {
     BMFace *f = fs[i];
@@ -2710,12 +2926,16 @@ BMVert *bmesh_kernel_join_vert_kill_edge(
           l->f->l_first = NULL;
         }
 
+        if (l != l->radial_next || (l->e && l->e->l)) {
+          // printf("error!\n");
+        }
+
         bm_kill_only_loop(bm, l);
       }
     } while (lnext && (l = lnext) != f->l_first);
 
     if (f->len <= 2) {
-      /* kill face */
+      /* Kill face. */
       while (f->l_first) {
         BMLoop *l2 = f->l_first;
 
@@ -2735,14 +2955,21 @@ BMVert *bmesh_kernel_join_vert_kill_edge(
     }
   }
 
+  check_mesh_radial(bm);
+
   bm->elem_index_dirty |= BM_VERT | BM_EDGE | BM_FACE;
   bm->elem_table_dirty |= BM_VERT | BM_EDGE | BM_FACE;
 
-  /* relink */
+  /* Relink loops. */
   for (int i = 0; i < BLI_array_len(fs); i++) {
     BMFace *f = fs[i];
 
     if (!f) {
+      continue;
+    }
+
+    if (BM_elem_is_free((BMElem *)f, BM_FACE)) {
+      printf("freed face!\n");
       continue;
     }
 
@@ -2752,11 +2979,18 @@ BMVert *bmesh_kernel_join_vert_kill_edge(
     do {
       l->e = BM_edge_exists(l->v, l->next->v);
 
+      if (BM_elem_is_free((BMElem *)l->e, BM_EDGE)) {
+        printf("%s: error, freed edge!\n", __func__);
+      }
+
       if (!l->e) {
         printf("warning: missing edge! %p %p\n", l->v, l->next->v);
         l->e = BM_edge_create(bm, l->v, l->next->v, NULL, BM_CREATE_NOP);
       }
 
+      if (BM_elem_is_free((BMElem *)l->e, BM_EDGE)) {
+        printf("ERROR!\n");
+      }
       bmesh_radial_loop_append(l->e, l);
       JVKE_CHECK_ELEMENT(l->e);
 
@@ -2766,6 +3000,7 @@ BMVert *bmesh_kernel_join_vert_kill_edge(
     } while ((l = l->next) != f->l_first);
   }
 
+  check_mesh_radial(bm);
   JVKE_CHECK_ELEMENT(v_conn);
 
 #ifdef JVKE_DEBUG
@@ -2796,6 +3031,7 @@ BMVert *bmesh_kernel_join_vert_kill_edge(
           JVKE_CHECK_ELEMENT(l);
           JVKE_CHECK_ELEMENT(l->v);
           JVKE_CHECK_ELEMENT(l->e);
+          JVKE_CHECK_ELEMENT(l->radial_next->e);
           JVKE_CHECK_ELEMENT(l->f);
         } while ((l = l->radial_next) != e1->l);
       } while ((e1 = BM_DISK_EDGE_NEXT(e1, v)) != v->e);
@@ -2804,7 +3040,7 @@ BMVert *bmesh_kernel_join_vert_kill_edge(
 #endif
 
   /* use euler criteria to check for duplicate faces */
-  if (do_del && v_conn->e) {
+  if (0 && do_del && v_conn->e) {  // XXX
     int tote = 0, totv = 0, totf = 0;
 
     BMVert *v = v_conn;
@@ -2877,6 +3113,10 @@ BMVert *bmesh_kernel_join_vert_kill_edge(
             l_next = l->radial_next;
           }
 
+          if (l_next->f == l->f) {
+            l_next = NULL;
+          }
+
           BMFace *f;
 
           if ((f = BM_face_find_double(l->f))) {
@@ -2894,9 +3134,21 @@ BMVert *bmesh_kernel_join_vert_kill_edge(
       printf("%s: vert is not cleared\n", __func__);
     }
 
+#ifdef JVKE_DEBUG
+    if (v_conn && v_conn->e) {
+      jvke_check_recursive(v_conn, 2, saved_obj, NULL);
+    }
+#endif
+
     if (!(v_del->e && v_del->e->l)) {
       BM_vert_kill(bm, v_del);
     }
+
+#ifdef JVKE_DEBUG
+    if (v_conn && v_conn->e) {
+      jvke_check_recursive(v_conn, 2, saved_obj, NULL);
+    }
+#endif
   }
 
 #ifdef JVKE_DEBUG

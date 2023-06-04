@@ -691,6 +691,7 @@ BMVert *pbvh_bmesh_collapse_edge(
   non_manifold |= vert_is_nonmanifold(e->v2);
 
   if (non_manifold) {
+    //return nullptr;
     vert_ring_maxdepth++;
   }
 
@@ -751,6 +752,12 @@ BMVert *pbvh_bmesh_collapse_edge(
     return v_conn;
   }
 
+  if (v_conn->e) {
+    BMEdge *e2 = v_conn->e;
+    do {
+      validate_edge(pbvh, e2);
+    } while ((e2 = BM_DISK_EDGE_NEXT(e2, v_conn)) != v_conn->e);
+  }
   validate_vert(pbvh, v_conn, CHECK_VERT_FACES | CHECK_VERT_NODE_ASSIGNED);
 
   /* Flag boundaries for update. */
@@ -783,7 +790,7 @@ BMVert *pbvh_bmesh_collapse_edge(
     if (BM_idmap_get_id(pbvh->bm_idmap, reinterpret_cast<BMElem *>(v_conn->e)) != BM_ID_NONE) {
       BM_idmap_release(pbvh->bm_idmap, reinterpret_cast<BMElem *>(v_conn->e), true);
     }
-    BM_edge_kill(pbvh->header.bm, v_conn->e);
+   //XXX BM_edge_kill(pbvh->header.bm, v_conn->e);
   }
 
   if (!v_conn->e) {

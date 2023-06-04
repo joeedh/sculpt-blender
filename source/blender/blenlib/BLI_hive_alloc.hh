@@ -414,6 +414,11 @@ class HiveAllocator {
 
     bool done()
     {
+      if (hive_i < alloc->hives.size() && alloc->hives[hive_i].is_free(**this)) {
+        printf("eek!\n");
+        *this = operator++();
+      }
+
       return hive_i >= alloc->hives.size();
     }
 
@@ -486,7 +491,7 @@ class HiveAllocator {
     return hives[hive];
   }
 
-  int find_hive(const T *elem)
+  ATTR_NO_OPT int find_hive(const T *elem)
   {
     if (hives.size() == 1) {
       return 0;
@@ -544,8 +549,10 @@ class HiveAllocator {
     return -1;
   }
 
-  void free(T *elem)
+  ATTR_NO_OPT void free(T *elem)
   {
+    //printf("free\n");
+
     for (Hive &hive : hives) {
       if (hive.has_elem(elem)) {
         hive.free(elem);
