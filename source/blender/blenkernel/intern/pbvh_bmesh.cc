@@ -4078,10 +4078,12 @@ void on_vert_move(BMVert *vold, BMVert *vnew, void *userdata, int /*hive*/)
       if (ni != DYNTOPO_NODE_NONE && ni != vert_ni) {
         PBVHNode *node = pbvh->nodes + ni;
 
-        node->flag |= PBVH_UpdateTris | PBVH_UpdateOtherVerts;
+        if (ni > 0 && ni <= pbvh->totnode && (pbvh->nodes[ni].flag & PBVH_Leaf)) {
+          node->flag |= PBVH_UpdateTris | PBVH_UpdateOtherVerts;
 
-        node->bm_other_verts->remove(vold);
-        node->bm_other_verts->add(vnew);
+          node->bm_other_verts->remove(vold);
+          node->bm_other_verts->add(vnew);
+        }
       }
     } while ((l = l->radial_next) != e->l);
   } while ((e = BM_DISK_EDGE_NEXT(e, vnew)) != vnew->e);
@@ -4094,10 +4096,13 @@ void on_face_move(BMFace *fold, BMFace *fnew, void *userdata, int /*hive*/)
 
   if (face_ni != DYNTOPO_NODE_NONE) {
     PBVHNode *node = pbvh->nodes + face_ni;
-    node->flag |= PBVH_UpdateTris;
 
-    node->bm_faces->remove(fold);
-    node->bm_faces->add(fnew);
+    if (face_ni >= 0 && face_ni < pbvh->totnode && (pbvh->nodes[face_ni].flag & PBVH_Leaf)) {
+      node->flag |= PBVH_UpdateTris;
+
+      node->bm_faces->remove(fold);
+      node->bm_faces->add(fnew);
+    }
   }
 }
 
