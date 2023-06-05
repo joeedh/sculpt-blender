@@ -926,8 +926,7 @@ void SCULPT_smooth(
     data.strength = strength;
 
     TaskParallelSettings settings;
-    //XXX
-    BKE_pbvh_parallel_range_settings(&settings, false, nodes.size());
+    BKE_pbvh_parallel_range_settings(&settings, true, nodes.size());
     BLI_task_parallel_range(0, nodes.size(), &data, do_smooth_brush_task_cb_ex, &settings);
   }
 }

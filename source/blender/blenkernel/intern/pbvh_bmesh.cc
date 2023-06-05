@@ -664,7 +664,8 @@ void pbvh_bmesh_face_remove(
   PBVHNode *f_node = pbvh_bmesh_node_from_face(pbvh, f);
 
   if (!f_node || !(f_node->flag & PBVH_Leaf)) {
-    printf("%s: pbvh corruption.\n", __func__);
+    printf(
+        "%s: pbvh corruption. %d\n", __func__, BM_ELEM_CD_GET_INT(f, pbvh->cd_face_node_offset));
     return;
   }
 
@@ -1080,7 +1081,14 @@ void bke_pbvh_insert_face_finalize(PBVH *pbvh, BMFace *f, const int ni)
   /* Ensure verts are in pbvh. */
   BMLoop *l = f->l_first;
   do {
-    const int ni2 = BM_ELEM_CD_GET_INT(l->v, pbvh->cd_vert_node_offset);
+    int ni2 = BM_ELEM_CD_GET_INT(l->v, pbvh->cd_vert_node_offset);
+
+    if (ni2 != DYNTOPO_NODE_NONE &&
+        (ni2 < 0 || ni2 >= pbvh->totnode || !(pbvh->nodes[ni2].flag & PBVH_Leaf)))
+    {
+      printf("%s: pbvh corruption\n", __func__);
+      ni2 = DYNTOPO_NODE_NONE;
+    }
 
     BB_expand(&node->vb, l->v->co);
     BB_expand(&node->orig_vb, BM_ELEM_CD_PTR<float *>(l->v, pbvh->cd_origco));

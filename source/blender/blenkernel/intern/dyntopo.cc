@@ -48,6 +48,8 @@
 
 #include <cstdio>
 
+#include <chrono>
+
 //#define CLEAR_TAGS_IN_THREAD
 
 using blender::float2;
@@ -769,7 +771,9 @@ static void unified_edge_queue_task_cb(void *__restrict userdata,
          * but tangentially to surface.  We can stochastically skip this and still get the
          * benefit to convergence.
          */
-        if (do_smooth && rand.get_float() > 0.5f) {
+        if (do_smooth && rand.get_float() > 0.75f &&
+            BM_ELEM_CD_GET_INT(l_iter->v, pbvh->cd_vert_node_offset) == ni)
+        {
           PBVHVertRef sv = {(intptr_t)l_iter->v};
           surface_smooth_v_safe(eq_ctx->ss,
                                 tdata->pbvh,
@@ -954,8 +958,6 @@ bool check_face_is_tri(PBVH *pbvh, BMFace *f)
 
 bool destroy_nonmanifold_fins(PBVH *pbvh, BMEdge *e_root)
 {
-  // XXX
-  return false;
 #if !(DYNTOPO_DISABLE_FLAG & DYNTOPO_DISABLE_FIN_REMOVAL)
   bm_logstack_push();
 
@@ -1170,7 +1172,6 @@ bool check_for_fins(PBVH *pbvh, BMVert *v)
 
 bool check_vert_fan_are_tris(PBVH *pbvh, BMVert *v)
 {
-  return false; //XXX
   static Vector<BMFace *> fs;
 
   /* Prevent pathological allocation thrashing on topology with
@@ -1283,7 +1284,7 @@ static void unified_edge_queue_create(EdgeQueueContext *eq_ctx,
   TaskParallelSettings settings;
 
   BLI_parallel_range_settings_defaults(&settings);
-  settings.use_threading = !eq_ctx->reproject_cdata;
+  settings.use_threading = true;  //! eq_ctx->reproject_cdata;
 
 #ifdef DYNTOPO_NO_THREADING
   settings.use_threading = false;
@@ -2224,6 +2225,14 @@ void EdgeQueueContext::step()
   }
 #endif
 
+  RandomNumberGenerator srand(PIL_check_seconds_timer() * 10000);
+
+  auto do_smooth = [&](BMVert *v) {
+    // if (srand.get_float() > 0.75) {
+    // surface_smooth_v_safe(ss, pbvh, v, surface_smooth_fac, true);
+    //}
+  };
+
   switch (ops[curop]) {
     case PBVH_None:
       break;
@@ -2257,6 +2266,9 @@ void EdgeQueueContext::step()
         break;
       }
 #endif
+
+      do_smooth(e->v1);
+      do_smooth(e->v2);
 
       e->head.hflag &= ~BM_ELEM_TAG;
 
@@ -2314,6 +2326,9 @@ void EdgeQueueContext::step()
                e->v2);
         break;
       }
+
+      do_smooth(e->v1);
+      do_smooth(e->v2);
 
       modified = true;
       pbvh_bmesh_collapse_edge(pbvh, e, e->v1, e->v2, this);
@@ -2395,13 +2410,28 @@ bool remesh_topology(BrushTester *brush_tester,
                           edge_limit_multiply);
   eq_ctx.start();
 
-  double time = PIL_check_seconds_timer();
+  using TimePoint =
+      std::chrono::time_point<std::chrono::high_resolution_clock, std::chrono::microseconds>;
+
+  auto time_point = [&]() {
+    return std::chrono::time_point_cast<std::chrono::microseconds>(
+        std::chrono::high_resolution_clock::now());
+  };
+
+  TimePoint start_point = time_point();
+
+  auto time_ms = [&]() {
+    //
+    return double((time_point() - start_point).count()) / 1000.0;
+  };
+
+  double time = time_ms();
 
   while (!eq_ctx.done()) {
     eq_ctx.step();
 
-    if (PIL_check_seconds_timer() - time > 350.0 / 1000.0) {
-      //XXX break;
+    if (time_ms() - time > 350.0) {
+      break;
     }
   }
 
@@ -2932,7 +2962,7 @@ static void pbvh_split_edges(EdgeQueueContext *eq_ctx, PBVH *pbvh, BMesh *bm, Sp
         exist_e = newf ? rl->e : nullptr;
       }
 
-      if (exist_e && exist_e->l) {
+      if (newf && exist_e && exist_e->l) {
         exist_e->head.hflag &= ~BM_ELEM_TAG;
 
 #ifdef SUBD_ADD_TO_QUEUE

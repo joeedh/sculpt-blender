@@ -16,6 +16,7 @@
 #include "BLI_rand.h"
 #include "BLI_task.h"
 #include "BLI_task.hh"
+#include "BLI_timeit.hh"
 #include "BLI_utildefines.h"
 
 #include "BLT_translation.h"
@@ -89,6 +90,7 @@
 
 #include "../../bmesh/intern/bmesh_idmap.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -2015,7 +2017,22 @@ static int sculpt_test_exec(bContext *C, wmOperator *op)
     }
   }
 
-  auto time_ms = []() { return float(PIL_check_seconds_timer() * 1000.0); };
+  // auto time_ms = []() { return float(PIL_check_seconds_timer() * 1000.0); };
+
+  using TimePoint =
+      std::chrono::time_point<std::chrono::high_resolution_clock, std::chrono::microseconds>;
+
+  auto time_point = [&]() {
+    return std::chrono::time_point_cast<std::chrono::microseconds>(
+        std::chrono::high_resolution_clock::now());
+  };
+
+  TimePoint start_point = time_point();
+
+  auto time_ms = [&]() {
+    //
+    return double((time_point() - start_point).count()) / 1000.0;
+  };
 
   blender::bke::pbvh::assign_hives(ss->pbvh);
 
