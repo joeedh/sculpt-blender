@@ -43,6 +43,7 @@ Topology rake:
 #include "BLI_sort_utils.h"
 #include "BLI_span.hh"
 #include "BLI_task.h"
+#include "BLI_timeit.hh"
 #include "BLI_utildefines.h"
 
 #include "BLI_hive_alloc.hh"
@@ -294,7 +295,6 @@ namespace blender::bke::dyntopo {
 void pbvh_kill_vert(PBVH *pbvh, BMVert *v, bool log_vert, bool log_edges)
 {
   BMEdge *e = v->e;
-  bm_logstack_push();
 
   if (e && log_edges) {
     do {
@@ -325,7 +325,6 @@ void pbvh_kill_vert(PBVH *pbvh, BMVert *v, bool log_vert, bool log_edges)
 
   BM_idmap_release(pbvh->bm_idmap, (BMElem *)v, true);
   BM_vert_kill(pbvh->header.bm, v);
-  bm_logstack_pop();
 }
 
 static BMVert *pbvh_bmesh_vert_create(PBVH *pbvh,
@@ -673,8 +672,6 @@ void pbvh_bmesh_face_remove(
     return;
   }
 
-  bm_logstack_push();
-
   /* Check if any of this face's vertices need to be removed
    * from the node */
   if (check_verts) {
@@ -738,8 +735,6 @@ void pbvh_bmesh_face_remove(
   /* mark node for update */
   f_node->flag |= PBVH_UpdateDrawBuffers | PBVH_UpdateNormals | PBVH_UpdateTris |
                   PBVH_UpdateTriAreas | PBVH_UpdateCurvatureDir;
-
-  bm_logstack_pop();
 }
 }  // namespace blender::bke::dyntopo
 
@@ -2028,8 +2023,8 @@ static void update_edge_boundary_bmesh_uv(BMEdge *e, int cd_edge_boundary, const
 void update_edge_boundary_bmesh(BMEdge *e,
                                 int cd_faceset_offset,
                                 int cd_edge_boundary,
-                                const int cd_flag,
-                                const int cd_valence,
+                                const int /*cd_flag*/,
+                                const int /*cd_valence*/,
                                 const CustomData *ldata,
                                 float sharp_angle_limit)
 {
@@ -2080,6 +2075,10 @@ static void pbvh_bmesh_update_uv_boundary_intern(BMVert *v, int cd_boundary, int
 {
   int *boundflag = BM_ELEM_CD_PTR<int *>(v, cd_boundary);
 
+  if (!v->e) {
+    return;
+  }
+
   BMEdge *e = v->e;
   do {
     BMLoop *l = e->l;
@@ -2115,10 +2114,13 @@ static void pbvh_bmesh_update_uv_boundary_intern(BMVert *v, int cd_boundary, int
 static void pbvh_bmesh_update_uv_boundary(BMVert *v, int cd_boundary, const CustomData *ldata)
 {
   int base_uv = ldata->typemap[CD_PROP_FLOAT2];
-  int newflag = 0;
 
   *BM_ELEM_CD_PTR<int *>(v, cd_boundary) &= ~(SCULPT_BOUNDARY_UPDATE_UV | SCULPT_BOUNDARY_UV |
                                               SCULPT_CORNER_UV);
+  if (base_uv == -1) {
+    return;
+  }
+
   if (base_uv == -1) {
     return;
   }
@@ -2629,13 +2631,13 @@ void BKE_pbvh_bmesh_free_tris(PBVH * /*pbvh*/, PBVHNode *node)
   }
 }
 
-BLI_INLINE void pbvh_tribuf_add_vert(PBVHTriBuf *tribuf, PBVHVertRef vertex, BMLoop *l)
+static inline void pbvh_tribuf_add_vert(PBVHTriBuf *tribuf, PBVHVertRef vertex, BMLoop *l)
 {
   tribuf->verts.append(vertex);
   tribuf->loops.append((uintptr_t)l);
 }
 
-BLI_INLINE void pbvh_tribuf_add_edge(PBVHTriBuf *tribuf, int v1, int v2)
+static inline void pbvh_tribuf_add_edge(PBVHTriBuf *tribuf, int v1, int v2)
 {
   tribuf->edges.append(v1);
   tribuf->edges.append(v2);
@@ -2674,6 +2676,11 @@ static void pbvh_init_tribuf(PBVHNode * /*node*/, PBVHTriBuf *tribuf)
   tribuf->verts.clear();
   tribuf->tris.clear();
   tribuf->loops.clear();
+
+  tribuf->edges.reserve(512);
+  tribuf->verts.reserve(512);
+  tribuf->tris.reserve(512);
+  tribuf->loops.reserve(512);
 }
 
 static uintptr_t tri_loopkey(BMLoop *l, int mat_nr, int cd_fset, int cd_uvs[], int totuv)
@@ -2741,6 +2748,8 @@ bool BKE_pbvh_bmesh_check_tris(PBVH *pbvh, PBVHNode *node)
   Vector<blender::uint3, 128> loops_idx;
   Vector<PBVHTriBuf> *tribufs = MEM_new<Vector<PBVHTriBuf>>("PBVHTriBuf tribufs");
 
+  tribufs->reserve(MAXMAT);
+
   node->flag &= ~PBVH_UpdateTris;
 
   const int edgeflag = BM_ELEM_TAG_ALT;
@@ -2748,6 +2757,31 @@ bool BKE_pbvh_bmesh_check_tris(PBVH *pbvh, PBVHNode *node)
   float min[3], max[3];
 
   INIT_MINMAX(min, max);
+
+  auto add_tri_verts = [cd_uvs, totuv, pbvh, &min, &max](
+                           PBVHTriBuf *tribuf, PBVHTri &tri, BMLoop *l, int mat_nr, int j) {
+    int tri_v;
+
+    if ((l->f->head.hflag & BM_ELEM_SMOOTH)) {
+      void *loopkey = reinterpret_cast<void *>(
+          tri_loopkey(l, mat_nr, pbvh->cd_faceset_offset, cd_uvs, totuv));
+
+      tri_v = tribuf->vertmap.lookup_or_add(loopkey, tribuf->verts.size());
+    }
+    else { /* Flat shaded faces. */
+      tri_v = tribuf->verts.size();
+    }
+
+    /* Newly added to the set? */
+    if (tri_v == tribuf->verts.size()) {
+      PBVHVertRef sv = {(intptr_t)l->v};
+      minmax_v3v3_v3(min, max, l->v->co);
+      pbvh_tribuf_add_vert(tribuf, sv, l);
+    }
+
+    tri.v[j] = (intptr_t)tri_v;
+    tri.l[j] = (intptr_t)l;
+  };
 
   for (BMFace *f : *node->bm_faces) {
     if (pbvh_poly_hidden(pbvh, f)) {
@@ -2769,6 +2803,7 @@ bool BKE_pbvh_bmesh_check_tris(PBVH *pbvh, PBVHNode *node)
 
       pbvh_init_tribuf(node, &_tribuf);
       _tribuf.mat_nr = mat_nr;
+
       tribufs->append(_tribuf);
     }
 
@@ -2778,32 +2813,6 @@ bool BKE_pbvh_bmesh_check_tris(PBVH *pbvh, PBVHNode *node)
     loops_idx.resize(tottri);
 
     BM_face_calc_tessellation(f, true, loops.data(), (uint(*)[3])loops_idx.data());
-
-    auto add_tri_verts =
-        [cd_uvs, totuv, pbvh, &min, &max](
-            PBVHTriBuf *tribuf, PBVHTri &tri, BMLoop *l, BMLoop *l2, int mat_nr, int j) {
-          int tri_v;
-
-          if ((l->f->head.hflag & BM_ELEM_SMOOTH)) {
-            void *loopkey = reinterpret_cast<void *>(
-                tri_loopkey(l, mat_nr, pbvh->cd_faceset_offset, cd_uvs, totuv));
-
-            tri_v = tribuf->vertmap.lookup_or_add(loopkey, tribuf->verts.size());
-          }
-          else { /* Flat shaded faces. */
-            tri_v = tribuf->verts.size();
-          }
-
-          /* Newly added to the set? */
-          if (tri_v == tribuf->verts.size()) {
-            PBVHVertRef sv = {(intptr_t)l->v};
-            minmax_v3v3_v3(min, max, l->v->co);
-            pbvh_tribuf_add_vert(tribuf, sv, l);
-          }
-
-          tri.v[j] = (intptr_t)tri_v;
-          tri.l[j] = (intptr_t)l;
-        };
 
     /* Build index buffers. */
     for (int i = 0; i < tottri; i++) {
@@ -2821,8 +2830,8 @@ bool BKE_pbvh_bmesh_check_tris(PBVH *pbvh, PBVHNode *node)
         BMLoop *l1 = loops[loops_idx[i][j]];
         BMLoop *l2 = loops[loops_idx[i][(j + 1) % 3]];
 
-        add_tri_verts(node->tribuf, tri, l1, l2, mat_nr, j);
-        add_tri_verts(mat_tribuf, mat_tri, l1, l2, mat_nr, j);
+        add_tri_verts(node->tribuf, tri, l1, mat_nr, j);
+        add_tri_verts(mat_tribuf, mat_tri, l1, mat_nr, j);
       }
 
       for (int j = 0; j < 3; j++) {
@@ -2830,7 +2839,7 @@ bool BKE_pbvh_bmesh_check_tris(PBVH *pbvh, PBVHNode *node)
         BMLoop *l2 = loops[loops_idx[i][(j + 1) % 3]];
         BMEdge *e = nullptr;
 
-        if (e = BM_edge_exists(l1->v, l2->v)) {
+        if ((e = BM_edge_exists(l1->v, l2->v))) {
           tri.eflag |= 1 << j;
 
           if (e->head.hflag & edgeflag) {
