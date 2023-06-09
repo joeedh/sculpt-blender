@@ -72,7 +72,7 @@ static void edge_queue_create_local(EdgeQueueContext *eq_ctx,
                                     PBVH *pbvh,
                                     PBVHTopologyUpdateMode local_mode);
 
-ATTR_NO_OPT static void surface_smooth_v_safe(
+static void surface_smooth_v_safe(
     SculptSession *ss, PBVH *pbvh, BMVert *v, float fac, bool reproject_cdata)
 {
   float co[3];
@@ -123,7 +123,7 @@ ATTR_NO_OPT static void surface_smooth_v_safe(
   }
 
   if (pbvh_boundary_needs_update_bmesh(pbvh, v)) {
-    pbvh_check_vert_boundary(pbvh, v);
+    pbvh_check_vert_boundary_bmesh(pbvh, v);
   }
 
   int boundmask = SCULPTVERT_SMOOTH_BOUNDARY;
@@ -347,6 +347,10 @@ static void edge_queue_insert_unified(EdgeQueueContext *eq_ctx, BMEdge *e, float
 
 static void edge_queue_insert_val34_vert(EdgeQueueContext *eq_ctx, BMVert *v)
 {
+  if (!v->e) {
+    return;
+  }
+
   eq_ctx->used_verts.append(v);
 
   BMEdge *e = v->e;
@@ -780,8 +784,8 @@ static void unified_edge_queue_task_cb(void *__restrict userdata,
 #endif
 
   PBVHTriBuf *tribuf = node->tribuf;
-  for (int i = 0; i < node->tribuf->tottri; i++) {
-    PBVHTri *tri = node->tribuf->tris + i;
+  for (int i = 0; i < node->tribuf->tris.size(); i++) {
+    PBVHTri *tri = &node->tribuf->tris[i];
     BMFace *f = (BMFace *)tri->f.i;
 
     if (f->head.hflag & facetag) {
@@ -925,6 +929,8 @@ bool check_face_is_tri(PBVH *pbvh, BMFace *f)
 
     BMLoop *l = f2->l_first;
     do {
+      pbvh_boundary_update_bmesh(pbvh, l->v);
+      pbvh_boundary_update_bmesh(pbvh, l->e);
       dyntopo_add_flag(pbvh, l->v, SCULPTFLAG_NEED_VALENCE);
     } while ((l = l->next) != f2->l_first);
 
@@ -944,6 +950,8 @@ bool check_face_is_tri(PBVH *pbvh, BMFace *f)
 
     BMLoop *l = f2->l_first;
     do {
+      pbvh_boundary_update_bmesh(pbvh, l->v);
+      pbvh_boundary_update_bmesh(pbvh, l->e);
       dyntopo_add_flag(pbvh, l->v, SCULPTFLAG_NEED_VALENCE);
       validate_edge(pbvh, l->e);
     } while ((l = l->next) != f2->l_first);
@@ -964,6 +972,9 @@ bool check_face_is_tri(PBVH *pbvh, BMFace *f)
     /* Detect new edges. */
     BMLoop *l = f2->l_first;
     do {
+      pbvh_boundary_update_bmesh(pbvh, l->v);
+      pbvh_boundary_update_bmesh(pbvh, l->e);
+
       if (l->e->head.index == -1) {
         BM_log_edge_added(pbvh->header.bm, pbvh->bm_log, l->e);
         dyntopo_add_flag(pbvh, l->v, SCULPTFLAG_NEED_VALENCE);
@@ -1112,6 +1123,7 @@ bool destroy_nonmanifold_fins(PBVH *pbvh, BMEdge *e_root)
       if (!(l->v->head.hflag & tag)) {
         l->v->head.hflag |= tag;
         pbvh_boundary_update_bmesh(pbvh, l->v);
+        pbvh_boundary_update_bmesh(pbvh, l->e);
         dyntopo_add_flag(pbvh, l->v, updateflag);
         vs.append(l->v);
       }
@@ -1159,6 +1171,8 @@ bool destroy_nonmanifold_fins(PBVH *pbvh, BMEdge *e_root)
       BM_edge_kill(pbvh->header.bm, e);
     }
     else {
+      pbvh_boundary_update_bmesh(pbvh, e);
+
       pbvh_boundary_update_bmesh(pbvh, e->v1);
       dyntopo_add_flag(pbvh, e->v1, updateflag);
 
@@ -1178,6 +1192,8 @@ bool destroy_nonmanifold_fins(PBVH *pbvh, BMEdge *e_root)
       BM_vert_kill(pbvh->header.bm, v);
     }
     else {
+      pbvh_boundary_update_bmesh(pbvh, v->e);
+
       pbvh_boundary_update_bmesh(pbvh, v);
       dyntopo_add_flag(pbvh, v, updateflag);
     }
@@ -1634,8 +1650,8 @@ static void edge_queue_create_local(EdgeQueueContext *eq_ctx,
 
     e->head.hflag &= ~EDGE_QUEUE_FLAG;
 
-    pbvh_check_vert_boundary(pbvh, e->v1);
-    pbvh_check_vert_boundary(pbvh, e->v2);
+    pbvh_check_vert_boundary_bmesh(pbvh, e->v1);
+    pbvh_check_vert_boundary_bmesh(pbvh, e->v2);
 
     int boundflag1 = BM_ELEM_CD_GET_INT(e->v1, pbvh->cd_boundary_flag);
     int boundflag2 = BM_ELEM_CD_GET_INT(e->v2, pbvh->cd_boundary_flag);
@@ -1741,7 +1757,7 @@ static bool cleanup_valence_3_4(EdgeQueueContext *ectx, PBVH *pbvh)
     validate_vert(pbvh, v, CHECK_VERT_ALL);
 
     check_vert_fan_are_tris(pbvh, v);
-    pbvh_check_vert_boundary(pbvh, v);
+    pbvh_check_vert_boundary_bmesh(pbvh, v);
 
     validate_vert(pbvh, v, CHECK_VERT_ALL);
 
@@ -1802,6 +1818,10 @@ static bool cleanup_valence_3_4(EdgeQueueContext *ectx, PBVH *pbvh)
         dyntopo_add_flag(pbvh, l->v, updateflag);
         pbvh_boundary_update_bmesh(pbvh, l->v);
       }
+
+      pbvh_boundary_update_bmesh(pbvh, l->e);
+      pbvh_boundary_update_bmesh(pbvh, l->next->e);
+      pbvh_boundary_update_bmesh(pbvh, l->prev->e);
 
       l = l->prev->radial_next;
 
@@ -2202,7 +2222,7 @@ bool EdgeQueueContext::done()
   return totop == 0 || edge_heap.empty() || current_i >= max_steps;
 }
 
-ATTR_NO_OPT void EdgeQueueContext::finish()
+void EdgeQueueContext::finish()
 {
   while (!edge_heap.empty()) {
     BMEdge *e = edge_heap.pop_max();
@@ -2592,7 +2612,7 @@ void BKE_pbvh_bmesh_add_face(PBVH *pbvh, struct BMFace *f, bool log_face, bool f
 }
 
 namespace blender::bke::dyntopo {
-ATTR_NO_OPT static void pbvh_split_edge(EdgeQueueContext *eq_ctx, BMEdge *e)
+static void pbvh_split_edge(EdgeQueueContext *eq_ctx, BMEdge *e)
 {
   PBVH *pbvh = eq_ctx->pbvh;
   BMesh *bm = pbvh->header.bm;
@@ -2620,6 +2640,8 @@ ATTR_NO_OPT static void pbvh_split_edge(EdgeQueueContext *eq_ctx, BMEdge *e)
 
     do {
       pbvh_boundary_update_bmesh(pbvh, l2->v);
+      pbvh_boundary_update_bmesh(pbvh, l2->e);
+
       dyntopo_add_flag(pbvh, l2->v, SCULPTFLAG_NEED_VALENCE);
     } while ((l2 = l2->next) != l->f->l_first);
   } while ((l = l->radial_next) != e->l);
@@ -2631,12 +2653,25 @@ ATTR_NO_OPT static void pbvh_split_edge(EdgeQueueContext *eq_ctx, BMEdge *e)
   dyntopo_add_flag(pbvh, e->v2, SCULPTFLAG_NEED_VALENCE);
   pbvh_boundary_update_bmesh(pbvh, e->v1);
   pbvh_boundary_update_bmesh(pbvh, e->v2);
+  pbvh_boundary_update_bmesh(pbvh, e);
+
+  int bf1 = BM_ELEM_CD_GET_INT(e->v1, pbvh->cd_boundary_flag);
+  int bf2 = BM_ELEM_CD_GET_INT(e->v2, pbvh->cd_boundary_flag);
 
   BMVert *newv = BM_edge_split(bm, e, e->v1, &newe, 0.5f);
 
   /* Remove edge-in-minmax-heap tag. */
   e->head.hflag &= ~EDGE_QUEUE_FLAG;
   newe->head.hflag &= ~EDGE_QUEUE_FLAG;
+
+  /* Deal with UV boundary flags. */
+  BM_ELEM_CD_SET_INT(newe, pbvh->cd_edge_boundary, BM_ELEM_CD_GET_INT(e, pbvh->cd_edge_boundary));
+  if ((bf1 & SCULPT_BOUNDARY_UV) && (bf2 & SCULPT_BOUNDARY_UV)) {
+    *BM_ELEM_CD_PTR<int *>(newv, pbvh->cd_boundary_flag) |= SCULPT_BOUNDARY_UV;
+  }
+  else {
+    *BM_ELEM_CD_PTR<int *>(newv, pbvh->cd_boundary_flag) &= ~SCULPT_BOUNDARY_UV;
+  }
 
   BM_ELEM_CD_SET_INT(newv, pbvh->cd_vert_node_offset, DYNTOPO_NODE_NONE);
   BM_idmap_check_assign(pbvh->bm_idmap, reinterpret_cast<BMElem *>(newv));
@@ -2649,6 +2684,7 @@ ATTR_NO_OPT static void pbvh_split_edge(EdgeQueueContext *eq_ctx, BMEdge *e)
 
   dyntopo_add_flag(pbvh, newv, SCULPTFLAG_NEED_VALENCE | SCULPTFLAG_NEED_TRIANGULATE);
   pbvh_boundary_update_bmesh(pbvh, newv);
+  pbvh_boundary_update_bmesh(pbvh, newe);
 
   for (BMFace *f : fs) {
     BM_ELEM_CD_SET_INT(f, pbvh->cd_face_node_offset, DYNTOPO_NODE_NONE);
@@ -2669,6 +2705,10 @@ ATTR_NO_OPT static void pbvh_split_edge(EdgeQueueContext *eq_ctx, BMEdge *e)
     dyntopo_add_flag(
         pbvh, l->next->next->v, SCULPTFLAG_NEED_VALENCE | SCULPTFLAG_NEED_TRIANGULATE);
     pbvh_boundary_update_bmesh(pbvh, l->next->next->v);
+
+    pbvh_boundary_update_bmesh(pbvh, l->next->e);
+    pbvh_boundary_update_bmesh(pbvh, l->next->next->e);
+    pbvh_boundary_update_bmesh(pbvh, l->next->next->next->e);
 
     BM_ELEM_CD_SET_INT(f, pbvh->cd_face_node_offset, DYNTOPO_NODE_NONE);
     BM_idmap_check_assign(pbvh->bm_idmap, reinterpret_cast<BMElem *>(f));
@@ -3930,7 +3970,7 @@ void BKE_sculpt_reproject_cdata(
   snapper.snap();
   return;
 
-  //XXX delete the below code after testing new snap code.
+  // XXX delete the below code after testing new snap code.
 
   /* Re-snap uvs. */
   v = (BMVert *)vertex.i;

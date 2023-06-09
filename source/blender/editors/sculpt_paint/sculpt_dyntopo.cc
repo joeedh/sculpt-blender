@@ -1,5 +1,6 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright 2020 Blender Foundation */
+/* SPDX-FileCopyrightText: 2020 Blender Foundation
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup edsculpt
@@ -255,7 +256,8 @@ void SCULPT_update_all_valence_boundary(Object *ob)
     BM_ITER_MESH (v, &iter, ss->bm, BM_VERTS_OF_MESH) {
       *BM_ELEM_CD_PTR<uint8_t *>(v, cd_flag) = SCULPTFLAG_NEED_TRIANGULATE;
       BM_ELEM_CD_SET_INT(v, cd_valence, BM_vert_edge_count(v));
-      BM_ELEM_CD_SET_INT(v, cd_boundary, SCULPT_BOUNDARY_NEEDS_UPDATE);
+      *BM_ELEM_CD_PTR<int *>(v, cd_boundary) |= SCULPT_BOUNDARY_NEEDS_UPDATE |
+                                                SCULPT_BOUNDARY_UPDATE_SHARP_ANGLE;
 
       /* Update boundary if we have a pbvh. */
       if (ss->pbvh) {
@@ -275,9 +277,7 @@ void SCULPT_update_all_valence_boundary(Object *ob)
     PBVHVertRef vertex = BKE_pbvh_index_to_vertex(ss->pbvh, i);
 
     blender::bke::paint::vertex_attr_set<int>(
-        vertex,
-        ss->attrs.flags,
-        SCULPTFLAG_NEED_VALENCE | SCULPTFLAG_NEED_TRIANGULATE );
+        vertex, ss->attrs.flags, SCULPTFLAG_NEED_VALENCE | SCULPTFLAG_NEED_TRIANGULATE);
     BKE_sculpt_boundary_flag_update(ss, vertex);
     SCULPT_vertex_valence_get(ss, vertex);
     SCULPT_vertex_is_boundary(ss, vertex, SCULPT_BOUNDARY_ALL);

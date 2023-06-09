@@ -491,7 +491,7 @@ class HiveAllocator {
     return hives[hive];
   }
 
-  ATTR_NO_OPT int find_hive(const T *elem)
+  int find_hive(const T *elem)
   {
     if (hives.size() == 1) {
       return 0;
@@ -549,9 +549,9 @@ class HiveAllocator {
     return -1;
   }
 
-  ATTR_NO_OPT void free(T *elem)
+  void free(T *elem)
   {
-    //printf("free\n");
+    // printf("free\n");
 
     for (Hive &hive : hives) {
       if (hive.has_elem(elem)) {

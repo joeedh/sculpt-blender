@@ -1,5 +1,6 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright 2006 Blender Foundation */
+/* SPDX-FileCopyrightText: 2006 Blender Foundation
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bke
@@ -283,7 +284,7 @@ static void layerInterp_mdeformvert(const void **sources,
   /* A single linked list of #MDeformWeight's.
    * use this to avoid double allocations (which #LinkNode would do). */
   struct MDeformWeight_Link {
-    struct MDeformWeight_Link *next;
+    MDeformWeight_Link *next;
     MDeformWeight dw;
   };
 
@@ -2624,8 +2625,8 @@ void CustomData_copy(const CustomData *source, CustomData *dest, eCustomDataMask
   CustomData_merge(source, dest, mask, totelem);
 }
 
-void CustomData_copy_layout(const struct CustomData *source,
-                            struct CustomData *dest,
+void CustomData_copy_layout(const CustomData *source,
+                            CustomData *dest,
                             eCustomDataMask mask,
                             eCDAllocType alloctype,
                             int totelem)
@@ -3080,7 +3081,7 @@ void CustomData_clear_layer_flag(CustomData *data, const eCustomDataType type, c
   }
 }
 
-bool CustomData_layer_is_anonymous(const struct CustomData *data, eCustomDataType type, int n)
+bool CustomData_layer_is_anonymous(const CustomData *data, eCustomDataType type, int n)
 {
   const int layer_index = CustomData_get_layer_index_n(data, type, n);
 
@@ -4156,11 +4157,8 @@ void CustomData_bmesh_alloc_block(CustomData *data, void **block, int hive)
     int cd_tflags = data->typemap[CD_TOOLFLAGS];
     if (cd_tflags != -1) {
       cd_tflags = data->layers[cd_tflags].offset;
+      MToolFlags *flags = (MToolFlags *)POINTER_OFFSET(*block, cd_tflags);
 
-      char *ptr = (char *)*block;
-      ptr += cd_tflags;
-
-      MToolFlags *flags = (MToolFlags *)ptr;
       flags->flag = nullptr;
     }
   }
@@ -4346,67 +4344,45 @@ void CustomData_bmesh_copy_data_exclude_by_type(const CustomData *source,
     }
   }
 
-  /* copies a layer at a time */
-  int dest_i = 0;
-  for (int src_i = 0; src_i < source->totlayer; src_i++) {
-    if (source->layers[src_i].flag & CD_FLAG_ELEM_NOCOPY) {
-      continue;
-    }
+  /* The old code broke if the ordering differed between two customdata sets.
+   * Led to disappearing face sets.
+   */
+  blender::Set<CustomDataLayer *> donelayers;
 
-    /* find the first dest layer with type >= the source type
-     * (this should work because layers are ordered by type)
-     */
-    while (dest_i < dest->totlayer && dest->layers[dest_i].type < source->layers[src_i].type) {
-      if (was_new) {
-        CustomData_bmesh_set_default_n(dest, dest_block, dest_i);
-      }
-      dest_i++;
-    }
-
-    while (dest_i < dest->totlayer && dest->layers[dest_i].type == source->layers[src_i].type) {
-      if (STREQ(dest->layers[dest_i].name, source->layers[src_i].name)) {
-        break;
-      }
-      else if (was_new) {
-        CustomData_bmesh_set_default_n(dest, dest_block, dest_i);
-      }
-      dest_i++;
-    }
-
-    /* if there are no more dest layers, we're done */
-    if (dest_i >= dest->totlayer) {
-      return;
-    }
-
-    /* if we found a matching layer, copy the data */
-    if (dest->layers[dest_i].type == source->layers[src_i].type &&
-        STREQ(dest->layers[dest_i].name, source->layers[src_i].name))
+  for (const CustomDataLayer &layer_src :
+       blender::Span<CustomDataLayer>(source->layers, source->totlayer))
+  {
+    for (CustomDataLayer &layer_dst :
+         blender::MutableSpan<CustomDataLayer>(dest->layers, dest->totlayer))
     {
-      if (no_mask || ((CD_TYPE_AS_MASK(dest->layers[dest_i].type) & mask_exclude) == 0)) {
-        const void *src_data = POINTER_OFFSET(src_block, source->layers[src_i].offset);
-        void *dest_data = POINTER_OFFSET(*dest_block, dest->layers[dest_i].offset);
-        const LayerTypeInfo *typeInfo = layerType_getInfo(
-            eCustomDataType(source->layers[src_i].type));
-        if (typeInfo->copy) {
-          typeInfo->copy(src_data, dest_data, 1);
-        }
-        else {
-          memcpy(dest_data, src_data, typeInfo->size);
-        }
+      bool ok = !(layer_src.flag & CD_FLAG_ELEM_NOCOPY);
+      ok = ok && (no_mask || !(layer_dst.flag & mask_exclude));
+      ok = ok && layer_src.type == layer_dst.type;
+      ok = ok && STREQ(layer_src.name, layer_dst.name);
+
+      if (!ok) {
+        continue;
       }
 
-      /* if there are multiple source & dest layers of the same type,
-       * we don't want to copy all source layers to the same dest, so
-       * increment dest_i
-       */
-      dest_i++;
+      donelayers.add(&layer_dst);
+      const void *src_data = POINTER_OFFSET(src_block, layer_src.offset);
+      void *dest_data = POINTER_OFFSET(*dest_block, layer_dst.offset);
+      const LayerTypeInfo *typeInfo = layerType_getInfo(eCustomDataType(layer_src.type));
+      if (typeInfo->copy) {
+        typeInfo->copy(src_data, dest_data, 1);
+      }
+      else {
+        memcpy(dest_data, src_data, typeInfo->size);
+      }
     }
   }
 
-  /* Initialize the remaining layers if dest_block was newly allocated. */
-  while (was_new && dest_i < dest->totlayer) {
-    CustomData_bmesh_set_default_n(dest, dest_block, dest_i);
-    dest_i++;
+  for (CustomDataLayer &layer_dst :
+       blender::MutableSpan<CustomDataLayer>(dest->layers, dest->totlayer))
+  {
+    if (was_new && !donelayers.contains(&layer_dst)) {
+      CustomData_bmesh_set_default_n(dest, dest_block, int(&layer_dst - dest->layers));
+    }
   }
 }
 
@@ -4648,13 +4624,13 @@ void CustomData_bmesh_interp_n(CustomData *data,
   typeInfo->interp(src_blocks_ofs, weights, sub_weights, count, dst_block_ofs);
 }
 
-ATTR_NO_OPT void CustomData_bmesh_interp_ex(CustomData *data,
-                                            const void **src_blocks,
-                                            const float *weights,
-                                            const float *sub_weights,
-                                            int count,
-                                            void *dst_block,
-                                            eCustomDataMask typemask)
+void CustomData_bmesh_interp_ex(CustomData *data,
+                                const void **src_blocks,
+                                const float *weights,
+                                const float *sub_weights,
+                                int count,
+                                void *dst_block,
+                                eCustomDataMask typemask)
 {
   if (count <= 0) {
     return;
@@ -4998,7 +4974,7 @@ static bool CustomData_layer_ensure_data_exists(CustomDataLayer *layer, size_t c
 
     default:
       /* Log an error so we can collect instances of bad files. */
-      CLOG_WARN(&LOG, "CustomDataLayer->data is nullptr for type %d.", layer->type);
+      CLOG_WARN(&LOG, "CustomDataLayer->data is null for type %d.", layer->type);
       break;
   }
   return false;

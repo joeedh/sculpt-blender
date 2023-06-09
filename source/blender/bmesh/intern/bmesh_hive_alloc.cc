@@ -170,9 +170,9 @@ BMVert *bm_alloc_vert(BMesh *bm, int hive)
 {
   return static_cast<VertHive *>(bm->vhive)->alloc(hive);
 }
-ATTR_NO_OPT void bm_free_vert(BMesh *bm, BMVert *v)
+void bm_free_vert(BMesh *bm, BMVert *v)
 {
-  //printf("freeing vert");
+  // printf("freeing vert");
   static_cast<VertHive *>(bm->vhive)->free(v);
 }
 int bm_vert_hive_get(struct BMesh *bm, const BMVert *v)
@@ -184,9 +184,9 @@ BMEdge *bm_alloc_edge(BMesh *bm, int hive)
 {
   return static_cast<EdgeHive *>(bm->ehive)->alloc(hive);
 }
-ATTR_NO_OPT void bm_free_edge(BMesh *bm, BMEdge *e)
+void bm_free_edge(BMesh *bm, BMEdge *e)
 {
-  //printf("freeing edge");
+  // printf("freeing edge");
   static_cast<EdgeHive *>(bm->ehive)->free(e);
 }
 int bm_edge_hive_get(struct BMesh *bm, const BMEdge *e)
@@ -198,9 +198,9 @@ BMLoop *bm_alloc_loop(BMesh *bm, int hive)
 {
   return static_cast<LoopHive *>(bm->lhive)->alloc(hive);
 }
-ATTR_NO_OPT void bm_free_loop(BMesh *bm, BMLoop *l)
+void bm_free_loop(BMesh *bm, BMLoop *l)
 {
-  //printf("freeing loop");
+  // printf("freeing loop");
   static_cast<LoopHive *>(bm->lhive)->free(l);
 }
 int bm_loop_hive_get(struct BMesh *bm, const BMLoop *l)
@@ -214,7 +214,7 @@ BMFace *bm_alloc_face(BMesh *bm, int hive)
 }
 void bm_free_face(BMesh *bm, BMFace *f)
 {
-  //printf("freeing face");
+  // printf("freeing face");
   static_cast<FaceHive *>(bm->fhive)->free(f);
 }
 int bm_face_hive_get(struct BMesh *bm, const BMFace *f)

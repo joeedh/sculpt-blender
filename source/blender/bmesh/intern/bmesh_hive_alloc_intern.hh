@@ -109,7 +109,7 @@ struct EdgeCallbacks {
 };
 
 struct LoopCallbacks {
-  ATTR_NO_OPT static void move_elem(BMLoop *lold, BMLoop *lnew, BMesh *bm, int hive)
+  static void move_elem(BMLoop *lold, BMLoop *lnew, BMesh *bm, int hive)
   {
 #if 0  // def AUTO_MOVE_CD_HIVES
     if (bm->ldata.hive) {

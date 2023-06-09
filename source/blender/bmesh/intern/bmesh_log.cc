@@ -875,8 +875,6 @@ struct BMLogEntry {
   {
     BMID<BMFace> id = get_elem_id(bm, f);
 
-    bool exists = 0;
-
     for (int i = sets.size() - 1; i >= 0; i--) {
       BMLogSetBase *set = sets[i];
 

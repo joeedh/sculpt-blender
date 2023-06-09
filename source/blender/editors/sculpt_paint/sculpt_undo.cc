@@ -1,5 +1,6 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright 2006 by Nicholas Bishop. All rights reserved. */
+/* SPDX-FileCopyrightText: 2006 by Nicholas Bishop. All rights reserved.
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup edsculpt
@@ -908,8 +909,8 @@ static void bmesh_undo_on_face_change(BMFace *f,
 
   BMLoop *l = f->l_first;
   do {
-    int flag = BM_ELEM_CD_GET_INT(l->v, data->cd_boundary_flag);
-    BM_ELEM_CD_SET_INT(l->v, data->cd_boundary_flag, flag | SCULPT_BOUNDARY_NEEDS_UPDATE);
+    *BM_ELEM_CD_PTR<int *>(l->v, data->cd_boundary_flag) |= SCULPT_BOUNDARY_NEEDS_UPDATE |
+                                                            SCULPT_BOUNDARY_UPDATE_SHARP_ANGLE;
   } while ((l = l->next) != f->l_first);
 
   // attempt to find old node in old_customdata
@@ -1378,7 +1379,7 @@ static int sculpt_undo_bmesh_restore(
 static void sculpt_undo_refine_subdiv(Depsgraph *depsgraph,
                                       SculptSession *ss,
                                       Object *object,
-                                      struct Subdiv *subdiv)
+                                      Subdiv *subdiv)
 {
   float(*deformed_verts)[3] = BKE_multires_create_deformed_base_mesh_vert_coords(
       depsgraph, object, ss->multires.modifier, nullptr);
@@ -2659,7 +2660,7 @@ void SCULPT_undo_push_end(Object *ob)
   SCULPT_undo_push_end_ex(ob, false);
 }
 
-void SCULPT_undo_push_end_ex(struct Object *ob, const bool use_nested_undo)
+void SCULPT_undo_push_end_ex(Object *ob, const bool use_nested_undo)
 {
   UndoSculpt *usculpt = sculpt_undo_get_nodes();
   SculptUndoNode *unode;
@@ -2701,7 +2702,7 @@ void SCULPT_undo_push_end_ex(struct Object *ob, const bool use_nested_undo)
 /** \name Implements ED Undo System
  * \{ */
 
-static void sculpt_undo_set_active_layer(struct bContext *C, SculptAttrRef *attr, bool is_color)
+static void sculpt_undo_set_active_layer(bContext *C, SculptAttrRef *attr, bool is_color)
 {
   if (attr->domain == ATTR_DOMAIN_AUTO) {
     return;
@@ -2766,14 +2767,14 @@ static void sculpt_undo_set_active_layer(struct bContext *C, SculptAttrRef *attr
   }
 }
 
-static void sculpt_undosys_step_encode_init(struct bContext * /*C*/, UndoStep *us_p)
+static void sculpt_undosys_step_encode_init(bContext * /*C*/, UndoStep *us_p)
 {
   SculptUndoStep *us = (SculptUndoStep *)us_p;
   /* Dummy, memory is cleared anyway. */
   BLI_listbase_clear(&us->data.nodes);
 }
 
-static bool sculpt_undosys_step_encode(struct bContext * /*C*/, struct Main *bmain, UndoStep *us_p)
+static bool sculpt_undosys_step_encode(bContext * /*C*/, Main *bmain, UndoStep *us_p)
 {
   /* Dummy, encoding is done along the way by adding tiles
    * to the current 'SculptUndoStep' added by encode_init. */
@@ -2793,7 +2794,7 @@ static bool sculpt_undosys_step_encode(struct bContext * /*C*/, struct Main *bma
   return true;
 }
 
-static void sculpt_undosys_step_decode_undo_impl(struct bContext *C,
+static void sculpt_undosys_step_decode_undo_impl(bContext *C,
                                                  Depsgraph *depsgraph,
                                                  SculptUndoStep *us)
 {
@@ -2804,7 +2805,7 @@ static void sculpt_undosys_step_decode_undo_impl(struct bContext *C,
   sculpt_undo_print_nodes(CTX_data_active_object(C), us);
 }
 
-static void sculpt_undosys_step_decode_redo_impl(struct bContext *C,
+static void sculpt_undosys_step_decode_redo_impl(bContext *C,
                                                  Depsgraph *depsgraph,
                                                  SculptUndoStep *us)
 {
@@ -2815,7 +2816,7 @@ static void sculpt_undosys_step_decode_redo_impl(struct bContext *C,
   sculpt_undo_print_nodes(CTX_data_active_object(C), us);
 }
 
-static void sculpt_undosys_step_decode_undo(struct bContext *C,
+static void sculpt_undosys_step_decode_undo(bContext *C,
                                             Depsgraph *depsgraph,
                                             SculptUndoStep *us,
                                             const bool is_final)
@@ -2853,9 +2854,7 @@ static void sculpt_undosys_step_decode_undo(struct bContext *C,
   }
 }
 
-static void sculpt_undosys_step_decode_redo(struct bContext *C,
-                                            Depsgraph *depsgraph,
-                                            SculptUndoStep *us)
+static void sculpt_undosys_step_decode_redo(bContext *C, Depsgraph *depsgraph, SculptUndoStep *us)
 {
   SculptUndoStep *us_iter = us;
   while (us_iter->step.prev && (us_iter->step.prev->type == us_iter->step.type)) {
@@ -2879,7 +2878,7 @@ static void sculpt_undosys_step_decode_redo(struct bContext *C,
 }
 
 static void sculpt_undosys_step_decode(
-    struct bContext *C, struct Main *bmain, UndoStep *us_p, const eUndoStepDir dir, bool is_final)
+    bContext *C, Main *bmain, UndoStep *us_p, const eUndoStepDir dir, bool is_final)
 {
   /* NOTE: behavior for undo/redo closely matches image undo. */
   BLI_assert(dir != STEP_INVALID);
@@ -2933,19 +2932,19 @@ static void sculpt_undosys_step_free(UndoStep *us_p)
   sculpt_undo_free_list(&us->data.nodes);
 }
 
-void ED_sculpt_undo_geometry_begin(struct Object *ob, const wmOperator *op)
+void ED_sculpt_undo_geometry_begin(Object *ob, const wmOperator *op)
 {
   SCULPT_undo_push_begin(ob, op);
   SCULPT_undo_push_node(ob, nullptr, SCULPT_UNDO_GEOMETRY);
 }
 
-void ED_sculpt_undo_geometry_begin_ex(struct Object *ob, const char *name)
+void ED_sculpt_undo_geometry_begin_ex(Object *ob, const char *name)
 {
   SCULPT_undo_push_begin_ex(ob, name);
   SCULPT_undo_push_node(ob, nullptr, SCULPT_UNDO_GEOMETRY);
 }
 
-void ED_sculpt_undo_geometry_end(struct Object *ob)
+void ED_sculpt_undo_geometry_end(Object *ob)
 {
   SCULPT_undo_push_node(ob, nullptr, SCULPT_UNDO_GEOMETRY);
   SCULPT_undo_push_end(ob);

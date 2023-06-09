@@ -1,5 +1,6 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright 2020 Blender Foundation */
+/* SPDX-FileCopyrightText: 2020 Blender Foundation
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup edsculpt
@@ -66,7 +67,7 @@ using blender::Vector;
 
 /* Utils. */
 
-int ED_sculpt_face_sets_find_next_available_id(struct Mesh *mesh)
+int ED_sculpt_face_sets_find_next_available_id(Mesh *mesh)
 {
   const int *face_sets = static_cast<const int *>(
       CustomData_get_layer_named(&mesh->pdata, CD_PROP_INT32, ".sculpt_face_set"));
@@ -83,7 +84,7 @@ int ED_sculpt_face_sets_find_next_available_id(struct Mesh *mesh)
   return next_face_set_id;
 }
 
-void ED_sculpt_face_sets_initialize_none_to_id(struct Mesh *mesh, const int new_id)
+void ED_sculpt_face_sets_initialize_none_to_id(Mesh *mesh, const int new_id)
 {
   int *face_sets = static_cast<int *>(CustomData_get_layer_named_for_write(
       &mesh->pdata, CD_PROP_INT32, ".sculpt_face_set", mesh->totpoly));
@@ -227,6 +228,11 @@ static void do_draw_face_sets_brush_task_cb_ex(void *__restrict userdata,
     }
   }
   BKE_pbvh_face_iter_end(fd);
+
+  if (changed) {
+    BKE_pbvh_vert_tag_update_normal_triangulation(data->nodes[n]);
+    BKE_pbvh_node_mark_rebuild_draw(data->nodes[n]);
+  }
 }
 
 static void do_relax_face_sets_brush_task_cb_ex(void *__restrict userdata,
@@ -1720,7 +1726,7 @@ static int sculpt_face_set_edit_invoke(bContext *C, wmOperator *op, const wmEven
   return sculpt_face_set_edit_exec(C, op);
 }
 
-void SCULPT_OT_face_sets_edit(struct wmOperatorType *ot)
+void SCULPT_OT_face_sets_edit(wmOperatorType *ot)
 {
   /* Identifiers. */
   ot->name = "Edit Face Set";
