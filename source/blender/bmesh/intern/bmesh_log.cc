@@ -852,7 +852,7 @@ struct BMLogEntry {
       if (set->type != LOG_SET_DIFF) {
         continue;
       }
-      // BMLogSetDiff *diff = current_diff_set(bm);
+
       BMLogSetDiff *diff = static_cast<BMLogSetDiff *>(set);
       if (diff->modified_faces.contains(id) || diff->removed_faces.contains(id) ||
           diff->added_faces.contains(id))
