@@ -85,6 +85,8 @@ static void surface_smooth_v_safe(
     return;
   }
 
+  PBVH_CHECK_NAN(v->co);
+
   Vector<BMLoop *, 32> loops;
   Vector<float, 32> ws;
 
@@ -220,6 +222,8 @@ static void surface_smooth_v_safe(
   atomic_cas_float(&v->co[1], y, ny);
   atomic_cas_float(&v->co[2], z, nz);
 
+  PBVH_CHECK_NAN(v->co);
+
   /*
    * Use reprojection for non-UV attributes.  UV attributes
    * use blender::bke::sculpt::interp_face_corners using
@@ -230,6 +234,8 @@ static void surface_smooth_v_safe(
     BKE_sculpt_reproject_cdata(ss, vertex, startco, startno, false);
     blender::bke::sculpt::interp_face_corners(pbvh, vertex, loops, ws, fac);
   }
+
+  PBVH_CHECK_NAN(v->co);
 
   float *start_origco = blender::bke::paint::vertex_attr_ptr<float>(vertex, ss->attrs.orig_co);
 
@@ -927,6 +933,9 @@ bool check_face_is_tri(PBVH *pbvh, BMFace *f)
       pbvh_boundary_update_bmesh(pbvh, l->e);
 
       if (l->e->head.index == -1) {
+        *BM_ELEM_CD_PTR<int *>(l->e,
+                               pbvh->cd_edge_boundary) &= ~(SCULPT_BOUNDARY_UV | SCULPT_CORNER_UV);
+
         BM_log_edge_added(pbvh->header.bm, pbvh->bm_log, l->e);
         dyntopo_add_flag(pbvh, l->v, SCULPTFLAG_NEED_VALENCE);
         dyntopo_add_flag(pbvh, l->next->v, SCULPTFLAG_NEED_VALENCE);
@@ -2223,9 +2232,13 @@ void EdgeQueueContext::step()
       return;
     }
 
-    float prob = ops[curop] == PBVH_Subdivide ? 0.25 : 0.75;
-    if (srand.get_float() > prob) {
-      surface_smooth_v_safe(ss, pbvh, v, surface_smooth_fac, true);
+    if (srand.get_float() > 0.7) {
+      surface_smooth_v_safe(ss,
+                            pbvh,
+                            v,
+                            surface_smooth_fac *
+                                mask_cb({reinterpret_cast<intptr_t>(v)}, mask_cb_data),
+                            reproject_cdata);
     }
   };
 
@@ -2483,6 +2496,9 @@ void EdgeQueueContext::split_edge(BMEdge *e)
   BMEdge *newe;
   BMFace *newf = nullptr;
 
+  PBVH_CHECK_NAN(e->v1->co);
+  PBVH_CHECK_NAN(e->v2->co);
+
   if (!e->l) {
     return;
   }
@@ -2513,6 +2529,11 @@ void EdgeQueueContext::split_edge(BMEdge *e)
   BM_log_edge_removed(bm, pbvh->bm_log, e);
   BM_idmap_release(pbvh->bm_idmap, reinterpret_cast<BMElem *>(e), true);
 
+  StrokeID stroke_id1 = blender::bke::paint::vertex_attr_get<StrokeID>(
+      {reinterpret_cast<intptr_t>(e->v1)}, ss->attrs.stroke_id);
+  StrokeID stroke_id2 = blender::bke::paint::vertex_attr_get<StrokeID>(
+      {reinterpret_cast<intptr_t>(e->v2)}, ss->attrs.stroke_id);
+
   dyntopo_add_flag(pbvh, e->v1, SCULPTFLAG_NEED_VALENCE);
   dyntopo_add_flag(pbvh, e->v2, SCULPTFLAG_NEED_VALENCE);
   pbvh_boundary_update_bmesh(pbvh, e->v1);
@@ -2522,23 +2543,43 @@ void EdgeQueueContext::split_edge(BMEdge *e)
   int bf1 = BM_ELEM_CD_GET_INT(e->v1, pbvh->cd_boundary_flag);
   int bf2 = BM_ELEM_CD_GET_INT(e->v2, pbvh->cd_boundary_flag);
 
+  bool uv_boundary = BM_ELEM_CD_GET_INT(e, pbvh->cd_edge_boundary) & SCULPT_BOUNDARY_UV;
+
   BMVert *newv = BM_edge_split(bm, e, e->v1, &newe, 0.5f);
+
+  PBVH_CHECK_NAN(newv->co);
 
   /* Remove edge-in-minmax-heap tag. */
   e->head.hflag &= ~EDGE_QUEUE_FLAG;
   newe->head.hflag &= ~EDGE_QUEUE_FLAG;
 
-  /* Deal with UV boundary flags. */
   BM_ELEM_CD_SET_INT(newe, pbvh->cd_edge_boundary, BM_ELEM_CD_GET_INT(e, pbvh->cd_edge_boundary));
-  if ((bf1 & SCULPT_BOUNDARY_UV) && (bf2 & SCULPT_BOUNDARY_UV)) {
-    *BM_ELEM_CD_PTR<int *>(newv, pbvh->cd_boundary_flag) |= SCULPT_BOUNDARY_UV;
+
+  /* Do not allow vertex uv boundary flags to propagate across non-boundary edges. */
+  if (!uv_boundary) {
+    *BM_ELEM_CD_PTR<int *>(newv,
+                           pbvh->cd_boundary_flag) &= ~(SCULPT_BOUNDARY_UV | SCULPT_CORNER_UV);
   }
   else {
-    *BM_ELEM_CD_PTR<int *>(newv, pbvh->cd_boundary_flag) &= ~SCULPT_BOUNDARY_UV;
+    *BM_ELEM_CD_PTR<int *>(newv, pbvh->cd_boundary_flag) |= SCULPT_BOUNDARY_UV;
   }
 
-  /* Flag newv to not update original coordinates. */
-  stroke_id_test(ss, {reinterpret_cast<intptr_t>(newv)}, STROKEID_USER_ORIGINAL);
+  /* Propagate current stroke id. */
+  StrokeID stroke_id;
+
+  if (stroke_id1.id < stroke_id2.id) {
+    std::swap(stroke_id1, stroke_id2);
+  }
+
+  stroke_id.id = stroke_id1.id;
+  if (stroke_id2.id < stroke_id1.id) {
+    stroke_id.userflag = stroke_id1.userflag;
+  }
+  else {
+    stroke_id.userflag = stroke_id1.userflag & stroke_id2.userflag;
+  }
+
+  *BM_ELEM_CD_PTR<StrokeID *>(newv, ss->attrs.stroke_id->bmesh_cd_offset) = stroke_id;
 
   BM_ELEM_CD_SET_INT(newv, pbvh->cd_vert_node_offset, DYNTOPO_NODE_NONE);
   BM_idmap_check_assign(pbvh->bm_idmap, reinterpret_cast<BMElem *>(newv));
@@ -3348,8 +3389,72 @@ template<typename T = float> void tri_weights_v3(T *p, const T *a, const T *b, c
 }
 }  // namespace myinterp
 
+template<typename T, typename SumT = T>
+static void interp_prop_data(
+    const void **src_blocks, const float *weights, int count, void *dst_block, int cd_offset)
+{
+  SumT sum;
+
+  if constexpr (std::is_same_v<SumT, float>) {
+    sum = 0.0f;
+  }
+  else {
+    sum = {};
+  }
+
+  for (int i = 0; i < count; i++) {
+    const T *value = static_cast<const T *>(POINTER_OFFSET(src_blocks[i], cd_offset));
+    sum += (*value) * weights[i];
+  }
+
+  if (count > 0) {
+    T *dest = static_cast<T *>(POINTER_OFFSET(dst_block, cd_offset));
+    *dest = sum;
+  }
+}
+
+void reproject_interp_data(CustomData *data,
+                           const void **src_blocks,
+                           const float *weights,
+                           const float *sub_weights,
+                           int count,
+                           void *dst_block,
+                           eCustomDataMask typemask)
+{
+  using namespace blender;
+
+  for (int i = 0; i < data->totlayer; i++) {
+    CustomDataLayer *layer = data->layers + i;
+
+    if (!(CD_TYPE_AS_MASK(layer->type) & typemask)) {
+      continue;
+    }
+    if (layer->flag & (CD_FLAG_TEMPORARY | CD_FLAG_ELEM_NOINTERP)) {
+      continue;
+    }
+
+    switch (layer->type) {
+      case CD_PROP_FLOAT:
+        interp_prop_data<float>(src_blocks, weights, count, dst_block, layer->offset);
+        break;
+      case CD_PROP_FLOAT2:
+        interp_prop_data<float2>(src_blocks, weights, count, dst_block, layer->offset);
+        break;
+      case CD_PROP_FLOAT3:
+        interp_prop_data<float3>(src_blocks, weights, count, dst_block, layer->offset);
+        break;
+      case CD_PROP_COLOR:
+        interp_prop_data<float4>(src_blocks, weights, count, dst_block, layer->offset);
+        break;
+        // case CD_PROP_BYTE_COLOR:
+        // interp_prop_data<uchar4, float4>(src_blocks, weights, count, dst_block, layer->offset);
+        // break;
+    }
+  }
+}
+
 template<typename T = double>  // myinterp::TestFloat<double>>
-inline void reproject_bm_data(
+static void reproject_bm_data(
     BMesh *bm, BMLoop *l_dst, const BMFace *f_src, const bool do_vertex, eCustomDataMask typemask)
 {
   using namespace myinterp;
@@ -3423,6 +3528,13 @@ inline void reproject_bm_data(
 
   T totw = 0.0;
   for (int i = 0; i < f_src->len; i++) {
+    if (isnan(w[i])) {
+      printf("%s: NaN\n", __func__);
+      /* Use uniform weights. */
+      totw = 0.0;
+      break;
+    }
+
     totw += w[i];
   }
 
@@ -3445,12 +3557,11 @@ inline void reproject_bm_data(
     fw = w;
   }
 
-  CustomData_bmesh_interp_ex(
-      &bm->ldata, blocks, fw, nullptr, f_src->len, l_dst->head.data, typemask);
+  reproject_interp_data(&bm->ldata, blocks, fw, nullptr, f_src->len, l_dst->head.data, typemask);
 
   if (do_vertex) {
     // bool inside = isect_point_poly_v2(co, cos_2d, l_dst->f->len, false);
-    CustomData_bmesh_interp_ex(
+    reproject_interp_data(
         &bm->vdata, vblocks, fw, nullptr, f_src->len, l_dst->v->head.data, typemask);
   }
 }
@@ -3581,7 +3692,7 @@ void BKE_sculpt_reproject_cdata(
   char *_blocks = static_cast<char *>(alloca(ldata->totsize * totloop));
   void **blocks = static_cast<void **>(BLI_array_alloca(blocks, totloop));
 
-  const int max_vblocks = valence * 2;
+  const int max_vblocks = valence * 3;
 
   char *_vblocks = static_cast<char *>(alloca(ss->bm->vdata.totsize * max_vblocks));
   void **vblocks = static_cast<void **>(BLI_array_alloca(vblocks, max_vblocks));
@@ -3750,9 +3861,18 @@ void BKE_sculpt_reproject_cdata(
 
       /* Interpolate. */
       BMLoop _interpl, *interpl = &_interpl;
+      BMVert _v = *l->v;
 
       *interpl = *l;
-      memcpy(blocks[i], l->head.data, ldata->totsize);
+      interpl->v = &_v;
+
+#ifdef WITH_ASAN
+      /* Can't unpoison memory in threaded code. */
+      CustomData_bmesh_copy_data(&ss->bm->ldata, &ss->bm->ldata, l->head.data, &blocks[i]);
+#else
+      memcpy(blocks[i], l->head.data, ss->bm->ldata.totsize);
+#endif
+
       interpl->head.data = blocks[i];
 
       interp_v3_v3v3(l->v->co, startco, vco, t);
@@ -3760,15 +3880,17 @@ void BKE_sculpt_reproject_cdata(
       normalize_v3(l->v->no);
 
       if (l->v == v && cur_vblock < max_vblocks) {
-        void *vblock_old = interpl->v->head.data;
         void *vblock = vblocks[cur_vblock];
 
-        memcpy((void *)vblock, v->head.data, ss->bm->vdata.totsize);
+#ifdef WITH_ASAN
+        /* Can't unpoison memory in threaded code. */
+        CustomData_bmesh_copy_data(&ss->bm->vdata, &ss->bm->vdata, v->head.data, &vblocks[i]);
+#else
+        memcpy(vblocks[i], v->head.data, ss->bm->vdata.totsize);
+#endif
+
         interpl->v->head.data = (void *)vblock;
-
         reproject_bm_data(ss->bm, interpl, fakef, true, typemask);
-
-        interpl->v->head.data = vblock_old;
         cur_vblock++;
       }
       else {
@@ -3794,7 +3916,7 @@ void BKE_sculpt_reproject_cdata(
       float3 origco_saved = *origco;
       float3 origno_saved = *origno;
 
-      CustomData_bmesh_interp_ex(
+      reproject_interp_data(
           &ss->bm->vdata, (const void **)vblocks, ws, nullptr, cur_vblock, v->head.data, typemask);
 
       *origco = origco_saved;

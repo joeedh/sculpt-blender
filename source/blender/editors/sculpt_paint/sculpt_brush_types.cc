@@ -1561,6 +1561,13 @@ static void do_layer_brush_task_cb_ex(void *__restrict userdata,
       }
     }
 
+    PBVH_CHECK_NAN1(*disp_factor);
+
+    if (isnan(*disp_factor)) {
+      vd.bm_vert->head.hflag |= BM_ELEM_SELECT;
+      continue;
+    }
+
     /* When using persistent base, the layer brush (holding Control) invert mode resets the
      * height of the layer to 0. This makes possible to clean edges of previously added layers
      * on top of the base. */
@@ -1580,6 +1587,8 @@ static void do_layer_brush_task_cb_ex(void *__restrict userdata,
     else {
       *disp_factor = clamp_f(*disp_factor, -1.0f, 1.0f);
     }
+
+    PBVH_CHECK_NAN1(*disp_factor);
 
     float final_co[3];
     float normal[3];
@@ -1601,7 +1610,10 @@ static void do_layer_brush_task_cb_ex(void *__restrict userdata,
     mul_v3_fl(vdisp, fabsf(fade));
     add_v3_v3v3(final_co, vd.co, vdisp);
 
+    PBVH_CHECK_NAN(final_co);
     SCULPT_clip(sd, ss, vd.co, final_co);
+
+    PBVH_CHECK_NAN1(*disp_factor);
 
     if (vd.is_mesh) {
       BKE_pbvh_vert_tag_update_normal(ss->pbvh, vd.vertex);
@@ -2908,7 +2920,7 @@ static void do_topology_rake_bmesh_task_cb_ex(void *__restrict userdata,
                                               sqrtf(test.dist),
                                               vd.no,
                                               vd.fno,
-                                              *vd.mask,
+                                              vd.mask ? *vd.mask : 0.0f,
                                               vd.vertex,
                                               thread_id,
                                               &automask_data);
@@ -2926,8 +2938,17 @@ static void do_topology_rake_bmesh_task_cb_ex(void *__restrict userdata,
 
     int cd_temp = data->scl->bmesh_cd_offset;
 
-    SCULPT_bmesh_four_neighbor_average(
-        ss, avg, direction2, vd.bm_vert, projection, hard_corner_pin, cd_temp, true, false);
+    SCULPT_bmesh_four_neighbor_average(ss,
+                                       avg,
+                                       direction2,
+                                       vd.bm_vert,
+                                       projection,
+                                       hard_corner_pin,
+                                       cd_temp,
+                                       true,
+                                       false,
+                                       fade,
+                                       do_reproject);
 
     sub_v3_v3v3(val, avg, vd.co);
     madd_v3_v3v3fl(val, vd.co, val, fade);
@@ -2945,13 +2966,16 @@ static void do_topology_rake_bmesh_task_cb_ex(void *__restrict userdata,
                                          hard_corner_pin,
                                          cd_temp,
                                          true,
-                                         true);
+                                         true,
+                                         fade,
+                                         false);
       float *origco = blender::bke::paint::vertex_attr_ptr<float>(vd.vertex, ss->attrs.orig_co);
       interp_v3_v3v3(origco, origco, origco_avg, fade);
     }
 
     if (do_reproject) {
-      BKE_sculpt_reproject_cdata(ss, vd.vertex, oldco, oldno);
+      /* Use interp_face_corners instead. */
+      //BKE_sculpt_reproject_cdata(ss, vd.vertex, oldco, oldno);
     }
 
     if (vd.is_mesh) {
@@ -2974,11 +2998,11 @@ void SCULPT_bmesh_topology_rake(Sculpt *sd, Object *ob, Span<PBVHNode *> nodes, 
   SCULPT_smooth_undo_push(ob, nodes);
 
   /* Interactions increase both strength and quality. */
-  const int iterations = 3;
+  const int iterations = 1;
 
   int iteration;
   const int count = iterations * strength + 1;
-  const float factor = iterations * strength / count;
+  const float factor = (iterations * strength / count) * 0.25f;
 
   if (!ss->attrs.rake_temp) {
     SculptAttributeParams params = {};

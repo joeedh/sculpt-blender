@@ -2215,6 +2215,11 @@ void update_vert_boundary_bmesh(int cd_faceset_offset,
     }
 
     if (e->l) {
+      if ((e->l->f->head.hflag & BM_ELEM_HIDDEN) ||
+          (e->l->radial_next->f->head.hflag & BM_ELEM_HIDDEN)) {
+        newflag |= SCULPTFLAG_VERT_FSET_HIDDEN;
+      }
+
       if (BM_ELEM_CD_GET_INT(e->l->f, cd_face_node_offset) != ni) {
         newflag |= SCULPTFLAG_PBVH_BOUNDARY;
       }
