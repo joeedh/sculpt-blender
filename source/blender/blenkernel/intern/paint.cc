@@ -2435,7 +2435,6 @@ int *BKE_sculpt_face_sets_ensure(Object *ob)
   SculptSession *ss = ob->sculpt;
 
   if (!ss->attrs.face_set) {
-    Mesh *mesh = static_cast<Mesh *>(ob->data);
     SculptAttributeParams params = {};
     params.permanent = true;
 
@@ -2684,16 +2683,19 @@ void BKE_sculpt_sync_face_visibility_to_grids(Mesh *mesh, SubdivCCG *subdiv_ccg)
 static PBVH *build_pbvh_for_dynamic_topology(Object *ob, bool /*update_sculptverts*/)
 {
   PBVH *pbvh = ob->sculpt->pbvh = BKE_pbvh_new(PBVH_BMESH);
-  BKE_pbvh_set_bmesh(pbvh, ob->sculpt->bm);
-  sculptsession_bmesh_add_layers(ob);
 
+  BKE_pbvh_set_bmesh(pbvh, ob->sculpt->bm);
   BM_mesh_elem_table_ensure(ob->sculpt->bm, BM_VERT | BM_EDGE | BM_FACE);
 
-  BKE_sculptsession_update_attr_refs(ob);
+  sculptsession_bmesh_add_layers(ob);
   sculpt_boundary_flags_ensure(ob, pbvh, ob->sculpt->bm->totvert, ob->sculpt->bm->totedge);
+  BKE_sculpt_ensure_sculpt_layers(ob);
+
+  BKE_sculptsession_update_attr_refs(ob);
   sculpt_check_face_areas(ob, pbvh);
 
   BKE_sculpt_ensure_idmap(ob);
+  blender::bke::pbvh::sharp_limit_set(pbvh, ob->sculpt->sharp_angle_limit);
 
   BKE_pbvh_build_bmesh(pbvh,
                        BKE_object_get_original_mesh(ob),
@@ -2714,7 +2716,6 @@ static PBVH *build_pbvh_for_dynamic_topology(Object *ob, bool /*update_sculptver
   if (ob->sculpt->bm_log) {
     BKE_pbvh_set_bm_log(pbvh, ob->sculpt->bm_log);
   }
-  blender::bke::pbvh::sharp_limit_set(pbvh, ob->sculpt->sharp_angle_limit);
 
   return pbvh;
 }
@@ -2859,7 +2860,6 @@ PBVH *BKE_sculpt_object_pbvh_ensure(Depsgraph *depsgraph, Object *ob)
   }
 
   SculptSession *ss = ob->sculpt;
-  Scene *scene = DEG_get_input_scene(depsgraph);
 
   PBVH *pbvh = ss->pbvh;
   if (pbvh != nullptr) {

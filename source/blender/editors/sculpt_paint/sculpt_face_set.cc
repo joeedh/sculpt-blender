@@ -178,7 +178,7 @@ static void do_draw_face_sets_brush_task_cb_ex(void *__restrict userdata,
       continue;
     }
 
-    /* Face set automasking in inverted draw mode is tricky,, we have
+    /* Face set automasking in inverted draw mode is tricky, we have
      * to sample the automasking face set after the stroke has started.
      */
     if (set_active_faceset &&
@@ -220,7 +220,7 @@ static void do_draw_face_sets_brush_task_cb_ex(void *__restrict userdata,
 
     if (fade > 0.05f) {
       for (int i = 0; i < fd.verts_num; i++) {
-        BKE_sculpt_boundary_flag_update(ss, fd.verts[i]);
+        BKE_sculpt_boundary_flag_update(ss, fd.verts[i], true);
       }
 
       *fd.face_set = ss->cache->paint_face_set;
@@ -586,7 +586,8 @@ static void sculpt_face_sets_init_flood_fill(Object *ob, const FaceSetsFloodFill
 
   BitVector<> visited_faces(mesh->totpoly, false);
 
-  int *face_sets = ss->face_sets;
+  int *face_sets = static_cast<int *>(CustomData_get_layer_named_for_write(
+      &mesh->pdata, CD_PROP_INT32, SCULPT_ATTRIBUTE_NAME(face_set), mesh->totpoly));
 
   const Span<int2> edges = mesh->edges();
   const OffsetIndices polys = mesh->polys();
@@ -663,11 +664,6 @@ static int sculpt_face_set_init_exec(bContext *C, wmOperator *op)
 
   BKE_sculpt_update_object_for_edit(depsgraph, ob, true, false, false);
 
-  /* Dyntopo not supported. */
-  if (BKE_pbvh_type(ss->pbvh) == PBVH_BMESH) {
-    return OPERATOR_CANCELLED;
-  }
-
   PBVH *pbvh = ob->sculpt->pbvh;
   Vector<PBVHNode *> nodes = blender::bke::pbvh::search_gather(pbvh, nullptr, nullptr);
 
@@ -675,17 +671,34 @@ static int sculpt_face_set_init_exec(bContext *C, wmOperator *op)
     return OPERATOR_CANCELLED;
   }
 
+  const float threshold = RNA_float_get(op->ptr, "threshold");
+
+  Mesh *mesh = static_cast<Mesh *>(ob->data);
+  BKE_sculpt_face_sets_ensure(ob);
+
   SCULPT_undo_push_begin(ob, op);
   for (PBVHNode *node : nodes) {
     SCULPT_undo_push_node(ob, node, SCULPT_UNDO_FACE_SETS);
   }
 
-  const float threshold = RNA_float_get(op->ptr, "threshold");
+  /* Flush bmesh to base mesh. */
+  if (ss->bm) {
+    BKE_sculptsession_bm_to_me_for_render(ob);
 
-  Mesh *mesh = static_cast<Mesh *>(ob->data);
-  BKE_sculpt_face_sets_ensure(ob);
+    if (!ss->epmap.is_empty()) {
+      ss->epmap = {};
+      ss->edge_to_poly_indices = {};
+      ss->edge_to_poly_offsets = {};
+    }
+
+    if (!ss->pmap.is_empty()) {
+      ss->pmap = {};
+      ss->vert_to_poly_indices = {};
+      ss->vert_to_poly_offsets = {};
+    }
+  }
+
   const bke::AttributeAccessor attributes = mesh->attributes();
-
   switch (mode) {
     case SCULPT_FACE_SETS_FROM_LOOSE_PARTS: {
       const VArray<bool> hide_poly = *attributes.lookup_or_default<bool>(
@@ -756,9 +769,23 @@ static int sculpt_face_set_init_exec(bContext *C, wmOperator *op)
 
   SCULPT_undo_push_end(ob);
 
+  if (ss->bm) {
+    SCULPT_face_random_access_ensure(ss);
+    BKE_sculpt_face_sets_ensure(ob);
+
+    int cd_fset = ss->attrs.face_set->bmesh_cd_offset;
+    const int *face_sets = static_cast<const int *>(
+        CustomData_get_layer_named(&mesh->pdata, CD_PROP_INT32, SCULPT_ATTRIBUTE_NAME(face_set)));
+
+    for (int i = 0; i < mesh->totpoly; i++) {
+      BMFace *f = ss->bm->ftable[i];
+      BM_ELEM_CD_SET_INT(f, cd_fset, face_sets[i]);
+    }
+  }
+
   int verts_num = SCULPT_vertex_count_get(ob->sculpt);
   for (int i : IndexRange(verts_num)) {
-    BKE_sculpt_boundary_flag_update(ob->sculpt, BKE_pbvh_index_to_vertex(ss->pbvh, i));
+    BKE_sculpt_boundary_flag_update(ob->sculpt, BKE_pbvh_index_to_vertex(ss->pbvh, i), true);
   }
 
   /* Sync face sets visibility and vertex visibility as now all Face Sets are visible. */
@@ -1106,7 +1133,7 @@ void SCULPT_face_mark_boundary_update(SculptSession *ss, PBVHFaceRef face)
       BMLoop *l = f->l_first;
       do {
         PBVHVertRef vertex = {reinterpret_cast<intptr_t>(l->v)};
-        BKE_sculpt_boundary_flag_update(ss, vertex);
+        BKE_sculpt_boundary_flag_update(ss, vertex, true);
       } while ((l = l->next) != f->l_first);
 
       break;
@@ -1114,9 +1141,9 @@ void SCULPT_face_mark_boundary_update(SculptSession *ss, PBVHFaceRef face)
     case PBVH_FACES: {
       for (int vert_i : ss->corner_verts.slice(ss->polys[face.i])) {
         PBVHVertRef vertex = {vert_i};
-        BKE_sculpt_boundary_flag_update(ss, vertex);
-        break;
+        BKE_sculpt_boundary_flag_update(ss, vertex, true);
       }
+      break;
       case PBVH_GRIDS: {
         const CCGKey *key = BKE_pbvh_get_grid_key(ss->pbvh);
         int grid_index = BKE_subdiv_ccg_start_face_grid_index_get(ss->subdiv_ccg)[face.i];
@@ -1124,7 +1151,7 @@ void SCULPT_face_mark_boundary_update(SculptSession *ss, PBVHFaceRef face)
         int verts_num = ss->polys[face.i].size() * key->grid_area;
 
         for (int i = 0; i < verts_num; i++, vertex_i++) {
-          BKE_sculpt_boundary_flag_update(ss, {vertex_i});
+          BKE_sculpt_boundary_flag_update(ss, {vertex_i}, true);
         }
 
         break;

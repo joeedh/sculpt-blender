@@ -760,6 +760,9 @@ static void face_set_gesture_apply_task_cb(void *__restrict userdata,
         continue;
       }
       SCULPT_face_set_set(sgcontext->ss, fd.face, face_set_operation->new_face_set_id);
+      for (int i : IndexRange(fd.verts_num)) {
+        BKE_sculpt_boundary_flag_update(sgcontext->ss, fd.verts[i], true);
+      }
       any_updated = true;
     }
   }
@@ -1529,7 +1532,12 @@ static void sculpt_gesture_apply_trim(SculptGestureContext *sgcontext)
 
   if (sgcontext->ss && sgcontext->ss->bm) { /* Rebuild pbvh. */
     BKE_pbvh_free(sgcontext->ss->pbvh);
+
     sgcontext->ss->pbvh = BKE_pbvh_new(PBVH_BMESH);
+    BKE_pbvh_set_bmesh(sgcontext->ss->pbvh, sgcontext->ss->bm);
+    BKE_sculpt_ensure_sculpt_layers(sgcontext->vc.obact);
+
+    blender::bke::pbvh::sharp_limit_set(sgcontext->ss->pbvh, sgcontext->ss->sharp_angle_limit);
 
     BKE_pbvh_build_bmesh(sgcontext->ss->pbvh,
                          sculpt_mesh,

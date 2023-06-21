@@ -81,10 +81,6 @@ static void surface_smooth_v_safe(
   float tan[3];
   float tot = 0.0;
 
-  if (BM_ELEM_CD_GET_INT(v, pbvh->cd_valence) > 12) {
-    return;
-  }
-
   PBVH_CHECK_NAN(v->co);
 
   Vector<BMLoop *, 32> loops;
@@ -334,6 +330,11 @@ static PBVHTopologyUpdateMode edge_queue_test(EdgeQueueContext *eq_ctx,
   }
 
   return PBVH_None;
+}
+
+void EdgeQueueContext::surface_smooth(BMVert *v, float fac)
+{
+  surface_smooth_v_safe(ss, pbvh, v, fac, reproject_cdata);
 }
 
 void EdgeQueueContext::insert_edge(BMEdge *e, float w)
@@ -1984,7 +1985,7 @@ static bool do_cleanup_3_4(EdgeQueueContext *eq_ctx, PBVH *pbvh)
 
       bool ok = eq_ctx->brush_tester->vert_in_range(v);
 
-      if (!ok) {
+      if (!ok && v->e) {
         /* Check if any surrounding vertex is in range. */
         BMEdge *e = v->e;
         do {
@@ -2026,8 +2027,7 @@ EdgeQueueContext::EdgeQueueContext(BrushTester *brush_tester_,
                                    float3 view_normal_,
                                    bool updatePBVH_,
                                    DyntopoMaskCB mask_cb_,
-                                   void *mask_cb_data_,
-                                   int edge_limit_multiply)
+                                   void *mask_cb_data_)
 {
   ss = ob->sculpt;
 
@@ -2053,7 +2053,6 @@ EdgeQueueContext::EdgeQueueContext(BrushTester *brush_tester_,
   surface_relax = true;
   reproject_cdata = ss->reproject_smooth;
 
-  max_heap_mm = (DYNTOPO_MAX_ITER * edge_limit_multiply) << 8;
   limit_len_min = pbvh->bm_min_edge_len;
   limit_len_max = pbvh->bm_max_edge_len;
   limit_len_min_sqr = limit_len_min * limit_len_min;
@@ -2106,14 +2105,10 @@ EdgeQueueContext::EdgeQueueContext(BrushTester *brush_tester_,
 
     steps[0] = DYNTOPO_MAX_ITER_COLLAPSE;
   }
-
-  max_steps = (DYNTOPO_MAX_ITER * edge_limit_multiply) << (totop - 1);
 }
 
 void EdgeQueueContext::start()
 {
-  current_i = 0;
-
   /* Preemptively log UVs. */
   if (!ignore_loop_data) {
     for (int i : IndexRange(pbvh->totnode)) {
@@ -2130,7 +2125,16 @@ void EdgeQueueContext::start()
 
 bool EdgeQueueContext::done()
 {
-  return totop == 0 || edge_heap.empty() || current_i >= max_steps;
+  if (edge_heap.min_weight() > limit_len_min_sqr && edge_heap.max_weight() < limit_len_max_sqr) {
+    return true;
+  }
+
+  return totop == 0 || edge_heap.empty();
+}
+
+bool EdgeQueueContext::cleanup_valence_34()
+{
+  return do_cleanup_3_4(this, pbvh);
 }
 
 void EdgeQueueContext::finish()
@@ -2319,7 +2323,6 @@ void EdgeQueueContext::step()
   }
 
   count++;
-  current_i++;
 }
 
 void EdgeQueueContext::report()
@@ -2363,21 +2366,12 @@ bool remesh_topology(BrushTester *brush_tester,
                      bool updatePBVH,
                      DyntopoMaskCB mask_cb,
                      void *mask_cb_data,
-                     int edge_limit_multiply,
                      float quality)
 {
   blender::bke::pbvh::defragment_pbvh_partial(pbvh, 5);
 
-  EdgeQueueContext eq_ctx(brush_tester,
-                          ob,
-                          pbvh,
-                          mode,
-                          use_frontface,
-                          view_normal,
-                          updatePBVH,
-                          mask_cb,
-                          mask_cb_data,
-                          edge_limit_multiply);
+  EdgeQueueContext eq_ctx(
+      brush_tester, ob, pbvh, mode, use_frontface, view_normal, updatePBVH, mask_cb, mask_cb_data);
   eq_ctx.start();
 
   /* Apply a time limit to avoid excessive hangs on pathological topology. */
@@ -2648,6 +2642,14 @@ void EdgeQueueContext::split_edge(BMEdge *e)
         add_split_edge_recursive(this, newl, w, limit_len_max, 0);
       }
       else if (mode == PBVH_Collapse) {
+        insert_edge(newl->e, w);
+      }
+    }
+    else {
+      float w = 0.0f;
+      PBVHTopologyUpdateMode mode = edge_queue_test(this, pbvh, newl->e, &w);
+
+      if (mode == PBVH_Collapse) {
         insert_edge(newl->e, w);
       }
     }
