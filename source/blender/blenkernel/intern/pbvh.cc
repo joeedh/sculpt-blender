@@ -4386,7 +4386,7 @@ void update_edge_boundary_faces(int edge,
   }
   else { /* No edge->poly map; approximate from vertices (will give artifacts on corners). */
     int v1 = edges[edge][0];
-    int v2 = edges[edge][2];
+    int v2 = edges[edge][1];
 
     int boundary_mask = ((1 << int(SCULPT_CORNER_BIT_SHIFT)) - 1);
     int a = vert_boundary_flags[v1] &
