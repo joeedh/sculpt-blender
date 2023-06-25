@@ -574,13 +574,6 @@ void BM_mesh_bm_from_me(BMesh *bm, const Mesh *me, const BMeshFromMeshParams *pa
     bm->elem_index_dirty &= ~BM_VERT; /* Added in order, clear dirty flag. */
   }
 
-  BMIter iter;
-  BMVert *v;
-  int i = 0;
-  BM_ITER_MESH_INDEX (v, &iter, bm, BM_VERTS_OF_MESH, i) {
-    vtable[i] = v;
-  }
-
   const Span<blender::int2> edges = me->edges();
   Array<BMEdge *> etable(me->totedge);
   for (const int i : edges.index_range()) {
@@ -608,11 +601,6 @@ void BM_mesh_bm_from_me(BMesh *bm, const Mesh *me, const BMeshFromMeshParams *pa
   }
   if (is_new) {
     bm->elem_index_dirty &= ~BM_EDGE; /* Added in order, clear dirty flag. */
-  }
-
-  BMEdge *e;
-  BM_ITER_MESH_INDEX (e, &iter, bm, BM_EDGES_OF_MESH, i) {
-    etable[i] = e;
   }
 
   const blender::OffsetIndices polys = me->polys();
@@ -684,13 +672,6 @@ void BM_mesh_bm_from_me(BMesh *bm, const Mesh *me, const BMeshFromMeshParams *pa
   }
   if (is_new) {
     bm->elem_index_dirty &= ~(BM_FACE | BM_LOOP); /* Added in order, clear dirty flag. */
-  }
-
-  if (!ftable.is_empty()) {
-    BMFace *f;
-    BM_ITER_MESH_INDEX (f, &iter, bm, BM_FACES_OF_MESH, i) {
-      ftable[i] = f;
-    }
   }
 
   /* -------------------------------------------------------------------- */
