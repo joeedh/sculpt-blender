@@ -942,14 +942,7 @@ class VIEW3D_PT_sculpt_dyntopo(Panel, View3DPaintPanel):
             context,
             brush,
             "mode",
-            expand=True
-        )
-
-        UnifiedPaintPanel.prop_unified_dyntopo(
-            sub,
-            context,
-            brush,
-            "detail_range"
+            expand=False
         )
 
         if 1:

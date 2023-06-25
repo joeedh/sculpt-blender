@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include "DNA_brush_defaults.h"
 #include "DNA_scene_enums.h"
 #include "DNA_view3d_defaults.h"
 
@@ -281,7 +282,7 @@
     .weight = 0.5f, \
     .flag = UNIFIED_PAINT_SIZE | UNIFIED_PAINT_ALPHA | UNIFIED_PAINT_FLAG_HARD_EDGE_MODE | UNIFIED_PAINT_HARD_CORNER_PIN | UNIFIED_PAINT_FLAG_SHARP_ANGLE_LIMIT, \
     .hard_corner_pin = 1.0f,\
-    .sharp_angle_limit = 0.38f,\
+    .sharp_angle_limit = 0.6108f,\
     .smooth_boundary_flag = SCULPT_BOUNDARY_MESH|SCULPT_BOUNDARY_FACE_SET|SCULPT_BOUNDARY_SEAM|SCULPT_BOUNDARY_SHARP_MARK|SCULPT_BOUNDARY_UV,\
   }
 
@@ -378,6 +379,15 @@
     .plane_axis = 2,\
   }
 
+#define _DNA_DEFAULT_Sculpt \
+  { \
+    .automasking_start_normal_limit = 0.34906585f, /* 20 / 180 * pi */ \
+    .automasking_start_normal_falloff = 0.25f, \
+    .automasking_view_normal_limit = 1.570796, /* 0.5 * pi */ \
+    .automasking_view_normal_falloff = 0.25f, \
+    .flags   = SCULPT_DYNTOPO_ENABLED,\
+    .dyntopo = _DNA_DEFAULT_DynTopoSettings,\
+  }\
 /* clang-format off */
 
 /** \} */

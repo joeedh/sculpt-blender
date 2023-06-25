@@ -1083,7 +1083,6 @@ typedef struct Sculpt {
 
   /** Maximum edge length for dynamic topology sculpting (in pixels). */
   float detail_size DNA_DEPRECATED;
-  float detail_range DNA_DEPRECATED;
 
   /** Direction used for `SCULPT_OT_symmetrize` operator. */
   int symmetrize_direction;
@@ -1100,7 +1099,7 @@ typedef struct Sculpt {
   float dyntopo_radius_scale DNA_DEPRECATED;
   int automasking_cavity_blur_steps;
   float automasking_cavity_factor;
-  char _pad[4];
+  char _pad[8];
 
   float automasking_start_normal_limit, automasking_start_normal_falloff;
   float automasking_view_normal_limit, automasking_view_normal_falloff;
@@ -1815,6 +1814,7 @@ typedef struct SceneEEVEE {
   float gi_irradiance_smoothing;
   float gi_glossy_clamp;
   float gi_filter_quality;
+  char _pad0[4];
 
   float gi_cubemap_draw_size;
   float gi_irradiance_draw_size;
@@ -1866,7 +1866,6 @@ typedef struct SceneEEVEE {
   int shadow_cube_size;
   int shadow_cascade_size;
   int shadow_pool_size;
-  char _pad[4];
 
   struct LightCache *light_cache DNA_DEPRECATED;
   struct LightCache *light_cache_data;

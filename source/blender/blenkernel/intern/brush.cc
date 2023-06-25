@@ -208,7 +208,8 @@ static void brush_foreach_path(ID *id, BPathForeachPathData *bpath_data)
 {
   Brush *brush = (Brush *)id;
   if (brush->icon_filepath[0] != '\0') {
-    BKE_bpath_foreach_path_fixed_process(bpath_data, brush->icon_filepath);
+    BKE_bpath_foreach_path_fixed_process(
+        bpath_data, brush->icon_filepath, sizeof(brush->icon_filepath));
   }
 }
 
@@ -1884,11 +1885,9 @@ void BKE_brush_sculpt_reset(Brush *br)
       br->alpha = 1.0f;
       br->rake_factor = 1.0f;
       br->dyntopo.inherit = ~(DYNTOPO_INHERIT_SPACING | DYNTOPO_INHERIT_SUBDIVIDE |
-                              DYNTOPO_INHERIT_COLLAPSE | DYNTOPO_INHERIT_DETAIL_RANGE |
-                              DYNTOPO_INHERIT_RADIUS_SCALE | DYNTOPO_INHERIT_REPEAT |
-                              DYNTOPO_INHERIT_CLEANUP);
+                              DYNTOPO_INHERIT_COLLAPSE | DYNTOPO_INHERIT_RADIUS_SCALE |
+                              DYNTOPO_INHERIT_REPEAT | DYNTOPO_INHERIT_CLEANUP);
       br->dyntopo.flag |= DYNTOPO_SUBDIVIDE | DYNTOPO_COLLAPSE | DYNTOPO_CLEANUP;
-      br->dyntopo.detail_range = 0.4f;
       br->dyntopo.spacing = 0;
       br->dyntopo.radius_scale = 1.25;
       br->dyntopo.repeat = 1;
@@ -1959,7 +1958,7 @@ void BKE_brush_sculpt_reset(Brush *br)
       br->tip_roundness = 1.0f;
       br->density = 1.0f;
       br->flag &= ~BRUSH_SPACE_ATTEN;
-      disable_dyntopo = true;
+      disable_dyntopo = false;
       zero_v3(br->rgb);
       copy_v3_fl(br->secondary_rgb, 1.0f);
       break;
@@ -1969,6 +1968,7 @@ void BKE_brush_sculpt_reset(Brush *br)
       br->flag &= ~BRUSH_ALPHA_PRESSURE;
       br->flag &= ~BRUSH_SPACE_ATTEN;
       br->curve_preset = BRUSH_CURVE_SPHERE;
+      disable_dyntopo = true;
       break;
     case SCULPT_TOOL_DISPLACEMENT_SMEAR:
       br->alpha = 1.0f;

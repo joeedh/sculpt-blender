@@ -6359,6 +6359,10 @@ static bool sculpt_stroke_test_start(bContext *C, wmOperator *op, const float mv
     SCULPT_stroke_id_next(ob);
     ss->cache->stroke_id = ss->stroke_id;
 
+    if (ss->pbvh) {
+      blender::bke::pbvh::on_stroke_start(ss->pbvh);
+    }
+
     SculptCursorGeometryInfo sgi;
     SCULPT_cursor_geometry_info_update(C, &sgi, mval, false, false);
 
@@ -6402,19 +6406,19 @@ static void sculpt_stroke_update_step(bContext *C,
     float object_space_constant_detail = 1.0f / (ss->cached_dyntopo.constant_detail *
                                                  mat4_to_scale(ob->object_to_world));
     blender::bke::dyntopo::detail_size_set(
-        ss->pbvh, object_space_constant_detail, ss->cached_dyntopo.detail_range);
+        ss->pbvh, object_space_constant_detail, DYNTOPO_DETAIL_RANGE);
   }
   else if (ss->cached_dyntopo.mode == DYNTOPO_DETAIL_BRUSH) {
     blender::bke::dyntopo::detail_size_set(ss->pbvh,
                                            ss->cache->radius * ss->cached_dyntopo.detail_percent /
                                                100.0f,
-                                           ss->cached_dyntopo.detail_range);
+                                           DYNTOPO_DETAIL_RANGE);
   }
   else { /* Relative mode. */
     blender::bke::dyntopo::detail_size_set(ss->pbvh,
                                            (ss->cache->radius / ss->cache->dyntopo_pixel_radius) *
                                                (ss->cached_dyntopo.detail_size * U.pixelsize),
-                                           ss->cached_dyntopo.detail_range);
+                                           DYNTOPO_DETAIL_RANGE);
   }
 
   float dyntopo_spacing = float(ss->cached_dyntopo.spacing) / 50.0f;
@@ -7093,7 +7097,7 @@ void SCULPT_topology_islands_ensure(Object *ob)
 
       vertex_attr_set<uint8_t>(vertex2, ss->attrs.topology_island_key, island_nr);
 
-      SCULPT_VERTEX_NEIGHBORS_ITER_BEGIN (ss, vertex2, ni) {
+      SCULPT_VERTEX_DUPLICATES_AND_NEIGHBORS_ITER_BEGIN (ss, vertex2, ni) {
         if (visit.add(ni.vertex) && SCULPT_vertex_any_face_visible_get(ss, ni.vertex)) {
           stack.append(ni.vertex);
         }
