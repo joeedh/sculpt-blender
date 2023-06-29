@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 from bpy.types import Menu, Panel, UIList, WindowManager
+from bpy.app.translations import contexts as i18n_contexts
 from bl_ui.properties_grease_pencil_common import (
     GreasePencilSculptAdvancedPanel,
     GreasePencilDisplayPanel,
@@ -1061,8 +1062,12 @@ class VIEW3D_PT_sculpt_options(Panel, View3DPaintPanel):
         col = layout.column(heading="Display", align=True)
         col.prop(sculpt, "show_low_resolution")
         col.prop(sculpt, "use_sculpt_delay_updates")
-        col.prop(sculpt, "use_deform_only") 
-        col.prop(tool_settings, "show_origco") #NotForPR
+        col.prop(sculpt, "use_deform_only")
+
+        import bpy
+        if bpy.app.debug_value == 889:
+            col.prop(tool_settings, "show_origco")
+
         col.prop(context.object.data, "sculpt_ignore_uvs")
 
         col.label(text="Smooth Boundaries")
@@ -1726,7 +1731,8 @@ class VIEW3D_PT_tools_grease_pencil_brush_advanced(View3DPanel, Panel):
 
             elif brush.gpencil_tool == 'FILL':
                 row = col.row(align=True)
-                row.prop(gp_settings, "fill_draw_mode", text="Boundary")
+                row.prop(gp_settings, "fill_draw_mode", text="Boundary",
+                         text_ctxt=i18n_contexts.id_gpencil)
                 row.prop(
                     gp_settings,
                     "show_fill_boundary",

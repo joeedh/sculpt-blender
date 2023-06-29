@@ -150,7 +150,7 @@ static void SCULPT_neighbor_coords_average_interior_ex(SculptSession *ss,
   }
 
   float total = 0.0f;
-  int totboundary = 0, totsharp = 0;
+  int totboundary = 0;
 
   Vector<float, 32> ws;
   Vector<BMLoop *, 32> loops;
@@ -176,6 +176,61 @@ static void SCULPT_neighbor_coords_average_interior_ex(SculptSession *ss,
     } while ((l = l->radial_next) != e->l);
   };
 
+#if 0
+  if (weighted && ss->bm && ss->bm->ldata.typemap[CD_PROP_FLOAT2] != -1) {
+    SculptVertexNeighborIter ni;
+    BMVert *v = reinterpret_cast<BMVert *>(vertex.i);
+    int cd_uv = ss->bm->ldata.layers[ss->bm->ldata.typemap[CD_PROP_FLOAT2]].offset;
+    float totarea = 0.0f;
+    int count = 0;
+    float(*points)[2] = (float(*)[2])BLI_array_alloca(points, valence * 4);
+    float *weights = (float *)BLI_array_alloca(weights, valence * 2);
+    float2 v_uv = {};
+
+    SCULPT_VERTEX_NEIGHBORS_ITER_BEGIN (ss, vertex, ni) {
+      BMEdge *e = reinterpret_cast<BMEdge *>(ni.edge.i);
+
+      BMLoop *l = e->l;
+      if (l->v == v) {
+        l = l->radial_next;
+      }
+
+      BMLoop *l1 = l->v == v ? l : l->next;
+      BMLoop *other_l1 = l->v == v ? l->next : l;
+
+      v_uv += *BM_ELEM_CD_PTR<float2 *>(l1, cd_uv);
+      copy_v2_v2(points[count], BM_ELEM_CD_PTR<float *>(other_l1, cd_uv));
+      count++;
+    }
+    SCULPT_VERTEX_NEIGHBORS_ITER_END(ni);
+
+    if (count == 0) {
+      return;
+    }
+
+    v_uv /= float(count);
+    interp_weights_poly_v2(weights, points, count, v_uv);
+
+    totarea = 0.0f;
+    for (int i = 0; i < count; i++) {
+      float w = weights[i];
+      w = min_ff(max_ff(w, 0.0f), 1.0f);
+      totarea += w;
+      areas[i] = w;
+    }
+
+    for (int i = 0; i < count; i++) {
+      // break;
+      if (totarea != 0.0f) {
+        areas[i] /= totarea;
+      }
+      else {
+        areas[i] = 1.0f / float(count);
+      }
+    }
+  }
+#endif
+
   SculptVertexNeighborIter ni;
   SCULPT_VERTEX_NEIGHBORS_ITER_BEGIN (ss, vertex, ni) {
     bool project_ok;
@@ -190,16 +245,13 @@ static void SCULPT_neighbor_coords_average_interior_ex(SculptSession *ss,
       is_boundary2 = SCULPT_vertex_is_boundary(ss, ni.vertex, bound_type);
     }
 
-    const eSculptBoundary smooth_types = !ss->hard_edge_mode ? SCULPT_BOUNDARY_FACE_SET | uvflag |
-                                                                   SCULPT_BOUNDARY_SEAM :
-                                                               uvflag | SCULPT_BOUNDARY_SEAM;
+    const eSculptBoundary smooth_types = (!ss->hard_edge_mode ?
+                                              SCULPT_BOUNDARY_FACE_SET | SCULPT_BOUNDARY_SEAM :
+                                              SCULPT_BOUNDARY_SEAM) |
+                                         uvflag;
 
     if (is_boundary2) {
       totboundary++;
-    }
-
-    if (is_boundary2 & hard_flags) {
-      totsharp++;
     }
 
     /* Boundary vertices use only other boundary vertices. */
@@ -275,7 +327,8 @@ static void SCULPT_neighbor_coords_average_interior_ex(SculptSession *ss,
 
   if constexpr (smooth_face_corners) {
     if (is_bmesh && !smooth_origco) {
-      blender::bke::sculpt::interp_face_corners(ss->pbvh, vertex, loops, ws, factor);
+      blender::bke::sculpt::interp_face_corners(
+          ss->pbvh, vertex, loops, ws, factor, ss->attrs.boundary_flags->bmesh_cd_offset);
     }
   }
 
@@ -714,7 +767,8 @@ void SCULPT_bmesh_four_neighbor_average(SculptSession *ss,
       ws[i] /= totw;
     }
 
-    blender::bke::sculpt::interp_face_corners(ss->pbvh, vertex, loops, ws, factor);
+    blender::bke::sculpt::interp_face_corners(
+        ss->pbvh, vertex, loops, ws, factor, ss->attrs.boundary_flags->bmesh_cd_offset);
   }
 
   eSculptCorner corner_type = SCULPT_CORNER_MESH | SCULPT_CORNER_SHARP_MARK;
@@ -722,7 +776,7 @@ void SCULPT_bmesh_four_neighbor_average(SculptSession *ss,
     corner_type |= SCULPT_CORNER_FACE_SET;
   }
 
-  if (corner != SCULPT_CORNER_NONE) {
+  if (corner & corner_type) {
     interp_v3_v3v3(avg, avg, SCULPT_vertex_co_get(ss, vertex), hard_corner_pin);
   }
 
