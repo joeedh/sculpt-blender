@@ -4422,7 +4422,7 @@ static void CustomData_bmesh_copy_data_simple(CustomData *data, void *src_block,
   bool was_new = false;
 
   if (*dest_block == nullptr) {
-    CustomData_bmesh_alloc_block(data, dest_block);
+    CustomData_bmesh_alloc_block(data, dest_block, 0);
 
     if (*dest_block) {
       CustomData_bmesh_unpoison(data, *dest_block);

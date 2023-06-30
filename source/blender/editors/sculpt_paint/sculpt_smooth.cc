@@ -1110,7 +1110,7 @@ void SCULPT_smooth_undo_push(Object *ob, Span<PBVHNode *> nodes)
   }
 }
 
-#if 0 //NotForPR, see comment in BKE_pbvh_iter.hh
+#if 1 //NotForPR, see comment in BKE_pbvh_iter.hh
 #  include "BKE_mesh_mapping.h"
 #  include "BKE_pbvh_iter.hh"
 
