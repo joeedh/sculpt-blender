@@ -50,9 +50,7 @@
 #include <chrono>
 #include <cstdio>
 
-#include <chrono>
-
-//#define CLEAR_TAGS_IN_THREAD
+// #define CLEAR_TAGS_IN_THREAD
 
 #define EDGE_QUEUE_FLAG BM_ELEM_TAG
 
@@ -2382,6 +2380,7 @@ bool remesh_topology(BrushTester *brush_tester,
                      float quality)
 {
   blender::bke::pbvh::defragment_pbvh_partial(pbvh, 5);
+  BM_log_entry_check_customdata(pbvh->header.bm, pbvh->bm_log);
 
   EdgeQueueContext eq_ctx(
       brush_tester, ob, pbvh, mode, use_frontface, view_normal, updatePBVH, mask_cb, mask_cb_data);
@@ -2393,7 +2392,7 @@ bool remesh_topology(BrushTester *brush_tester,
   using TimePoint = std::chrono::time_point<Clock, std::chrono::milliseconds>;
 
   quality *= quality;
-  int time_limit = 8 * (1.0 - quality) + 550 * quality;
+  int time_limit = int(8.0f * (1.0f - quality) + 550.0f * quality);
 
   auto time = Clock::now();
   Clock::duration limit = std::chrono::duration_cast<Clock::duration>(
@@ -2589,11 +2588,13 @@ void EdgeQueueContext::split_edge(BMEdge *e)
   *BM_ELEM_CD_PTR<StrokeID *>(newv, ss->attrs.stroke_id->bmesh_cd_offset) = stroke_id;
 
   BM_ELEM_CD_SET_INT(newv, pbvh->cd_vert_node_offset, DYNTOPO_NODE_NONE);
+
   BM_idmap_check_assign(pbvh->bm_idmap, reinterpret_cast<BMElem *>(newv));
   BM_log_vert_added(bm, pbvh->bm_log, newv);
 
   BM_idmap_check_assign(pbvh->bm_idmap, reinterpret_cast<BMElem *>(e));
   BM_log_edge_added(bm, pbvh->bm_log, e);
+
   BM_idmap_check_assign(pbvh->bm_idmap, reinterpret_cast<BMElem *>(newe));
   BM_log_edge_added(bm, pbvh->bm_log, newe);
 

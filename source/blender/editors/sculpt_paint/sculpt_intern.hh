@@ -2266,7 +2266,7 @@ PBVHVertRef SCULPT_edge_other_vertex(const SculptSession *ss,
                                      const PBVHEdgeRef edge,
                                      const PBVHVertRef vertex);
 
-//#define SCULPT_REPLAY
+// #define SCULPT_REPLAY
 #ifdef SCULPT_REPLAY
 struct SculptReplayLog;
 struct SculptBrushSample;
@@ -2291,7 +2291,10 @@ void SCULPT_undo_ensure_bmlog(struct Object *ob);
 bool SCULPT_ensure_dyntopo_node_undo(struct Object *ob,
                                      struct PBVHNode *node,
                                      SculptUndoType type,
-                                     int extraType);
+                                     int extraType,
+                                     SculptUndoType force_push_mask = SCULPT_UNDO_COORDS |
+                                                                      SCULPT_UNDO_COLOR |
+                                                                      SCULPT_UNDO_MASK);
 
 struct BMesh *SCULPT_dyntopo_empty_bmesh();
 
