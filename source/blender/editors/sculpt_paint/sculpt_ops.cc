@@ -46,7 +46,7 @@
 #include "BKE_multires.h"
 #include "BKE_object.h"
 #include "BKE_paint.h"
-#include "BKE_pbvh.h"
+#include "BKE_pbvh_api.hh"
 #include "BKE_report.h"
 #include "BKE_scene.h"
 
@@ -313,13 +313,11 @@ static void sculpt_init_session(Main *bmain, Depsgraph *depsgraph, Scene *scene,
     BKE_sculptsession_free(ob);
   }
 
-  BKE_object_sculpt_data_create(ob);
+  ob->sculpt = MEM_new<SculptSession>(__func__);
   ob->sculpt->mode_type = OB_MODE_SCULPT;
+
   ob->sculpt->active_face.i = PBVH_REF_NONE;
   ob->sculpt->active_vertex.i = PBVH_REF_NONE;
-
-  CustomData_reset(&ob->sculpt->temp_vdata);
-  CustomData_reset(&ob->sculpt->temp_pdata);
 
   /* Trigger evaluation of modifier stack to ensure
    * multires modifier sets .runtime.ccg in
@@ -1846,7 +1844,7 @@ static void SCULPT_OT_test(wmOperatorType *ot)
   ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
 }
 
-void ED_operatortypes_sculpt(void)
+void ED_operatortypes_sculpt()
 {
   WM_operatortype_append(SCULPT_OT_brush_stroke);
   WM_operatortype_append(SCULPT_OT_sculptmode_toggle);

@@ -222,7 +222,7 @@ struct BMLogFace : public BMLogElem<BMFace> {
   Vector<void *, 5> loop_customdata;
   // int material_index;
 
-  ATTR_NO_OPT void free(CustomData *domain, CustomData *loop_domain)
+  void free(CustomData *domain, CustomData *loop_domain)
   {
     BMLogElem<BMFace>::free(domain);
 
@@ -1707,6 +1707,11 @@ void BM_log_vert_removed(BMesh *bm, BMLog *log, BMVert *v)
 void BM_log_vert_before_modified(BMesh *bm, BMLog *log, BMVert *v)
 {
   log->modify_if_vert(bm, v);
+}
+
+void BM_log_vert_modified(BMesh *bm, BMLog *log, BMVert *v)
+{
+  log->modify_vert(bm, v);
 }
 
 BMLogEntry *BM_log_entry_check_customdata(BMesh *bm, BMLog *log)

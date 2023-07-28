@@ -41,6 +41,7 @@
 #include "BKE_context.h"
 #include "BKE_image.h"
 #include "BKE_paint.h"
+#include "BKE_sculpt.h" /* for DEBUG_SHOW_SCULPT_BM_UV_EDGES */
 #include "BKE_undo_system.h"
 
 #include "DEG_depsgraph.h"
@@ -63,12 +64,12 @@ static CLG_LogRef LOG = {"ed.image.undo"};
  * paint operation, but for now just give a public interface */
 static SpinLock paint_tiles_lock;
 
-void ED_image_paint_tile_lock_init(void)
+void ED_image_paint_tile_lock_init()
 {
   BLI_spin_init(&paint_tiles_lock);
 }
 
-void ED_image_paint_tile_lock_end(void)
+void ED_image_paint_tile_lock_end()
 {
   BLI_spin_end(&paint_tiles_lock);
 }
@@ -1083,7 +1084,7 @@ void ED_image_undosys_type(UndoType *ut)
  * - So operators can access the pixel-data before the stroke was applied, at run-time.
  * \{ */
 
-PaintTileMap *ED_image_paint_tile_map_get(void)
+PaintTileMap *ED_image_paint_tile_map_get()
 {
   UndoStack *ustack = ED_undo_stack_get();
   UndoStep *us_prev = ustack->step_init;
@@ -1155,7 +1156,7 @@ void ED_image_undo_push_begin_with_image(const char *name,
   }
 }
 
-void ED_image_undo_push_end(void)
+void ED_image_undo_push_end()
 {
   UndoStack *ustack = ED_undo_stack_get();
   BKE_undosys_step_push(ustack, nullptr, nullptr);
@@ -1164,3 +1165,46 @@ void ED_image_undo_push_end(void)
 }
 
 /** \} */
+
+/* NotForPR: shows uv edges in sculpt mode.  Moved to image_undo.cc for easier reversion (it needs
+ * C++ to read .bm from ob->sculpt).
+ */
+
+#include "BKE_editmesh.h"
+
+#include "ED_image.h"
+#include "ED_mesh.h"
+
+extern "C" bool ED_space_image_show_uvedit(const SpaceImage *sima,
+                                           Object *obedit,
+                                           Object *obact,
+                                           bool is_operator_poll)
+{
+  if (sima) {
+    if (ED_space_image_show_render(sima)) {
+      return false;
+    }
+    if (sima->mode != SI_MODE_UV) {
+      return false;
+    }
+  }
+
+  if (obedit && obedit->type == OB_MESH) {
+    BMEditMesh *em = BKE_editmesh_from_object(obedit);
+    bool ret;
+
+    ret = EDBM_uv_check(em);
+
+    return ret;
+  }
+
+#ifdef DEBUG_SHOW_SCULPT_BM_UV_EDGES
+  if (obact && obact->type == OB_MESH && obact->mode == OB_MODE_SCULPT && obact->sculpt &&
+      obact->sculpt->bm)
+  {
+    return true;
+  }
+#endif
+
+  return false;
+}

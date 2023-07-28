@@ -24,7 +24,8 @@ class PaintOperation : public GreasePencilStrokeOperation {
  public:
   ~PaintOperation() override {}
 
-  void on_stroke_extended(const bContext &C, const StrokeExtension &stroke_extension) override;
+  void on_stroke_begin(const bContext &C, const InputSample &start_sample) override;
+  void on_stroke_extended(const bContext &C, const InputSample &extension_sample) override;
   void on_stroke_done(const bContext &C) override;
 };
 
@@ -36,9 +37,7 @@ struct PaintOperationExecutor {
 
   PaintOperationExecutor(const bContext & /*C*/) {}
 
-  void execute(PaintOperation & /*self*/,
-               const bContext &C,
-               const StrokeExtension &stroke_extension)
+  void execute(PaintOperation & /*self*/, const bContext &C, const InputSample &extension_sample)
   {
     using namespace blender::bke;
     Depsgraph *depsgraph = CTX_data_depsgraph_pointer(&C);
@@ -52,18 +51,13 @@ struct PaintOperationExecutor {
      * original object.
      */
     GreasePencil &grease_pencil = *static_cast<GreasePencil *>(ob_eval->data);
-    if (!grease_pencil.has_active_layer()) {
-      /* TODO: create a new layer. */
-      BLI_assert_unreachable();
-      // grease_pencil.runtime->set_active_layer_index(0);
-    }
 
     float4 plane{0.0f, -1.0f, 0.0f, 0.0f};
     float3 proj_pos;
-    ED_view3d_win_to_3d_on_plane(region, plane, stroke_extension.mouse_position, false, proj_pos);
+    ED_view3d_win_to_3d_on_plane(region, plane, extension_sample.mouse_position, false, proj_pos);
 
     bke::greasepencil::StrokePoint new_point{
-        proj_pos, stroke_extension.pressure * 100.0f, 1.0f, float4(1.0f)};
+        proj_pos, extension_sample.pressure * 100.0f, 1.0f, float4(1.0f)};
 
     grease_pencil.runtime->stroke_cache.points.append(std::move(new_point));
 
@@ -71,10 +65,14 @@ struct PaintOperationExecutor {
   }
 };
 
-void PaintOperation::on_stroke_extended(const bContext &C, const StrokeExtension &stroke_extension)
+void PaintOperation::on_stroke_begin(const bContext & /*C*/, const InputSample & /*start_sample*/)
+{
+}
+
+void PaintOperation::on_stroke_extended(const bContext &C, const InputSample &extension_sample)
 {
   PaintOperationExecutor executor{C};
-  executor.execute(*this, C, stroke_extension);
+  executor.execute(*this, C, extension_sample);
 }
 
 void PaintOperation::on_stroke_done(const bContext &C)
@@ -87,19 +85,16 @@ void PaintOperation::on_stroke_done(const bContext &C)
 
   GreasePencil &grease_pencil_orig = *static_cast<GreasePencil *>(obact->data);
   GreasePencil &grease_pencil_eval = *static_cast<GreasePencil *>(ob_eval->data);
-  BLI_assert(grease_pencil_orig.has_active_layer() && grease_pencil_eval.has_active_layer());
+  BLI_assert(grease_pencil_orig.has_active_layer());
   const bke::greasepencil::Layer &active_layer_orig = *grease_pencil_orig.get_active_layer();
-  const bke::greasepencil::Layer &active_layer_eval = *grease_pencil_eval.get_active_layer();
   int index_orig = active_layer_orig.drawing_index_at(scene->r.cfra);
-  int index_eval = active_layer_eval.drawing_index_at(scene->r.cfra);
-  BLI_assert(index_orig != -1 && index_eval != -1);
 
   bke::greasepencil::Drawing &drawing_orig =
       reinterpret_cast<GreasePencilDrawing *>(grease_pencil_orig.drawings()[index_orig])->wrap();
 
   const Span<bke::greasepencil::StrokePoint> stroke_points =
       grease_pencil_eval.runtime->stroke_buffer();
-  CurvesGeometry &curves = drawing_orig.geometry.wrap();
+  CurvesGeometry &curves = drawing_orig.strokes_for_write();
 
   int num_old_curves = curves.curves_num();
   int num_old_points = curves.points_num();
@@ -115,16 +110,14 @@ void PaintOperation::on_stroke_done(const bContext &C)
   /* Set position, radius and opacity attribute. */
   bke::MutableAttributeAccessor attributes = curves.attributes_for_write();
   MutableSpan<float3> positions = curves.positions_for_write();
-  SpanAttributeWriter<float> radii = attributes.lookup_or_add_for_write_span<float>(
-      "radius", ATTR_DOMAIN_POINT);
-  SpanAttributeWriter<float> opacities = attributes.lookup_or_add_for_write_span<float>(
-      "opacity", ATTR_DOMAIN_POINT);
+  MutableSpan<float> radii = drawing_orig.radii_for_write();
+  MutableSpan<float> opacities = drawing_orig.opacities_for_write();
   for (const int i : IndexRange(stroke_points.size())) {
     const bke::greasepencil::StrokePoint &point = stroke_points[i];
     const int point_i = new_points_range[i];
     positions[point_i] = point.position;
-    radii.span[point_i] = point.radius;
-    opacities.span[point_i] = point.opacity;
+    radii[point_i] = point.radius;
+    opacities[point_i] = point.opacity;
   }
 
   /* Set material index attribute. */
@@ -157,8 +150,6 @@ void PaintOperation::on_stroke_done(const bContext &C)
   grease_pencil_eval.runtime->stroke_cache.clear();
   drawing_orig.tag_positions_changed();
 
-  radii.finish();
-  opacities.finish();
   materials.finish();
 
   DEG_id_tag_update(&grease_pencil_orig.id, ID_RECALC_GEOMETRY);

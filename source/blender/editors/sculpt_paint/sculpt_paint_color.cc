@@ -22,7 +22,7 @@
 #include "BKE_colortools.h"
 #include "BKE_context.h"
 #include "BKE_paint.h"
-#include "BKE_pbvh.h"
+#include "BKE_pbvh_api.hh"
 
 #include "IMB_colormanagement.h"
 
@@ -164,6 +164,7 @@ static void do_paint_brush_task_cb_ex(void *__restrict userdata,
                                              vd.co,
                                              data->mat,
                                              brush->tip_roundness,
+                                             brush->tip_scale_x,
                                              brush->falloff_shape != PAINT_FALLOFF_SHAPE_TUBE);
       distance_to_stroke_location = ss->cache->radius * test.dist;
     }

@@ -60,32 +60,37 @@ const EnumPropertyItem rna_enum_object_mode_items[] = {
     {OB_MODE_WEIGHT_PAINT, "WEIGHT_PAINT", ICON_WPAINT_HLT, "Weight Paint", ""},
     {OB_MODE_TEXTURE_PAINT, "TEXTURE_PAINT", ICON_TPAINT_HLT, "Texture Paint", ""},
     {OB_MODE_PARTICLE_EDIT, "PARTICLE_EDIT", ICON_PARTICLEMODE, "Particle Edit", ""},
-    {OB_MODE_EDIT_GPENCIL,
+    {OB_MODE_EDIT_GPENCIL_LEGACY,
      "EDIT_GPENCIL",
      ICON_EDITMODE_HLT,
      "Edit Mode",
      "Edit Grease Pencil Strokes"},
-    {OB_MODE_SCULPT_GPENCIL,
+    {OB_MODE_SCULPT_GPENCIL_LEGACY,
      "SCULPT_GPENCIL",
      ICON_SCULPTMODE_HLT,
      "Sculpt Mode",
      "Sculpt Grease Pencil Strokes"},
-    {OB_MODE_PAINT_GPENCIL,
+    {OB_MODE_PAINT_GPENCIL_LEGACY,
      "PAINT_GPENCIL",
      ICON_GREASEPENCIL,
      "Draw Mode",
      "Paint Grease Pencil Strokes"},
-    {OB_MODE_WEIGHT_GPENCIL,
+    {OB_MODE_WEIGHT_GPENCIL_LEGACY,
      "WEIGHT_GPENCIL",
      ICON_WPAINT_HLT,
      "Weight Paint",
      "Grease Pencil Weight Paint Strokes"},
-    {OB_MODE_VERTEX_GPENCIL,
+    {OB_MODE_VERTEX_GPENCIL_LEGACY,
      "VERTEX_GPENCIL",
      ICON_VPAINT_HLT,
      "Vertex Paint",
      "Grease Pencil Vertex Paint Strokes"},
     {OB_MODE_SCULPT_CURVES, "SCULPT_CURVES", ICON_SCULPTMODE_HLT, "Sculpt Mode", ""},
+    {OB_MODE_PAINT_GREASE_PENCIL,
+     "PAINT_GREASE_PENCIL",
+     ICON_GREASEPENCIL,
+     "Draw Mode",
+     "Paint Grease Pencil Strokes"},
     {0, nullptr, 0, nullptr, nullptr},
 };
 
@@ -98,27 +103,27 @@ const EnumPropertyItem rna_enum_workspace_object_mode_items[] = {
     {OB_MODE_WEIGHT_PAINT, "WEIGHT_PAINT", ICON_WPAINT_HLT, "Weight Paint", ""},
     {OB_MODE_TEXTURE_PAINT, "TEXTURE_PAINT", ICON_TPAINT_HLT, "Texture Paint", ""},
     {OB_MODE_PARTICLE_EDIT, "PARTICLE_EDIT", ICON_PARTICLEMODE, "Particle Edit", ""},
-    {OB_MODE_EDIT_GPENCIL,
+    {OB_MODE_EDIT_GPENCIL_LEGACY,
      "EDIT_GPENCIL",
      ICON_EDITMODE_HLT,
      "Grease Pencil Edit Mode",
      "Edit Grease Pencil Strokes"},
-    {OB_MODE_SCULPT_GPENCIL,
+    {OB_MODE_SCULPT_GPENCIL_LEGACY,
      "SCULPT_GPENCIL",
      ICON_SCULPTMODE_HLT,
      "Grease Pencil Sculpt Mode",
      "Sculpt Grease Pencil Strokes"},
-    {OB_MODE_PAINT_GPENCIL,
+    {OB_MODE_PAINT_GPENCIL_LEGACY,
      "PAINT_GPENCIL",
      ICON_GREASEPENCIL,
      "Grease Pencil Draw",
      "Paint Grease Pencil Strokes"},
-    {OB_MODE_VERTEX_GPENCIL,
+    {OB_MODE_VERTEX_GPENCIL_LEGACY,
      "VERTEX_GPENCIL",
      ICON_VPAINT_HLT,
      "Grease Pencil Vertex Paint",
      "Grease Pencil Vertex Paint Strokes"},
-    {OB_MODE_WEIGHT_GPENCIL,
+    {OB_MODE_WEIGHT_GPENCIL_LEGACY,
      "WEIGHT_GPENCIL",
      ICON_WPAINT_HLT,
      "Grease Pencil Weight Paint",
@@ -513,7 +518,7 @@ static PointerRNA rna_Object_data_get(PointerRNA *ptr)
   return rna_pointer_inherit_refine(ptr, &RNA_ID, ob->data);
 }
 
-static void rna_Object_data_set(PointerRNA *ptr, PointerRNA value, struct ReportList *reports)
+static void rna_Object_data_set(PointerRNA *ptr, PointerRNA value, ReportList *reports)
 {
   Object *ob = static_cast<Object *>(ptr->data);
   ID *id = static_cast<ID *>(value.data);
@@ -628,9 +633,7 @@ static bool rna_Object_data_poll(PointerRNA *ptr, const PointerRNA value)
   return true;
 }
 
-static void rna_Object_parent_set(PointerRNA *ptr,
-                                  PointerRNA value,
-                                  struct ReportList * /*reports*/)
+static void rna_Object_parent_set(PointerRNA *ptr, PointerRNA value, ReportList * /*reports*/)
 {
   Object *ob = static_cast<Object *>(ptr->data);
   Object *par = static_cast<Object *>(value.data);
@@ -693,6 +696,41 @@ static void rna_Object_parent_type_set(PointerRNA *ptr, int value)
   ED_object_parent(ob, ob->parent, value, ob->parsubstr);
 }
 
+static bool rna_Object_parent_type_override_apply(Main *bmain,
+                                                  PointerRNA *ptr_dst,
+                                                  PointerRNA *ptr_src,
+                                                  PointerRNA *ptr_storage,
+                                                  PropertyRNA *prop_dst,
+                                                  PropertyRNA *prop_src,
+                                                  PropertyRNA * /*prop_storage*/,
+                                                  const int len_dst,
+                                                  const int len_src,
+                                                  const int len_storage,
+                                                  PointerRNA * /*ptr_item_dst*/,
+                                                  PointerRNA * /*ptr_item_src*/,
+                                                  PointerRNA * /*ptr_item_storage*/,
+                                                  IDOverrideLibraryPropertyOperation *opop)
+{
+  BLI_assert(len_dst == len_src && (!ptr_storage || len_dst == len_storage) && len_dst == 0);
+  BLI_assert(opop->operation == LIBOVERRIDE_OP_REPLACE &&
+             "Unsupported RNA override operation on object parent pointer");
+  UNUSED_VARS_NDEBUG(ptr_storage, len_dst, len_src, len_storage, opop);
+
+  /* We need a special handling here because setting parent resets invert parent matrix,
+   * which is evil in our case. */
+  Object *ob = (Object *)(ptr_dst->data);
+  const int parent_type_dst = RNA_property_int_get(ptr_dst, prop_dst);
+  const int parent_type_src = RNA_property_int_get(ptr_src, prop_src);
+
+  if (parent_type_dst == parent_type_src) {
+    return false;
+  }
+
+  ob->partype = parent_type_src;
+  RNA_property_update_main(bmain, nullptr, ptr_dst, prop_dst);
+  return true;
+}
+
 static const EnumPropertyItem *rna_Object_parent_type_itemf(bContext * /*C*/,
                                                             PointerRNA *ptr,
                                                             PropertyRNA * /*prop*/,
@@ -743,6 +781,43 @@ static void rna_Object_parent_bone_set(PointerRNA *ptr, const char *value)
   ED_object_parent(ob, ob->parent, ob->partype, value);
 }
 
+static bool rna_Object_parent_bone_override_apply(Main *bmain,
+                                                  PointerRNA *ptr_dst,
+                                                  PointerRNA *ptr_src,
+                                                  PointerRNA *ptr_storage,
+                                                  PropertyRNA *prop_dst,
+                                                  PropertyRNA *prop_src,
+                                                  PropertyRNA * /*prop_storage*/,
+                                                  const int len_dst,
+                                                  const int len_src,
+                                                  const int len_storage,
+                                                  PointerRNA * /*ptr_item_dst*/,
+                                                  PointerRNA * /*ptr_item_src*/,
+                                                  PointerRNA * /*ptr_item_storage*/,
+                                                  IDOverrideLibraryPropertyOperation *opop)
+{
+  BLI_assert(len_dst == len_src && (!ptr_storage || len_dst == len_storage) && len_dst == 0);
+  BLI_assert(opop->operation == LIBOVERRIDE_OP_REPLACE &&
+             "Unsupported RNA override operation on object parent bone property");
+  UNUSED_VARS_NDEBUG(ptr_storage, len_dst, len_src, len_storage, opop);
+
+  /* We need a special handling here because setting parent resets invert parent matrix,
+   * which is evil in our case. */
+  Object *ob = (Object *)(ptr_dst->data);
+  char parent_bone_dst[MAX_ID_NAME - 2];
+  RNA_property_string_get(ptr_dst, prop_dst, parent_bone_dst);
+  char parent_bone_src[MAX_ID_NAME - 2];
+  RNA_property_string_get(ptr_src, prop_src, parent_bone_src);
+
+  if (STREQ(parent_bone_src, parent_bone_dst)) {
+    return false;
+  }
+
+  STRNCPY(ob->parsubstr, parent_bone_src);
+  RNA_property_update_main(bmain, nullptr, ptr_dst, prop_dst);
+  return true;
+}
+
 static const EnumPropertyItem *rna_Object_instance_type_itemf(bContext * /*C*/,
                                                               PointerRNA *ptr,
                                                               PropertyRNA * /*prop*/,
@@ -766,7 +841,7 @@ static const EnumPropertyItem *rna_Object_instance_type_itemf(bContext * /*C*/,
 
 static void rna_Object_dup_collection_set(PointerRNA *ptr,
                                           PointerRNA value,
-                                          struct ReportList * /*reports*/)
+                                          ReportList * /*reports*/)
 {
   Object *ob = static_cast<Object *>(ptr->data);
   Collection *grp = static_cast<Collection *>(value.data);
@@ -844,7 +919,7 @@ static PointerRNA rna_Object_active_vertex_group_get(PointerRNA *ptr)
 
 static void rna_Object_active_vertex_group_set(PointerRNA *ptr,
                                                PointerRNA value,
-                                               struct ReportList *reports)
+                                               ReportList *reports)
 {
   Object *ob = reinterpret_cast<Object *>(ptr->owner_id);
   if (!BKE_object_supports_vertex_groups(ob)) {
@@ -1055,7 +1130,7 @@ static PointerRNA rna_Object_active_material_get(PointerRNA *ptr)
 
 static void rna_Object_active_material_set(PointerRNA *ptr,
                                            PointerRNA value,
-                                           struct ReportList * /*reports*/)
+                                           ReportList * /*reports*/)
 {
   Object *ob = reinterpret_cast<Object *>(ptr->owner_id);
 
@@ -1289,7 +1364,7 @@ static PointerRNA rna_MaterialSlot_material_get(PointerRNA *ptr)
 
 static void rna_MaterialSlot_material_set(PointerRNA *ptr,
                                           PointerRNA value,
-                                          struct ReportList * /*reports*/)
+                                          ReportList * /*reports*/)
 {
   Object *ob = reinterpret_cast<Object *>(ptr->owner_id);
   int index = rna_MaterialSlot_index(ptr);
@@ -1520,7 +1595,7 @@ static PointerRNA rna_Object_active_constraint_get(PointerRNA *ptr)
 
 static void rna_Object_active_constraint_set(PointerRNA *ptr,
                                              PointerRNA value,
-                                             struct ReportList * /*reports*/)
+                                             ReportList * /*reports*/)
 {
   Object *ob = reinterpret_cast<Object *>(ptr->owner_id);
   BKE_constraints_active_set(&ob->constraints, static_cast<bConstraint *>(value.data));
@@ -2236,7 +2311,7 @@ static PointerRNA rna_LightLinking_receiver_collection_get(PointerRNA *ptr)
 
 static void rna_LightLinking_receiver_collection_set(PointerRNA *ptr,
                                                      PointerRNA value,
-                                                     struct ReportList * /*reports*/)
+                                                     ReportList * /*reports*/)
 {
   Object *object = reinterpret_cast<Object *>(ptr->owner_id);
   Collection *new_collection = static_cast<Collection *>(value.data);
@@ -2256,7 +2331,7 @@ static PointerRNA rna_LightLinking_blocker_collection_get(PointerRNA *ptr)
 
 static void rna_LightLinking_blocker_collection_set(PointerRNA *ptr,
                                                     PointerRNA value,
-                                                    struct ReportList * /*reports*/)
+                                                    ReportList * /*reports*/)
 {
   Object *object = reinterpret_cast<Object *>(ptr->owner_id);
   Collection *new_collection = static_cast<Collection *>(value.data);
@@ -3023,6 +3098,7 @@ static void rna_def_object(BlenderRNA *brna)
   RNA_def_property_enum_items(prop, parent_type_items);
   RNA_def_property_enum_funcs(
       prop, nullptr, "rna_Object_parent_type_set", "rna_Object_parent_type_itemf");
+  RNA_def_property_override_funcs(prop, nullptr, nullptr, "rna_Object_parent_type_override_apply");
   RNA_def_property_ui_text(prop, "Parent Type", "Type of parent relation");
   RNA_def_property_update(prop, NC_OBJECT | ND_DRAW, "rna_Object_dependency_update");
 
@@ -3036,6 +3112,7 @@ static void rna_def_object(BlenderRNA *brna)
   prop = RNA_def_property(srna, "parent_bone", PROP_STRING, PROP_NONE);
   RNA_def_property_string_sdna(prop, nullptr, "parsubstr");
   RNA_def_property_string_funcs(prop, nullptr, nullptr, "rna_Object_parent_bone_set");
+  RNA_def_property_override_funcs(prop, nullptr, nullptr, "rna_Object_parent_bone_override_apply");
   RNA_def_property_ui_text(
       prop, "Parent Bone", "Name of parent bone in case of a bone parenting relation");
   RNA_def_property_update(prop, NC_OBJECT | ND_DRAW, "rna_Object_dependency_update");
@@ -3503,7 +3580,8 @@ static void rna_def_object(BlenderRNA *brna)
   prop = RNA_def_property(srna, "use_simulation_cache", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, nullptr, "flag", OB_FLAG_USE_SIMULATION_CACHE);
   RNA_def_property_ui_text(
-      prop, "Use Simulation Cache", "Cache all frames during simulation nodes playback");
+      prop, "Use Simulation Cache", "Cache frames during simulation nodes playback");
+  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_update(prop, NC_OBJECT | ND_DRAW, nullptr);
 
   rna_def_object_visibility(srna);

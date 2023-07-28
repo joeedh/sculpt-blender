@@ -569,6 +569,32 @@ class edit_generators:
 
             return edits
 
+    class use_empty_void_arg(EditGenerator):
+        """
+        Use ``()`` instead of ``(void)`` for C++ code.
+
+        Replace:
+          function(void) {}
+        With:
+          function() {}
+        """
+        @staticmethod
+        def edit_list_from_file(source: str, data: str, _shared_edit_data: Any) -> List[Edit]:
+            edits: List[Edit] = []
+
+            # The user might include C & C++, if they forget, it is better not to operate on C.
+            if source.lower().endswith((".h", ".c")):
+                return edits
+
+            # `(void)` -> `()`.
+            for match in re.finditer(r"(\(void\))(\s*{)", data, flags=re.MULTILINE):
+                edits.append(Edit(
+                    span=match.span(),
+                    content="()" + match.group(2),
+                    content_fail="(__ALWAYS_FAIL__) {",
+                ))
+            return edits
+
     class unused_arg_as_comment(EditGenerator):
         """
         Replace `UNUSED(argument)` in C++ code.
@@ -1307,6 +1333,12 @@ def edit_class_from_id(name: str) -> Type[EditGenerator]:
     return result  # type: ignore
 
 
+def edit_docstring_from_id(name: str) -> str:
+    from textwrap import dedent
+    result = getattr(edit_generators, name).__doc__
+    return dedent(result or '').strip('\n') + '\n'
+
+
 # -----------------------------------------------------------------------------
 # Accept / Reject Edits
 
@@ -1576,10 +1608,11 @@ def create_parser(edits_all: Sequence[str]) -> argparse.ArgumentParser:
     # Create docstring for edits.
     edits_all_docs = []
     for edit in edits_all:
+        # `%` -> `%%` is needed for `--help` not to interpret these as formatting arguments.
         edits_all_docs.append(
             "  %s\n%s" % (
                 edit,
-                indent(dedent(getattr(edit_generators, edit).__doc__ or '').strip('\n') + '\n', '    '),
+                indent(edit_docstring_from_id(edit).replace("%", "%%"), '    '),
             )
         )
 

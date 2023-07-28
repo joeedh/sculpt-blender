@@ -9,6 +9,7 @@
 #pragma once
 
 #include "DNA_ID.h"
+#include "DNA_curve_types.h"
 #include "DNA_curves_types.h"
 #include "DNA_listBase.h"
 
@@ -128,6 +129,9 @@ typedef struct GreasePencilDrawingReference {
  */
 typedef enum GreasePencilFrameFlag {
   GP_FRAME_SELECTED = (1 << 0),
+  /* When set, the frame is implicitly held until the next frame. E.g. it doesn't have a fixed
+   * duration. */
+  GP_FRAME_IMPLICIT_HOLD = (1 << 1),
 } GreasePencilFrameFlag;
 
 /**
@@ -148,6 +152,11 @@ typedef struct GreasePencilFrame {
    */
   int8_t type;
   char _pad[3];
+#ifdef __cplusplus
+  static GreasePencilFrame null();
+  bool is_null() const;
+  bool is_implicit_hold() const;
+#endif
 } GreasePencilFrame;
 
 typedef enum GreasePencilLayerFramesMapStorageFlag {
@@ -307,8 +316,7 @@ typedef struct GreasePencilLayerTreeGroup {
  * Flag for the grease pencil data-block. #GreasePencil.flag
  */
 typedef enum GreasePencilFlag {
-  /* TODO */
-  GreasePencilFlag_TODO
+  GREASE_PENCIL_ANIM_CHANNEL_EXPANDED = (1 << 0),
 } GreasePencilFlag;
 
 /**
@@ -392,7 +400,7 @@ typedef struct GreasePencil {
   char _pad[4];
 
   /* Root group of the layer tree. */
-  GreasePencilLayerTreeGroup root_group;
+  GreasePencilLayerTreeGroup *root_group_ptr;
 
   /**
    * Pointer to the active layer. Can be NULL.
@@ -428,15 +436,22 @@ typedef struct GreasePencil {
   void read_layer_tree(BlendDataReader *reader);
   void write_layer_tree(BlendWriter *writer);
 
+  /* Root group. */
+  const blender::bke::greasepencil::LayerGroup &root_group() const;
+  blender::bke::greasepencil::LayerGroup &root_group();
+
   /* Drawings read/write access. */
   blender::Span<GreasePencilDrawingBase *> drawings() const;
   blender::MutableSpan<GreasePencilDrawingBase *> drawings_for_write();
+
+  blender::Span<const blender::bke::greasepencil::TreeNode *> nodes() const;
 
   /* Layers read/write access. */
   blender::Span<const blender::bke::greasepencil::Layer *> layers() const;
   blender::Span<blender::bke::greasepencil::Layer *> layers_for_write();
 
-  blender::Span<const blender::bke::greasepencil::TreeNode *> nodes() const;
+  blender::Span<const blender::bke::greasepencil::LayerGroup *> groups() const;
+  blender::Span<blender::bke::greasepencil::LayerGroup *> groups_for_write();
 
   bool has_active_layer() const;
   const blender::bke::greasepencil::Layer *get_active_layer() const;
@@ -447,7 +462,7 @@ typedef struct GreasePencil {
                                                blender::StringRefNull name);
   blender::bke::greasepencil::Layer &add_layer(blender::StringRefNull name);
   blender::bke::greasepencil::Layer &add_layer_after(blender::bke::greasepencil::LayerGroup &group,
-                                                     blender::bke::greasepencil::Layer *layer,
+                                                     blender::bke::greasepencil::TreeNode *link,
                                                      blender::StringRefNull name);
 
   blender::bke::greasepencil::LayerGroup &add_layer_group(
@@ -461,11 +476,22 @@ typedef struct GreasePencil {
   const blender::bke::greasepencil::Layer *find_layer_by_name(blender::StringRefNull name) const;
   blender::bke::greasepencil::Layer *find_layer_by_name(blender::StringRefNull name);
 
+  const blender::bke::greasepencil::LayerGroup *find_group_by_name(
+      blender::StringRefNull name) const;
+  blender::bke::greasepencil::LayerGroup *find_group_by_name(blender::StringRefNull name);
+
   void rename_layer(blender::bke::greasepencil::Layer &layer, blender::StringRefNull new_name);
+  void rename_group(blender::bke::greasepencil::LayerGroup &group,
+                    blender::StringRefNull new_name);
 
   void remove_layer(blender::bke::greasepencil::Layer &layer);
 
   void add_empty_drawings(int add_num);
+  bool insert_blank_frame(blender::bke::greasepencil::Layer &layer,
+                          int frame_number,
+                          int duration,
+                          eBezTriple_KeyframeType keytype);
+
   void remove_drawing(int index);
 
   void foreach_visible_drawing(

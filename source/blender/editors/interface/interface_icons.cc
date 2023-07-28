@@ -1528,7 +1528,7 @@ static void icon_draw_rect(float x,
                            float /*aspect*/,
                            int rw,
                            int rh,
-                           uint8_t *rect,
+                           const uint8_t *rect,
                            float alpha,
                            const float desaturate)
 {
@@ -1882,7 +1882,7 @@ static void icon_draw_size(float x,
   UI_widgetbase_draw_cache_flush();
 
   if (di->type == ICON_TYPE_IMBUF) {
-    ImBuf *ibuf = static_cast<ImBuf *>(icon->obj);
+    const ImBuf *ibuf = static_cast<const ImBuf *>(icon->obj);
 
     GPU_blend(GPU_BLEND_ALPHA_PREMULT);
     icon_draw_rect(
@@ -2018,7 +2018,7 @@ static void icon_draw_size(float x,
                      aspect,
                      pi->w[size],
                      pi->h[size],
-                     reinterpret_cast<uint8_t *>(pi->rect[size]),
+                     reinterpret_cast<const uint8_t *>(pi->rect[size]),
                      alpha,
                      desaturate);
       GPU_blend(GPU_BLEND_ALPHA);
@@ -2457,9 +2457,6 @@ int UI_icon_from_idcode(const int idcode)
       return ICON_WORLD_DATA;
     case ID_WS:
       return ICON_WORKSPACE;
-    case ID_SIM:
-      /* TODO: Use correct icon. */
-      return ICON_PHYSICS;
     case ID_GP:
       return ICON_OUTLINER_DATA_GREASEPENCIL;
 
@@ -2480,17 +2477,17 @@ int UI_icon_from_object_mode(const int mode)
     case OB_MODE_OBJECT:
       return ICON_OBJECT_DATAMODE;
     case OB_MODE_EDIT:
-    case OB_MODE_EDIT_GPENCIL:
+    case OB_MODE_EDIT_GPENCIL_LEGACY:
       return ICON_EDITMODE_HLT;
     case OB_MODE_SCULPT:
-    case OB_MODE_SCULPT_GPENCIL:
+    case OB_MODE_SCULPT_GPENCIL_LEGACY:
     case OB_MODE_SCULPT_CURVES:
       return ICON_SCULPTMODE_HLT;
     case OB_MODE_VERTEX_PAINT:
-    case OB_MODE_VERTEX_GPENCIL:
+    case OB_MODE_VERTEX_GPENCIL_LEGACY:
       return ICON_VPAINT_HLT;
     case OB_MODE_WEIGHT_PAINT:
-    case OB_MODE_WEIGHT_GPENCIL:
+    case OB_MODE_WEIGHT_GPENCIL_LEGACY:
       return ICON_WPAINT_HLT;
     case OB_MODE_TEXTURE_PAINT:
       return ICON_TPAINT_HLT;
@@ -2498,7 +2495,8 @@ int UI_icon_from_object_mode(const int mode)
       return ICON_PARTICLEMODE;
     case OB_MODE_POSE:
       return ICON_POSE_HLT;
-    case OB_MODE_PAINT_GPENCIL:
+    case OB_MODE_PAINT_GREASE_PENCIL:
+    case OB_MODE_PAINT_GPENCIL_LEGACY:
       return ICON_GREASEPENCIL;
   }
   return ICON_NONE;

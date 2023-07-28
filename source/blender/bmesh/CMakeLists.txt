@@ -4,15 +4,10 @@
 
 set(INC
   .
-  ../blenkernel
-  ../blenlib
   ../blentranslation
   ../depsgraph
-  ../makesdna
-  ../../../intern/atomic
   ../../../intern/clog
   ../../../intern/eigen
-  ../../../intern/guardedalloc
   ../../../extern/rangetree
 )
 
@@ -176,11 +171,15 @@ set(SRC
   # public includes
   bmesh.h
   bmesh_tools.h
+  bmesh_varray.hh
 )
 
 set(LIB
-  bf_blenkernel
-  bf_blenlib
+  PRIVATE bf::blenkernel
+  PRIVATE bf::blenlib
+  PRIVATE bf::dna
+  PRIVATE bf::intern::guardedalloc
+  PRIVATE bf::intern::atomic
 )
 
 if(WITH_BULLET)

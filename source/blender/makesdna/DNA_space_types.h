@@ -49,6 +49,15 @@ struct bNodeTree;
 struct wmOperator;
 struct wmTimer;
 
+#ifdef __cplusplus
+namespace blender::asset_system {
+class AssetRepresentation;
+}
+using AssetRepresentationHandle = blender::asset_system::AssetRepresentation;
+#else
+typedef struct AssetRepresentationHandle AssetRepresentationHandle;
+#endif
+
 /** Defined in `buttons_intern.h`. */
 typedef struct SpaceProperties_Runtime SpaceProperties_Runtime;
 
@@ -145,6 +154,8 @@ typedef enum eSpaceInfo_RptMask {
 
 /** Properties Editor. */
 typedef struct SpaceProperties {
+  DNA_DEFINE_CXX_METHODS(SpaceProperties)
+
   SpaceLink *next, *prev;
   /** Storage of regions for inactive spaces. */
   ListBase regionbase;
@@ -1148,7 +1159,7 @@ typedef struct FileDirEntry {
   /** If this file represents an asset, its asset data is here. Note that we may show assets of
    * external files in which case this is set but not the id above.
    * Note comment for FileListInternEntry.local_data, the same applies here! */
-  struct AssetRepresentation *asset;
+  AssetRepresentationHandle *asset;
 
   /* The icon_id for the preview image. */
   int preview_icon_id;
@@ -1555,6 +1566,7 @@ typedef enum eSpaceNodeOverlay_Flag {
   SN_OVERLAY_SHOW_TIMINGS = (1 << 3),
   SN_OVERLAY_SHOW_PATH = (1 << 4),
   SN_OVERLAY_SHOW_NAMED_ATTRIBUTES = (1 << 5),
+  SN_OVERLAY_SHOW_PREVIEWS = (1 << 6),
 } eSpaceNodeOverlay_Flag;
 
 typedef struct SpaceNode {
@@ -1605,7 +1617,12 @@ typedef struct SpaceNode {
   /** Texture-from object, world or brush (#eSpaceNode_TexFrom). */
   short texfrom;
   /** Shader from object or world (#eSpaceNode_ShaderFrom). */
-  short shaderfrom;
+  char shaderfrom;
+  /**
+   * Whether to edit any geometry node group, or follow the active modifier context.
+   * #SpaceNodeGeometryNodesType.
+   */
+  char geometry_nodes_type;
 
   /** Grease-pencil data. */
   struct bGPdata *gpd;
@@ -1648,6 +1665,12 @@ typedef enum eSpaceNode_ShaderFrom {
   SNODE_SHADER_WORLD = 1,
   SNODE_SHADER_LINESTYLE = 2,
 } eSpaceNode_ShaderFrom;
+
+/** #SpaceNode.geometry_nodes_type */
+typedef enum SpaceNodeGeometryNodesType {
+  SNODE_GEOMETRY_MODIFIER = 0,
+  SNODE_GEOMETRY_OPERATOR = 1,
+} SpaceNodeGeometryNodesType;
 
 /** #SpaceNode.insert_ofs_dir */
 enum {

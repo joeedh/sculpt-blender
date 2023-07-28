@@ -35,8 +35,10 @@ static const aal::RelationsInNode &get_relations_in_node(const bNode &node, Reso
       if (!ntreeIsRegistered(group)) {
         return scope.construct<aal::RelationsInNode>();
       }
-
-      BLI_assert(group->runtime->anonymous_attribute_inferencing);
+      /* It's possible that the inferencing failed on the group. */
+      if (!group->runtime->anonymous_attribute_inferencing) {
+        return scope.construct<aal::RelationsInNode>();
+      }
       return group->runtime->anonymous_attribute_inferencing->tree_relations;
     }
   }
@@ -97,6 +99,48 @@ static const aal::RelationsInNode &get_relations_in_node(const bNode &node, Reso
     }
     return relations;
   }
+  if (ELEM(node.type, GEO_NODE_REPEAT_INPUT, GEO_NODE_REPEAT_OUTPUT)) {
+    aal::RelationsInNode &relations = scope.construct<aal::RelationsInNode>();
+    /* TODO: Add a smaller set of relations. This requires changing the inferencing algorithm to
+     * make it aware of loops. */
+    for (const bNodeSocket *socket : node.output_sockets()) {
+      if (socket->type == SOCK_GEOMETRY) {
+        for (const bNodeSocket *other_output : node.output_sockets()) {
+          if (socket_is_field(*other_output)) {
+            relations.available_relations.append({other_output->index(), socket->index()});
+          }
+        }
+        for (const bNodeSocket *input_socket : node.input_sockets()) {
+          if (input_socket->type == SOCK_GEOMETRY) {
+            relations.propagate_relations.append({input_socket->index(), socket->index()});
+          }
+        }
+      }
+      else if (socket_is_field(*socket)) {
+        /* Reference relations are not added for the output node, because then nodes after the
+         * repeat zone would have to know about the individual field sources within the repeat
+         * zone. This is not necessary, because the field outputs of a repeat zone already serve as
+         * field sources and anonymous attributes are extracted from them. */
+        if (node.type == GEO_NODE_REPEAT_INPUT) {
+          for (const bNodeSocket *input_socket : node.input_sockets()) {
+            if (socket_is_field(*input_socket)) {
+              relations.reference_relations.append({input_socket->index(), socket->index()});
+            }
+          }
+        }
+      }
+    }
+    for (const bNodeSocket *socket : node.input_sockets()) {
+      if (socket->type == SOCK_GEOMETRY) {
+        for (const bNodeSocket *other_input : node.input_sockets()) {
+          if (socket_is_field(*other_input)) {
+            relations.eval_relations.append({other_input->index(), socket->index()});
+          }
+        }
+      }
+    }
+    return relations;
+  }
   if (const NodeDeclaration *node_decl = node.declaration()) {
     if (const aal::RelationsInNode *relations = node_decl->anonymous_attribute_relations()) {
       return *relations;
@@ -134,6 +178,10 @@ class bNodeTreeToDotOptionsForAnonymousAttributeInferencing : public bNodeTreeTo
       ss << socket.identifier << " [";
       bits::foreach_1_index(result_.required_fields_by_geometry_socket[socket.index_in_tree()],
                             [&](const int i) { ss << i << ","; });
+      ss << "] [";
+      bits::foreach_1_index(
+          result_.propagate_to_output_by_geometry_socket[socket.index_in_tree()],
+          [&](const int i) { ss << result_.propagated_output_geometry_indices[i] << ","; });
       ss << "]";
       return ss.str();
     }

@@ -17,6 +17,7 @@
 #include "AS_asset_library.hh"
 
 #include "BKE_context.h"
+#include "BKE_screen.h"
 
 #include "BLI_map.hh"
 #include "BLI_utility_mixins.hh"
@@ -34,6 +35,7 @@
 #include "ED_asset_indexer.h"
 #include "ED_asset_list.h"
 #include "ED_asset_list.hh"
+#include "ED_screen.h"
 #include "asset_library_reference.hh"
 
 namespace blender::ed::asset {
@@ -83,7 +85,7 @@ class PreviewTimer {
   void ensureRunning(const bContext *C)
   {
     if (!timer_) {
-      timer_ = WM_event_add_timer_notifier(
+      timer_ = WM_event_timer_add_notifier(
           CTX_wm_manager(C), CTX_wm_window(C), NC_ASSET | ND_ASSET_LIST_PREVIEW, 0.01);
     }
   }
@@ -91,7 +93,7 @@ class PreviewTimer {
   void stop(const bContext *C)
   {
     if (timer_) {
-      WM_event_remove_timer_notifier(CTX_wm_manager(C), CTX_wm_window(C), timer_);
+      WM_event_timer_remove_notifier(CTX_wm_manager(C), CTX_wm_window(C), timer_);
       timer_ = nullptr;
     }
   }
@@ -425,6 +427,20 @@ AssetListStorage::AssetListMap &AssetListStorage::global_storage()
 }
 
 /** \} */
+
+void asset_reading_region_listen_fn(const wmRegionListenerParams *params)
+{
+  const wmNotifier *wmn = params->notifier;
+  ARegion *region = params->region;
+
+  switch (wmn->category) {
+    case NC_ASSET:
+      if (wmn->data == ND_ASSET_LIST_READING) {
+        ED_region_tag_refresh_ui(region);
+      }
+      break;
+  }
+}
 
 }  // namespace blender::ed::asset
 

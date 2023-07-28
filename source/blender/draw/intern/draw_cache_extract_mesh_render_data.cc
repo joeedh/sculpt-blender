@@ -17,9 +17,10 @@
 
 #include "BKE_attribute.hh"
 #include "BKE_editmesh.h"
-#include "BKE_editmesh_cache.h"
+#include "BKE_editmesh_cache.hh"
 #include "BKE_mesh.hh"
 #include "BKE_mesh_runtime.h"
+#include "BKE_paint.h"
 
 #include "GPU_batch.h"
 
@@ -369,10 +370,10 @@ void mesh_render_data_update_normals(MeshRenderData *mr, const eMRDataType data_
       const float(*vert_normals)[3] = nullptr;
       const float(*poly_normals)[3] = nullptr;
 
-      if (mr->edit_data && mr->edit_data->vertexCos) {
-        vert_coords = mr->bm_vert_coords;
-        vert_normals = mr->bm_vert_normals;
-        poly_normals = mr->bm_poly_normals;
+      if (mr->edit_data && !mr->edit_data->vertexCos.is_empty()) {
+        vert_coords = reinterpret_cast<const float(*)[3]>(mr->bm_vert_coords.data());
+        vert_normals = reinterpret_cast<const float(*)[3]>(mr->bm_vert_normals.data());
+        poly_normals = reinterpret_cast<const float(*)[3]>(mr->bm_poly_normals.data());
       }
 
       mr->loop_normals.reinitialize(mr->loop_len);
@@ -417,7 +418,37 @@ MeshRenderData *mesh_render_data_create(Object *object,
 
   copy_m4_m4(mr->obmat, obmat);
 
-  if (is_editmode) {
+  // NorForPR
+  if (!is_editmode && object->mode == OB_MODE_SCULPT && object->sculpt && object->sculpt->bm) {
+    mr->bm = object->sculpt->bm;
+    mr->edit_bmesh = nullptr;
+    mr->me = me;
+    mr->edit_data = is_mode_active ? mr->me->runtime->edit_data : nullptr;
+    mr->hide_unmapped_edges = false;
+    int bm_ensure_types = BM_VERT | BM_EDGE | BM_LOOP | BM_FACE;
+
+    BM_mesh_elem_index_ensure(mr->bm, bm_ensure_types);
+    BM_mesh_elem_table_ensure(mr->bm, bm_ensure_types & ~BM_LOOP);
+
+    mr->efa_act_uv = EDBM_uv_active_face_get(mr->edit_bmesh, false, false);
+    mr->efa_act = BM_mesh_active_face_get(mr->bm, false, true);
+    mr->eed_act = BM_mesh_active_edge_get(mr->bm);
+    mr->eve_act = BM_mesh_active_vert_get(mr->bm);
+
+    mr->vert_crease_ofs = CustomData_get_offset_named(
+        &mr->bm->vdata, CD_PROP_FLOAT, "crease_vert");
+    mr->edge_crease_ofs = CustomData_get_offset_named(
+        &mr->bm->edata, CD_PROP_FLOAT, "crease_edge");
+    mr->bweight_ofs = CustomData_get_offset_named(
+        &mr->bm->edata, CD_PROP_FLOAT, "bevel_weight_edge");
+#ifdef WITH_FREESTYLE
+    mr->freestyle_edge_ofs = CustomData_get_offset(&mr->bm->edata, CD_FREESTYLE_EDGE);
+    mr->freestyle_face_ofs = CustomData_get_offset(&mr->bm->pdata, CD_FREESTYLE_FACE);
+#endif
+
+    mr->extract_type = MR_EXTRACT_BMESH;
+  }
+  else if (is_editmode) {
     Mesh *editmesh_eval_final = BKE_object_get_editmesh_eval_final(object);
     Mesh *editmesh_eval_cage = BKE_object_get_editmesh_eval_cage(object);
 
@@ -431,8 +462,8 @@ MeshRenderData *mesh_render_data_create(Object *object,
     mr->hide_unmapped_edges = !do_final || editmesh_eval_final == editmesh_eval_cage;
 
     if (mr->edit_data) {
-      EditMeshData *emd = mr->edit_data;
-      if (emd->vertexCos) {
+      blender::bke::EditMeshData *emd = mr->edit_data;
+      if (!emd->vertexCos.is_empty()) {
         BKE_editmesh_cache_ensure_vert_normals(mr->edit_bmesh, emd);
         BKE_editmesh_cache_ensure_poly_normals(mr->edit_bmesh, emd);
       }

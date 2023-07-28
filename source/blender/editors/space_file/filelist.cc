@@ -1097,7 +1097,7 @@ void filelist_setlibrary(FileList *filelist, const AssetLibraryReference *asset_
 
 /* ********** Icon/image helpers ********** */
 
-void filelist_init_icons(void)
+void filelist_init_icons()
 {
   short x, y, k;
   ImBuf *bbuf;
@@ -1136,7 +1136,7 @@ void filelist_init_icons(void)
   }
 }
 
-void filelist_free_icons(void)
+void filelist_free_icons()
 {
   BLI_assert(G.background == false);
 
@@ -1151,7 +1151,7 @@ void filelist_file_get_full_path(const FileList *filelist,
                                  char r_filepath[/*FILE_MAX_LIBEXTRA*/])
 {
   if (file->asset) {
-    const std::string asset_path = AS_asset_representation_full_path_get(file->asset);
+    const std::string asset_path = file->asset->get_identifier().full_path();
     BLI_strncpy(r_filepath, asset_path.c_str(), FILE_MAX_LIBEXTRA);
     return;
   }
@@ -1504,7 +1504,7 @@ static void filelist_cache_preview_runf(TaskPool *__restrict pool, void *taskdat
   //  printf("%s: %d - %s - %p\n", __func__, preview->index, preview->path, preview->img);
   BLI_assert(preview->flags &
              (FILE_TYPE_IMAGE | FILE_TYPE_MOVIE | FILE_TYPE_FTFONT | FILE_TYPE_BLENDER |
-              FILE_TYPE_BLENDER_BACKUP | FILE_TYPE_BLENDERLIB));
+              FILE_TYPE_OBJECT_IO | FILE_TYPE_BLENDER_BACKUP | FILE_TYPE_BLENDERLIB));
 
   if (preview->flags & FILE_TYPE_IMAGE) {
     source = THB_SOURCE_IMAGE;
@@ -1518,6 +1518,9 @@ static void filelist_cache_preview_runf(TaskPool *__restrict pool, void *taskdat
   }
   else if (preview->flags & FILE_TYPE_FTFONT) {
     source = THB_SOURCE_FONT;
+  }
+  else if (preview->flags & FILE_TYPE_OBJECT_IO) {
+    source = THB_SOURCE_OBJECT_IO;
   }
 
   IMB_thumb_path_lock(preview->filepath);
@@ -1620,8 +1623,9 @@ static void filelist_cache_previews_push(FileList *filelist, FileDirEntry *entry
     return;
   }
 
-  if (!(entry->typeflag & (FILE_TYPE_IMAGE | FILE_TYPE_MOVIE | FILE_TYPE_FTFONT |
-                           FILE_TYPE_BLENDER | FILE_TYPE_BLENDER_BACKUP | FILE_TYPE_BLENDERLIB)))
+  if (!(entry->typeflag &
+        (FILE_TYPE_IMAGE | FILE_TYPE_MOVIE | FILE_TYPE_FTFONT | FILE_TYPE_OBJECT_IO |
+         FILE_TYPE_BLENDER | FILE_TYPE_BLENDER_BACKUP | FILE_TYPE_BLENDERLIB)))
   {
     return;
   }
@@ -2107,7 +2111,7 @@ static FileDirEntry *filelist_file_create_entry(FileList *filelist, const int in
     ret->redirection_path = BLI_strdup(entry->redirection_path);
   }
   ret->id = entry->local_data.id;
-  ret->asset = reinterpret_cast<::AssetRepresentation *>(entry->asset);
+  ret->asset = entry->asset;
   /* For some file types the preview is already available. */
   if (entry->local_data.preview_image &&
       BKE_previewimg_is_finished(entry->local_data.preview_image, ICON_SIZE_PREVIEW))
@@ -2323,9 +2327,9 @@ static void filelist_file_cache_block_release(FileList *filelist, const int size
   for (i = 0; i < size; i++, cursor++) {
     FileDirEntry *entry = cache->block_entries[cursor];
 #if 0
-      printf("%s: release cacheidx %d (%%p %%s)\n",
-             __func__,
-             cursor /*, cache->block_entries[cursor], cache->block_entries[cursor]->relpath*/);
+    printf("%s: release cacheidx %d (%%p %%s)\n",
+           __func__,
+           cursor /*, cache->block_entries[cursor], cache->block_entries[cursor]->relpath*/);
 #endif
     BLI_ghash_remove(cache->uids, POINTER_FROM_UINT(entry->uid), nullptr, nullptr);
     filelist_file_release_entry(filelist, entry);

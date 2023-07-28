@@ -226,6 +226,20 @@ AbstractGridView &AbstractGridViewItem::get_view() const
 
 /* ---------------------------------------------------------------------- */
 
+std::unique_ptr<DropTargetInterface> AbstractGridViewItem::create_item_drop_target()
+{
+  return create_drop_target();
+}
+
+std::unique_ptr<GridViewItemDropTarget> AbstractGridViewItem::create_drop_target()
+{
+  return nullptr;
+}
+
+GridViewItemDropTarget::GridViewItemDropTarget(AbstractGridView &view) : view_(view) {}
+
+/* ---------------------------------------------------------------------- */
+
 /**
  * Helper for only adding layout items for grid items that are actually in view. 3 main functions:
  * - #is_item_visible(): Query if an item of a given index is visible in the view (others should be
@@ -315,9 +329,9 @@ void BuildOnlyVisibleButtonsHelper::fill_layout_after_visible(uiBlock &block) co
   const int last_visible_idx = visible_items_range_.last();
 
   if (last_item_idx > last_visible_idx) {
-    const int remaining_rows = (cols_per_row_ > 0) ?
-                                   (last_item_idx - last_visible_idx) / cols_per_row_ :
-                                   0;
+    const int remaining_rows = (cols_per_row_ > 0) ? ceilf((last_item_idx - last_visible_idx) /
+                                                           float(cols_per_row_)) :
+                                                     0;
     BuildOnlyVisibleButtonsHelper::add_spacer_button(block, remaining_rows);
   }
 }

@@ -119,6 +119,15 @@ struct wmWindowManager;
 #include "gizmo/WM_gizmo_api.h"
 
 #ifdef __cplusplus
+namespace blender::asset_system {
+class AssetRepresentation;
+}
+using AssetRepresentationHandle = blender::asset_system::AssetRepresentation;
+#else
+typedef struct AssetRepresentationHandle AssetRepresentationHandle;
+#endif
+
+#ifdef __cplusplus
 extern "C" {
 #endif
 
@@ -515,6 +524,7 @@ typedef struct wmNotifier {
 #define NS_MODE_PARTICLE (10 << 8)
 #define NS_EDITMODE_CURVES (11 << 8)
 #define NS_EDITMODE_GREASE_PENCIL (12 << 8)
+#define NS_EDITMODE_POINT_CLOUD (13 << 8)
 
 /* subtype 3d view editing */
 #define NS_VIEW3D_GPU (16 << 8)
@@ -1078,6 +1088,7 @@ typedef enum eWM_DragDataType {
   WM_DRAG_COLOR,
   WM_DRAG_DATASTACK,
   WM_DRAG_ASSET_CATALOG,
+  WM_DRAG_GREASE_PENCIL_LAYER,
 } eWM_DragDataType;
 
 typedef enum eWM_DragFlags {
@@ -1096,7 +1107,7 @@ typedef struct wmDragID {
 
 typedef struct wmDragAsset {
   int import_method; /* eAssetImportType */
-  const struct AssetRepresentation *asset;
+  const AssetRepresentationHandle *asset;
 
   /* FIXME: This is temporary evil solution to get scene/view-layer/etc in the copy callback of the
    * #wmDropBox.
@@ -1135,6 +1146,10 @@ typedef struct wmDragPath {
    * set, so `ELEM()` like comparison is possible. */
   int file_type; /* eFileSel_File_Types */
 } wmDragPath;
+
+typedef struct wmDragGreasePencilLayer {
+  struct GreasePencilLayer *layer;
+} wmDragGreasePencilLayer;
 
 typedef char *(*WMDropboxTooltipFunc)(struct bContext *,
                                       struct wmDrag *,
@@ -1184,7 +1199,7 @@ typedef struct wmDrag {
   double value;
 
   /** If no icon but imbuf should be drawn around cursor. */
-  struct ImBuf *imb;
+  const struct ImBuf *imb;
   float imbuf_scale;
 
   wmDragActiveDropState drop_state;

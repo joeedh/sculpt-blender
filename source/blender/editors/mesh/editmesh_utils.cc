@@ -29,7 +29,7 @@
 #include "BKE_main.h"
 #include "BKE_mesh.h"
 #include "BKE_mesh_mapping.h"
-#include "BKE_pbvh.h"
+#include "BKE_pbvh_api.hh"
 #include "BKE_report.h"
 
 #include "DEG_depsgraph.h"
@@ -616,7 +616,7 @@ int BM_uv_element_get_unique_index(UvElementMap *element_map, UvElement *child)
   return unique_index[index];
 }
 
-#define INVALID_ISLAND (uint(-1))
+#define INVALID_ISLAND uint(-1)
 
 static void bm_uv_assign_island(UvElementMap *element_map,
                                 UvElement *element,

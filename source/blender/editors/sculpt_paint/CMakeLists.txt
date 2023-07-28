@@ -5,8 +5,6 @@
 set(INC
   ../include
   ../uvedit
-  ../../blenkernel
-  ../../blenlib
   ../../blentranslation
   ../../bmesh
   ../../depsgraph
@@ -15,15 +13,12 @@ set(INC
   ../../geometry
   ../../gpu
   ../../imbuf
-  ../../makesdna
   ../../makesrna
   ../../nodes
   ../../render
   ../../windowmanager
-  ../../../../intern/atomic
   ../../../../intern/clog
   ../../../../intern/eigen
-  ../../../../intern/guardedalloc
   # RNA_prototypes.h
   ${CMAKE_BINARY_DIR}/source/blender/makesrna
 )
@@ -93,12 +88,16 @@ set(SRC
   curves_sculpt_intern.hh
   grease_pencil_intern.hh
   paint_intern.hh
+  sculpt_brush_iter.hh
   sculpt_intern.hh
 )
 
 set(LIB
-  bf_blenkernel
-  bf_blenlib
+  PRIVATE bf::blenkernel
+  PRIVATE bf::blenlib
+  PRIVATE bf::dna
+  PRIVATE bf::intern::atomic
+  PRIVATE bf::intern::guardedalloc
 )
 
 if(WITH_TBB)

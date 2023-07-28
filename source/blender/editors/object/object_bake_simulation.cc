@@ -11,6 +11,7 @@
 #include "BLI_fileops.hh"
 #include "BLI_path_util.h"
 #include "BLI_serialize.hh"
+#include "BLI_string_utils.h"
 #include "BLI_vector.hh"
 
 #include "PIL_time.h"
@@ -48,6 +49,8 @@
 
 #include "DEG_depsgraph.h"
 #include "DEG_depsgraph_build.h"
+
+#include "MOD_nodes.hh"
 
 #include "object_intern.h"
 
@@ -95,7 +98,7 @@ static void calculate_simulation_job_startjob(void *customdata,
     LISTBASE_FOREACH (ModifierData *, md, &object->modifiers) {
       if (md->type == eModifierType_Nodes) {
         NodesModifierData *nmd = reinterpret_cast<NodesModifierData *>(md);
-        nmd->simulation_cache->ptr->reset();
+        nmd->runtime->simulation_cache->reset();
       }
     }
     objects_to_calc.append(object);
@@ -170,7 +173,7 @@ static int calculate_to_frame_invoke(bContext *C, wmOperator *op, const wmEvent 
   wmJob *wm_job = WM_jobs_get(wm,
                               CTX_wm_window(C),
                               CTX_data_scene(C),
-                              "Bake Simulation Nodes",
+                              "Calculate Simulation",
                               WM_JOB_PROGRESS,
                               WM_JOB_TYPE_CALCULATE_SIMULATION_NODES);
 
@@ -255,7 +258,7 @@ static void bake_simulation_job_startjob(void *customdata,
     LISTBASE_FOREACH (ModifierData *, md, &object->modifiers) {
       if (md->type == eModifierType_Nodes) {
         NodesModifierData *nmd = reinterpret_cast<NodesModifierData *>(md);
-        nmd->simulation_cache->ptr->reset();
+        nmd->runtime->simulation_cache->reset();
         char absolute_bake_dir[FILE_MAX];
         STRNCPY(absolute_bake_dir, nmd->simulation_bake_directory);
         BLI_path_abs(absolute_bake_dir, base_path);
@@ -286,7 +289,7 @@ static void bake_simulation_job_startjob(void *customdata,
 
     char frame_file_c_str[64];
     SNPRINTF(frame_file_c_str, "%011.5f", double(frame));
-    BLI_str_replace_char(frame_file_c_str, '.', '_');
+    BLI_string_replace_char(frame_file_c_str, '.', '_');
     const StringRefNull frame_file_str = frame_file_c_str;
 
     BKE_scene_graph_update_for_newframe(job.depsgraph);
@@ -294,10 +297,10 @@ static void bake_simulation_job_startjob(void *customdata,
     for (ObjectBakeData &object_bake_data : objects_to_bake) {
       for (ModifierBakeData &modifier_bake_data : object_bake_data.modifiers) {
         NodesModifierData &nmd = *modifier_bake_data.nmd;
-        if (nmd.simulation_cache == nullptr) {
+        if (!nmd.runtime->simulation_cache) {
           continue;
         }
-        ModifierSimulationCache &sim_cache = *nmd.simulation_cache->ptr;
+        ModifierSimulationCache &sim_cache = *nmd.runtime->simulation_cache;
         const ModifierSimulationState *sim_state = sim_cache.get_state_at_exact_frame(frame);
         if (sim_state == nullptr || sim_state->zone_states_.is_empty()) {
           continue;
@@ -339,9 +342,9 @@ static void bake_simulation_job_startjob(void *customdata,
   for (ObjectBakeData &object_bake_data : objects_to_bake) {
     for (ModifierBakeData &modifier_bake_data : object_bake_data.modifiers) {
       NodesModifierData &nmd = *modifier_bake_data.nmd;
-      if (nmd.simulation_cache) {
+      if (nmd.runtime->simulation_cache) {
         /* Tag the caches as being baked so that they are not changed anymore. */
-        nmd.simulation_cache->ptr->cache_state_ = CacheState::Baked;
+        nmd.runtime->simulation_cache->cache_state = CacheState::Baked;
       }
     }
     DEG_id_tag_update(&object_bake_data.object->id, ID_RECALC_GEOMETRY);
@@ -593,7 +596,7 @@ static int delete_baked_simulation_exec(bContext *C, wmOperator *op)
     LISTBASE_FOREACH (ModifierData *, md, &object->modifiers) {
       if (md->type == eModifierType_Nodes) {
         NodesModifierData *nmd = reinterpret_cast<NodesModifierData *>(md);
-        nmd->simulation_cache->ptr->reset();
+        nmd->runtime->simulation_cache->reset();
         if (StringRef(nmd->simulation_bake_directory).is_empty()) {
           continue;
         }

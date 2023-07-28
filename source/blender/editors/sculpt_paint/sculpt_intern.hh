@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include "DNA_brush_enums.h" /* For eAttrCorrectMode. */
 #include "DNA_brush_types.h"
 #include "DNA_key_types.h"
 #include "DNA_listBase.h"
@@ -18,13 +19,14 @@
 #include "BKE_attribute.h"
 #include "BKE_dyntopo.hh"
 #include "BKE_paint.h"
-#include "BKE_pbvh.h"
+#include "BKE_pbvh_api.hh"
 #include "BKE_sculpt.h"
 #include "BKE_sculpt.hh"
 
 #include "BLI_bitmap.h"
 #include "BLI_compiler_attrs.h"
 #include "BLI_compiler_compat.h"
+#include "BLI_generic_array.hh"
 #include "BLI_gsqueue.h"
 #include "BLI_implicit_sharing.hh"
 #include "BLI_math_vector_types.hh"
@@ -704,7 +706,7 @@ struct StrokeCache {
   float mouse_event[2];
 
   float (*prev_colors)[4];
-  void *prev_colors_vpaint;
+  blender::GArray<> prev_colors_vpaint;
 
   /* Multires Displacement Smear. */
   float (*prev_displacement)[3];
@@ -718,8 +720,8 @@ struct StrokeCache {
   float projection_mat[4][4];
 
   /* Clean this up! */
-  struct ViewContext *vc;
-  struct Brush *brush;
+  ViewContext *vc;
+  const Brush *brush;
 
   float special_rotation;
   float grab_delta[3], grab_delta_symmetry[3];
@@ -1563,8 +1565,10 @@ bool SCULPT_brush_test_sphere_fast(const SculptBrushTest *test, const float co[3
 bool SCULPT_brush_test_cube(SculptBrushTest *test,
                             const float co[3],
                             const float local[4][4],
-                            float roundness,
+                            const float roundness,
+                            const float tip_scale_x,
                             bool test_z);
+
 bool SCULPT_brush_test_circle_sq(SculptBrushTest *test, const float co[3]);
 bool SCULPT_brush_test(SculptBrushTest *test, const float co[3]);
 /**
@@ -1590,7 +1594,12 @@ SculptBrushTestFn SCULPT_brush_test_init_with_falloff_shape(const SculptSession 
                                                             char falloff_shape);
 const float *SCULPT_brush_frontface_normal_from_falloff_shape(const SculptSession *ss,
                                                               char falloff_shape);
-void SCULPT_cube_tip_init(Sculpt *sd, Object *ob, Brush *brush, float mat[4][4]);
+void SCULPT_cube_tip_init(Sculpt *sd,
+                          Object *ob,
+                          Brush *brush,
+                          float mat[4][4],
+                          const float *co = nullptr,  /* Custom brush center. */
+                          const float *no = nullptr); /* Custom brush normal. */
 
 /**
  * Return a multiplier for brush strength on a particular vertex.
@@ -1695,7 +1704,9 @@ void sculpt_dynamic_topology_disable_with_undo(Main *bmain,
  * Others, like smooth, are better without.
  * Same goes for alt-key smoothing.
  */
-bool SCULPT_stroke_is_dynamic_topology(const SculptSession *ss, const Brush *brush);
+bool SCULPT_stroke_is_dynamic_topology(const SculptSession *ss,
+                                       const Sculpt *sd,
+                                       const Brush *brush);
 
 void SCULPT_dynamic_topology_triangulate(struct SculptSession *ss, struct BMesh *bm);
 
@@ -1922,16 +1933,15 @@ void SCULPT_neighbor_coords_average_interior(SculptSession *ss,
                                              bool smooth_origco = false,
                                              float factor = 1.0f);
 
-BLI_INLINE bool SCULPT_need_reproject(const SculptSession *ss)
+BLI_INLINE eAttrCorrectMode SCULPT_need_reproject(const SculptSession *ss)
 {
-  return ss->reproject_smooth &&
-         ss->bm;  // && CustomData_has_layer(&ss->bm->ldata, CD_PROP_FLOAT2);
+  return ss->bm ? ss->distort_correction_mode : UNDISTORT_NONE;
 }
 
 int SCULPT_vertex_island_get(SculptSession *ss, PBVHVertRef vertex);
 
 /** \} */
-void SCULPT_smooth_undo_push(Object *ob, Span<PBVHNode *> nodes);
+void SCULPT_smooth_undo_push(Sculpt *sd, Object *ob, Span<PBVHNode *> nodes, Brush *brush);
 
 void SCULPT_smooth(
     Sculpt *sd, Object *ob, Span<PBVHNode *> nodes, float bstrength, const bool smooth_mask);
@@ -1978,7 +1988,7 @@ void SCULPT_cache_calc_brushdata_symm(StrokeCache *cache,
                                       ePaintSymmetryFlags symm,
                                       const char axis,
                                       const float angle);
-void SCULPT_cache_free(SculptSession *ss, struct Object *ob, StrokeCache *cache);
+void SCULPT_cache_free(StrokeCache *cache);
 
 /* -------------------------------------------------------------------- */
 /** \name Sculpt Undo
@@ -2454,3 +2464,7 @@ int SCULPT_get_symmetry_pass(const struct SculptSession *ss);
  * autosmooth.
  */
 #define SCULPT_tool_needs_smooth_origco(tool) ELEM(tool, SCULPT_TOOL_DRAW_SHARP)
+
+#ifdef DEBUG_SHOW_SCULPT_BM_UV_EDGES
+void SCULPT_tag_uveditor_update(bContext *C, Depsgraph *depsgraph, Object *ob);
+#endif

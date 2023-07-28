@@ -9,6 +9,7 @@
 #pragma once
 
 #include "DNA_brush_defaults.h"
+#include "DNA_brush_enums.h"
 #include "DNA_scene_enums.h"
 #include "DNA_view3d_defaults.h"
 
@@ -284,6 +285,7 @@
     .hard_corner_pin = 1.0f,\
     .sharp_angle_limit = 0.6108f,\
     .smooth_boundary_flag = SCULPT_BOUNDARY_MESH|SCULPT_BOUNDARY_FACE_SET|SCULPT_BOUNDARY_SEAM|SCULPT_BOUNDARY_SHARP_MARK|SCULPT_BOUNDARY_UV,\
+    .distort_correction_mode = UNDISTORT_REPROJECT_VERTS|UNDISTORT_REPROJECT_CORNERS|UNDISTORT_RELAX_UVS,\
   }
 
 #define _DNA_DEFAULTS_ParticleEditSettings \
@@ -387,7 +389,11 @@
     .automasking_view_normal_falloff = 0.25f, \
     .flags   = SCULPT_DYNTOPO_ENABLED,\
     .dyntopo = _DNA_DEFAULT_DynTopoSettings,\
-  }\
+    .paint = {\
+      .symmetry_flags = PAINT_SYMMETRY_FEATHER,\
+      .tile_offset = {1.0f, 1.0f, 1.0f},\
+    }\
+  }
 /* clang-format off */
 
 /** \} */

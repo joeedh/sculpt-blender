@@ -60,6 +60,12 @@ struct GeoNodesModifierData {
   float simulation_time_delta = 0.0f;
 
   /**
+   * The same as #prev_simulation_state, but the cached values can be moved from,
+   * to keep data managed by implicit sharing mutable.
+   */
+  bke::sim::ModifierSimulationState *prev_simulation_state_mutable = nullptr;
+
+  /**
    * Some nodes should be executed even when their output is not used (e.g. active viewer nodes and
    * the node groups they are contained in).
    */
@@ -74,6 +80,13 @@ struct GeoNodesModifierData {
   const Set<ComputeContextHash> *socket_log_contexts = nullptr;
 };
 
+struct GeoNodesOperatorData {
+  /** The object currently effected by the operator. */
+  const Object *self_object = nullptr;
+  /** Current evaluated depsgraph. */
+  Depsgraph *depsgraph = nullptr;
+};
+
 /**
  * Custom user data that is passed to every geometry nodes related lazy-function evaluation.
  */
@@ -83,6 +96,10 @@ struct GeoNodesLFUserData : public lf::UserData {
    */
   GeoNodesModifierData *modifier_data = nullptr;
   /**
+   * Data from execution as operator in 3D viewport.
+   */
+  GeoNodesOperatorData *operator_data = nullptr;
+  /**
    * Current compute context. This is different depending in the (nested) node group that is being
    * evaluated.
    */
@@ -91,6 +108,10 @@ struct GeoNodesLFUserData : public lf::UserData {
    * Log socket values in the current compute context. Child contexts might use logging again.
    */
   bool log_socket_values = true;
+  /**
+   * Top-level node tree of the current evaluation.
+   */
+  const bNodeTree *root_ntree = nullptr;
 
   destruct_ptr<lf::LocalUserData> get_local(LinearAllocator<> &allocator) override;
 };
@@ -241,8 +262,8 @@ std::unique_ptr<LazyFunction> get_simulation_input_lazy_function(
     GeometryNodesLazyFunctionGraphInfo &own_lf_graph_info);
 std::unique_ptr<LazyFunction> get_switch_node_lazy_function(const bNode &node);
 
-bke::sim::SimulationZoneID get_simulation_zone_id(const ComputeContext &context,
-                                                  const int output_node_id);
+std::optional<bke::sim::SimulationZoneID> get_simulation_zone_id(
+    const GeoNodesLFUserData &user_data, const int output_node_id);
 
 /**
  * An anonymous attribute created by a node.

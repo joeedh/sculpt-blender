@@ -91,6 +91,8 @@ class SPREADSHEET_HT_header(bpy.types.Header):
             layout.label(text=ctx.ui_name, icon='NODE')
         elif ctx.type == 'SIMULATION_ZONE':
             layout.label(text="Simulation Zone")
+        elif ctx.type == 'REPEAT_ZONE':
+            layout.label(text="Repeat Zone")
         elif ctx.type == 'VIEWER_NODE':
             layout.label(text=ctx.ui_name)
 
@@ -110,7 +112,9 @@ class SPREADSHEET_HT_header(bpy.types.Header):
             return obj.mode == 'EDIT'
         if obj.type == 'CURVES':
             return obj.mode in {'SCULPT_CURVES', 'EDIT'}
-        return True
+        if obj.type == 'POINTCLOUD':
+            return obj.mode == 'EDIT'
+        return False
 
 
 classes = (

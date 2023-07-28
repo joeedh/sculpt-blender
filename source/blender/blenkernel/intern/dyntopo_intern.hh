@@ -2,7 +2,7 @@
 
 #include "BKE_dyntopo.hh"
 #include "BKE_paint.h"
-#include "BKE_pbvh.h"
+#include "BKE_pbvh_api.hh"
 #include "BKE_sculpt.hh"
 
 #include "BLI_asan.h"
@@ -143,7 +143,7 @@ inline bool bm_elem_is_free(BMElem *elem, int htype)
  * applied stochastically (by skipping verts randomly) to improve
  * performance.
  */
-#define DYNTOPO_SAFE_SMOOTH_FAC 0.1f
+#define DYNTOPO_SAFE_SMOOTH_FAC 0.02f
 
 #ifdef USE_EDGEQUEUE_EVEN_SUBDIV
 #  include "BKE_global.h"
@@ -262,7 +262,7 @@ struct EdgeQueueContext {
   float limit_len_max_sqr;
 
   PBVHTopologyUpdateMode mode;
-  bool reproject_cdata;
+  eAttrCorrectMode distort_correction_mode;
   bool surface_relax;
 
   bool updatePBVH = false;

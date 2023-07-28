@@ -363,6 +363,8 @@ typedef struct ScrArea_Runtime {
 } ScrArea_Runtime;
 
 typedef struct ScrArea {
+  DNA_DEFINE_CXX_METHODS(ScrArea)
+
   struct ScrArea *next, *prev;
 
   /** Ordered (bottom-left, top-left, top-right, bottom-right). */
@@ -703,7 +705,7 @@ enum {
   RGN_FLAG_HIDDEN = (1 << 0),
   RGN_FLAG_TOO_SMALL = (1 << 1),
   /**
-   * Force delayed reinit of region size data, so that region size is calculated
+   * Force delayed re-initialization of region size data, so that region size is calculated
    * just big enough to show all its content (if enough space is available).
    * Note that only ED_region_header supports this right now.
    */

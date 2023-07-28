@@ -1478,7 +1478,7 @@ void sequencer_special_update_set(Sequence *seq)
   special_seq_update = seq;
 }
 
-Sequence *ED_sequencer_special_preview_get(void)
+Sequence *ED_sequencer_special_preview_get()
 {
   return special_seq_update;
 }
@@ -1493,7 +1493,7 @@ void ED_sequencer_special_preview_set(bContext *C, const int mval[2])
   sequencer_special_update_set(seq);
 }
 
-void ED_sequencer_special_preview_clear(void)
+void ED_sequencer_special_preview_clear()
 {
   sequencer_special_update_set(nullptr);
 }
@@ -1701,7 +1701,7 @@ void sequencer_draw_maskedit(const bContext *C, Scene *scene, ARegion *region, S
       float aspx = 1.0f, aspy = 1.0f;
       // ED_mask_get_size(C, &width, &height);
 
-      //Scene *scene = CTX_data_scene(C);
+      // Scene *scene = CTX_data_scene(C);
       BKE_render_resolution(&scene->r, false, &width, &height);
 
       ED_mask_draw_region(mask,
@@ -1811,7 +1811,7 @@ static void sequencer_stop_running_jobs(const bContext *C, Scene *scene)
   }
 }
 
-static void sequencer_preview_clear(void)
+static void sequencer_preview_clear()
 {
   UI_ThemeClearColor(TH_SEQ_PREVIEW);
 }

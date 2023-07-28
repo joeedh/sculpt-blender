@@ -14,6 +14,7 @@
 #include "BLI_math.h"
 #include "BLI_string.h"
 #include "BLI_string_utf8.h"
+#include "BLI_string_utils.h"
 #include "BLI_utildefines.h"
 
 #include "DNA_anim_types.h"
@@ -115,6 +116,7 @@ static void do_versions_theme(const UserDef *userdef, bTheme *btheme)
    */
   {
     /* Keep this block, even when empty. */
+    FROM_DEFAULT_V4_UCHAR(space_node.node_zone_repeat);
   }
 
 #undef FROM_DEFAULT_V4_UCHAR
@@ -708,10 +710,10 @@ void blo_do_versions_userdef(UserDef *userdef)
     };
     const int replace_table_len = ARRAY_SIZE(replace_table);
 
-    BLI_str_replace_table_exact(
+    BLI_string_replace_table_exact(
         userdef->keyconfigstr, sizeof(userdef->keyconfigstr), replace_table, replace_table_len);
     LISTBASE_FOREACH (wmKeyConfigPref *, kpt, &userdef->user_keyconfig_prefs) {
-      BLI_str_replace_table_exact(
+      BLI_string_replace_table_exact(
           kpt->idname, sizeof(kpt->idname), replace_table, replace_table_len);
     }
   }

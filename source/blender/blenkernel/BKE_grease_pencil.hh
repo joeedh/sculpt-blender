@@ -14,6 +14,7 @@
 #include "BLI_math_vector_types.hh"
 #include "BLI_shared_cache.hh"
 #include "BLI_utility_mixins.hh"
+#include "BLI_virtual_array.hh"
 
 #include "DNA_gpencil_legacy_types.h"
 #include "DNA_grease_pencil_types.h"
@@ -76,6 +77,20 @@ class Drawing : public ::GreasePencilDrawing {
    */
   Span<uint3> triangles() const;
   void tag_positions_changed();
+
+  /**
+   * Radii of the points. Values are expected to be in blender units.
+   */
+  VArray<float> radii() const;
+  MutableSpan<float> radii_for_write();
+
+  /**
+   * Opacity array for the points.
+   * Used by the render engine as an alpha value so they are expected to
+   * be between 0 and 1 inclusive.
+   */
+  VArray<float> opacities() const;
+  MutableSpan<float> opacities_for_write();
 };
 
 class LayerGroup;
@@ -133,6 +148,11 @@ class TreeNode : public ::GreasePencilLayerTreeNode {
    * \note This results in undefined behavior if the node is not a Layer.
    */
   Layer &as_layer_for_write();
+
+  /**
+   * \returns the parent layer group or nullptr for the root group.
+   */
+  LayerGroup *parent_group() const;
 };
 
 /**
@@ -221,19 +241,20 @@ class Layer : public ::GreasePencilLayer {
 
   bool is_visible() const;
   bool is_locked() const;
+  bool is_editable() const;
 
   /**
-   * Inserts the frame into the layer. Fails if there exists a frame at \a frame_number already.
-   * \returns true on success.
+   * Adds a new frame into the layer frames map.
+   * Fails if there already exists a frame at \a frame_number that is not a null-frame.
+   * Null-frame at \a frame_number and subsequent null-frames are removed.
+   *
+   * If \a duration is 0, the frame is marked as an implicit hold (see `GP_FRAME_IMPLICIT_HOLD`).
+   * Otherwise adds an additional null-frame at \a frame_number + \a duration, if necessary, to
+   * indicate the end of the added frame.
+   *
+   * \returns a pointer to the added frame on success, otherwise nullptr.
    */
-  bool insert_frame(int frame_number, const GreasePencilFrame &frame);
-
-  /**
-   * Inserts the frame into the layer. If there exists a frame at \a frame_number already, it is
-   * overwritten.
-   * \returns true on success.
-   */
-  bool overwrite_frame(int frame_number, const GreasePencilFrame &frame);
+  GreasePencilFrame *add_frame(int frame_number, int drawing_index, int duration = 0);
 
   /**
    * Returns the sorted (start) frame numbers of the frames of this layer.
@@ -253,6 +274,9 @@ class Layer : public ::GreasePencilLayer {
    * added, removed or updated.
    */
   void tag_frames_map_keys_changed();
+
+ private:
+  GreasePencilFrame *add_frame_internal(int frame_number, int drawing_index);
 };
 
 class LayerGroupRuntime {
@@ -269,6 +293,10 @@ class LayerGroupRuntime {
    * Caches all the layers in this group in a single pre-ordered vector.
    */
   mutable Vector<Layer *> layer_cache_;
+  /**
+   * Caches all the layer groups in this group in a single pre-ordered vector.
+   */
+  mutable Vector<LayerGroup *> layer_group_cache_;
 };
 
 /**
@@ -282,10 +310,17 @@ class LayerGroup : public ::GreasePencilLayerTreeGroup {
   ~LayerGroup();
 
  public:
-  StringRefNull name() const
-  {
-    return this->base.name;
-  }
+  StringRefNull name() const;
+  void set_name(StringRefNull new_name);
+
+  bool is_visible() const;
+  bool is_locked() const;
+
+  /**
+   * \returns the group as a `TreeNode`.
+   */
+  const TreeNode &as_node() const;
+  TreeNode &as_node();
 
   /**
    * Adds a group at the end of this group.
@@ -308,14 +343,14 @@ class LayerGroup : public ::GreasePencilLayerTreeGroup {
   /**
    * Adds a layer before \a link and returns it.
    */
-  Layer &add_layer_before(Layer *layer, Layer *link);
-  Layer &add_layer_before(StringRefNull name, Layer *link);
+  Layer &add_layer_before(Layer *layer, TreeNode *link);
+  Layer &add_layer_before(StringRefNull name, TreeNode *link);
 
   /**
    * Adds a layer after \a link and returns it.
    */
-  Layer &add_layer_after(Layer *layer, Layer *link);
-  Layer &add_layer_after(StringRefNull name, Layer *link);
+  Layer &add_layer_after(Layer *layer, TreeNode *link);
+  Layer &add_layer_after(StringRefNull name, TreeNode *link);
 
   /**
    * Returns the number of direct nodes in this group.
@@ -331,7 +366,7 @@ class LayerGroup : public ::GreasePencilLayerTreeGroup {
    * Tries to unlink the layer from the list of nodes in this group.
    * \returns true, if the layer was successfully unlinked.
    */
-  bool unlink_layer(Layer *link);
+  bool unlink_node(TreeNode *link);
 
   /**
    * Returns a `Span` of pointers to all the `TreeNode`s in this group.
@@ -346,10 +381,22 @@ class LayerGroup : public ::GreasePencilLayerTreeGroup {
   Span<Layer *> layers_for_write();
 
   /**
+   * Returns a `Span` of pointers to all the `LayerGroups`s in this group.
+   */
+  Span<const LayerGroup *> groups() const;
+  Span<LayerGroup *> groups_for_write();
+
+  /**
    * Returns a pointer to the layer with \a name. If no such layer was found, returns nullptr.
    */
   const Layer *find_layer_by_name(StringRefNull name) const;
   Layer *find_layer_by_name(StringRefNull name);
+
+  /**
+   * Returns a pointer to the group with \a name. If no such group was found, returns nullptr.
+   */
+  const LayerGroup *find_group_by_name(StringRefNull name) const;
+  LayerGroup *find_group_by_name(StringRefNull name);
 
   /**
    * Print the nodes. For debugging purposes.
@@ -361,6 +408,24 @@ class LayerGroup : public ::GreasePencilLayerTreeGroup {
   void tag_nodes_cache_dirty() const;
 };
 
+inline const TreeNode &LayerGroup::as_node() const
+{
+  return *reinterpret_cast<const TreeNode *>(this);
+}
+inline TreeNode &LayerGroup::as_node()
+{
+  return *reinterpret_cast<TreeNode *>(this);
+}
+
+inline const TreeNode &Layer::as_node() const
+{
+  return *reinterpret_cast<const TreeNode *>(this);
+}
+inline TreeNode &Layer::as_node()
+{
+  return *reinterpret_cast<TreeNode *>(this);
+}
+
 inline StringRefNull Layer::name() const
 {
   return this->base.name;
@@ -371,13 +436,9 @@ inline LayerGroup &Layer::parent_group() const
   return this->base.parent->wrap();
 }
 
-inline const TreeNode &Layer::as_node() const
+inline StringRefNull LayerGroup::name() const
 {
-  return *reinterpret_cast<const TreeNode *>(this);
-}
-inline TreeNode &Layer::as_node()
-{
-  return *reinterpret_cast<TreeNode *>(this);
+  return this->base.name;
 }
 
 namespace convert {
@@ -420,6 +481,21 @@ inline const blender::bke::greasepencil::Drawing &GreasePencilDrawing::wrap() co
   return *reinterpret_cast<const blender::bke::greasepencil::Drawing *>(this);
 }
 
+inline GreasePencilFrame GreasePencilFrame::null()
+{
+  return GreasePencilFrame{-1, 0, 0};
+}
+
+inline bool GreasePencilFrame::is_null() const
+{
+  return this->drawing_index == -1;
+}
+
+inline bool GreasePencilFrame::is_implicit_hold() const
+{
+  return (this->flag & GP_FRAME_IMPLICIT_HOLD) != 0;
+}
+
 inline blender::bke::greasepencil::TreeNode &GreasePencilLayerTreeNode::wrap()
 {
   return *reinterpret_cast<blender::bke::greasepencil::TreeNode *>(this);
@@ -445,6 +521,15 @@ inline blender::bke::greasepencil::LayerGroup &GreasePencilLayerTreeGroup::wrap(
 inline const blender::bke::greasepencil::LayerGroup &GreasePencilLayerTreeGroup::wrap() const
 {
   return *reinterpret_cast<const blender::bke::greasepencil::LayerGroup *>(this);
+}
+
+inline const blender::bke::greasepencil::LayerGroup &GreasePencil::root_group() const
+{
+  return this->root_group_ptr->wrap();
+}
+inline blender::bke::greasepencil::LayerGroup &GreasePencil::root_group()
+{
+  return this->root_group_ptr->wrap();
 }
 
 inline bool GreasePencil::has_active_layer() const

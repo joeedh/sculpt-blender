@@ -8,16 +8,16 @@
  * \ingroup bke
  */
 
-#include "BKE_attribute.h"
-#include "BKE_pbvh.h"
-
 #include "BLI_bitmap.h"
 #include "BLI_compiler_compat.h"
+#include "BLI_utildefines.h"
 #ifdef __cplusplus
 #  include "BLI_array.hh"
+#  include "BLI_math_vector_types.hh"
 #  include "BLI_offset_indices.hh"
+
+#  include "DNA_brush_types.h"
 #endif
-#include "BLI_utildefines.h"
 
 #include "DNA_brush_enums.h"
 #include "DNA_customdata_types.h"
@@ -27,6 +27,7 @@
 #include "BKE_attribute.h"
 #include "BKE_pbvh.h"
 
+#include "bmesh.h"
 #include "bmesh_log.h"
 
 #ifdef __cplusplus
@@ -257,7 +258,8 @@ bool paint_calculate_rake_rotation(struct UnifiedPaintSettings *ups,
                                    struct Brush *brush,
                                    const float mouse_pos[2],
                                    const float initial_mouse_pos[2],
-                                   ePaintMode paint_mode);
+                                   ePaintMode paint_mode,
+                                   bool stroke_has_started);
 void paint_update_brush_rake_rotation(struct UnifiedPaintSettings *ups,
                                       struct Brush *brush,
                                       float rotation);
@@ -650,9 +652,6 @@ typedef struct SculptAttributePointers {
 } SculptAttributePointers;
 
 #ifdef __cplusplus
-#  include "BLI_math_vector_types.hh"
-#  include "DNA_brush_types.h"
-
 struct SculptSession {
   /* Mesh data (not copied) can come either directly from a Mesh, or from a MultiresDM */
   struct { /* Special handling for multires meshes */
@@ -664,10 +663,8 @@ struct SculptSession {
   /* Depsgraph for the Cloth Brush solver to get the colliders. */
   struct Depsgraph *depsgraph;
 
-  CustomData temp_vdata, temp_pdata;
-  int temp_vdata_elems, temp_pdata_elems;
-
-  float (*vert_positions)[3];
+  /* These are always assigned to base mesh data when using PBVH_FACES and PBVH_GRIDS. */
+  blender::MutableSpan<blender::float3> vert_positions;
   blender::Span<blender::int2> edges;
   blender::OffsetIndices<int> polys;
   blender::Span<int> corner_verts;
@@ -741,7 +738,7 @@ struct SculptSession {
   int totuv;
 
   /* Reproject customdata during smooth. */
-  bool reproject_smooth;
+  eAttrCorrectMode distort_correction_mode;
 
   /* Undo/redo log for dynamic topology sculpting */
   BMLog *bm_log;
@@ -892,7 +889,6 @@ struct SculptSession {
   /* Used to derive initial tip rotation. */
   float last_grab_delta[3];
 
-  const float (*vert_normals)[3];
   blender::Span<blender::float3> poly_normals;
 
   int last_automasking_settings_hash;
@@ -978,7 +974,7 @@ void BKE_sculptsession_update_attr_refs(struct Object *ob);
 
 int BKE_sculptsession_get_totvert(const struct SculptSession *ss);
 
-void BKE_sculptsession_reproject_smooth_set(struct Object *ob, bool value);
+void BKE_sculpt_distort_correction_set(struct Object *ob, eAttrCorrectMode value);
 void BKE_sculptsession_free_attribute_refs(struct Object *ob);
 
 /**

@@ -75,7 +75,7 @@ void wm_homefile_read(struct bContext *C,
 void wm_homefile_read_post(struct bContext *C,
                            const struct wmFileReadPost_Params *params_file_read_post);
 
-void wm_file_read_report(bContext *C, struct Main *bmain);
+void wm_file_read_report(struct Main *bmain, struct wmWindow *win);
 
 void wm_close_file_dialog(bContext *C, struct wmGenericCallback *post_action);
 /**
@@ -84,7 +84,7 @@ void wm_close_file_dialog(bContext *C, struct wmGenericCallback *post_action);
  */
 bool wm_operator_close_file_dialog_if_needed(bContext *C,
                                              wmOperator *op,
-                                             wmGenericCallbackFn exec_fn);
+                                             wmGenericCallbackFn post_action_fn);
 /**
  * Check if there is data that would be lost when closing the current file without saving.
  */

@@ -35,7 +35,7 @@
 #include "BKE_customdata.h"
 #include "BKE_deform.h"
 #include "BKE_editmesh.h"
-#include "BKE_editmesh_cache.h"
+#include "BKE_editmesh_cache.hh"
 #include "BKE_editmesh_tangent.h"
 #include "BKE_mesh.hh"
 #include "BKE_mesh_runtime.h"
@@ -43,8 +43,9 @@
 #include "BKE_modifier.h"
 #include "BKE_object_deform.h"
 #include "BKE_paint.h"
-#include "BKE_pbvh.h"
+#include "BKE_pbvh_api.hh"
 #include "BKE_subdiv_modifier.h"
+#include "BKE_sculpt.h" //NotForPR
 
 #include "atomic_ops.h"
 
@@ -317,10 +318,10 @@ static DRW_MeshCDMask mesh_cd_calc_used_gpu_layers(const Object *object,
           type = CD_MTFACE;
 
 #if 0 /* Tangents are always from UVs - this will never happen. */
-            if (layer == -1) {
-              layer = CustomData_get_named_layer(cd_ldata, CD_TANGENT, name);
-              type = CD_TANGENT;
-            }
+          if (layer == -1) {
+            layer = CustomData_get_named_layer(cd_ldata, CD_TANGENT, name);
+            type = CD_TANGENT;
+          }
 #endif
           if (layer == -1) {
             /* Try to match a generic attribute, we use the first attribute domain with a
@@ -1385,7 +1386,8 @@ void DRW_mesh_batch_cache_create_requested(TaskGraph *task_graph,
                            DRW_object_is_in_edit_mode(ob);
 
   /* This could be set for paint mode too, currently it's only used for edit-mode. */
-  const bool is_mode_active = is_editmode && DRW_object_is_in_edit_mode(ob);
+  const bool is_mode_active = (is_editmode && DRW_object_is_in_edit_mode(ob)) ||
+                              ((ob->mode == OB_MODE_SCULPT) && ob->sculpt && ob->sculpt->bm);
 
   DRWBatchFlag batch_requested = cache->batch_requested;
   cache->batch_requested = (DRWBatchFlag)0;

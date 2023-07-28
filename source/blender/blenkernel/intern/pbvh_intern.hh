@@ -18,7 +18,7 @@
 
 #include "BKE_attribute.h"
 #include "BKE_paint.h" /* for SCULPT_BOUNDARY_NEEDS_UPDATE */
-#include "BKE_pbvh.h"
+#include "BKE_pbvh_api.hh"
 
 #include "../../bmesh/intern/bmesh_idmap.h"
 #include "bmesh.h"
@@ -161,6 +161,7 @@ struct DMFlagMat;
 struct PBVH {
   PBVHPublic header;
   PBVHFlags flags;
+  eAttrCorrectMode distort_correction_mode;
 
   int idgen;
 
@@ -187,10 +188,12 @@ struct PBVH {
   Mesh *mesh;
 
   /* NOTE: Normals are not `const` because they can be updated for drawing by sculpt code. */
-  float (*vert_normals)[3];
+  blender::MutableSpan<blender::float3> vert_normals;
   blender::MutableSpan<blender::float3> poly_normals;
   bool *hide_vert;
-  float (*vert_positions)[3];
+  blender::MutableSpan<blender::float3> vert_positions;
+  /** Local vertex positions owned by the PVBH when not sculpting base mesh positions directly. */
+  blender::Array<blender::float3> vert_positions_deformed;
   blender::OffsetIndices<int> polys;
   blender::Span<blender::int2> edges;
   bool *hide_poly;

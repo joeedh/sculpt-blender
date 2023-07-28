@@ -17,11 +17,14 @@
 #include "BKE_mesh.hh"
 #include "BKE_mesh_wrapper.h"
 #include "BKE_modifier.h"
+#include "BKE_paint.h"
 #include "BKE_volume.h"
+#include "BKE_volume_openvdb.hh"
 
 #include "DNA_ID.h"
 #include "DNA_mesh_types.h"
 #include "DNA_meshdata_types.h"
+#include "DNA_pointcloud_types.h"
 #include "DNA_space_types.h"
 #include "DNA_userdef_types.h"
 
@@ -42,12 +45,36 @@
 
 #include "bmesh.h"
 
+/* Uncomment to view sculpt attributes in the spreadsheet. */
+//#define DEBUG_SCULPT_BM_ATTRS
+
+#ifdef DEBUG_SCULPT_BM_ATTRS
+#  include "bmesh_varray.hh"
+#endif
+
 #include "spreadsheet_data_source_geometry.hh"
 #include "spreadsheet_intern.hh"
 
 using blender::nodes::geo_eval_log::ViewerNodeLog;
 
 namespace blender::ed::spreadsheet {
+
+static BMesh *get_object_bmesh(Object *object_eval)
+{
+#ifdef DEBUG_SCULPT_BM_ATTRS
+  if (object_eval->mode == OB_MODE_SCULPT) {
+    return object_eval->sculpt->bm;
+  }
+  else {
+#endif
+    Object *object_orig = DEG_get_original_object(object_eval);
+    Mesh *mesh_orig = (Mesh *)object_orig->data;
+
+    return mesh_orig->edit_mesh->bm;
+#ifdef DEBUG_SCULPT_BM_ATTRS
+  }
+#endif
+}
 
 void ExtraColumns::foreach_default_column_ids(
     FunctionRef<void(const SpreadsheetColumnID &, bool is_extra)> fn) const
@@ -170,6 +197,45 @@ static std::unique_ptr<ColumnValues> build_mesh_debug_columns(const Mesh &mesh,
 void GeometryDataSource::foreach_default_column_ids(
     FunctionRef<void(const SpreadsheetColumnID &, bool is_extra)> fn) const
 {
+#ifdef DEBUG_SCULPT_BM_ATTRS
+  if (object_eval_->mode == OB_MODE_SCULPT && object_eval_->sculpt && object_eval_->sculpt->bm) {
+    CustomData *cdata = nullptr;
+    BMesh *bm = object_eval_->sculpt->bm;
+
+    switch (domain_) {
+      case ATTR_DOMAIN_POINT:
+        cdata = &bm->vdata;
+        break;
+      case ATTR_DOMAIN_EDGE:
+        cdata = &bm->edata;
+        break;
+      case ATTR_DOMAIN_FACE:
+        cdata = &bm->pdata;
+        break;
+    }
+
+    if (cdata) {
+      const eCustomDataMask typemask = CD_MASK_PROP_FLOAT | CD_MASK_PROP_FLOAT2 |
+                                       CD_MASK_PROP_FLOAT3 | CD_MASK_PROP_COLOR |
+                                       CD_MASK_PROP_BYTE_COLOR | CD_MASK_PROP_INT32 |
+                                       CD_MASK_PROP_INT8 | CD_MASK_ORIGINDEX;
+
+      for (int i = 0; i < cdata->totlayer; i++) {
+        CustomDataLayer *layer = &cdata->layers[i];
+
+        if (!bke::allow_procedural_attribute_access(layer->name)) {
+          continue;
+        }
+
+        if (CD_TYPE_AS_MASK(layer->type) & typemask) {
+          fn({layer->name}, false);
+        }
+      }
+      return;
+    }
+  }
+#endif
+
   if (!component_->attributes().has_value()) {
     return;
   }
@@ -274,6 +340,41 @@ std::unique_ptr<ColumnValues> GeometryDataSource::get_column_values(
     }
   }
 
+#ifdef DEBUG_SCULPT_BM_ATTRS
+  if (object_eval_->mode == OB_MODE_SCULPT && object_eval_->sculpt && object_eval_->sculpt->bm) {
+    char htype = 0;
+    BMesh *bm = object_eval_->sculpt->bm;
+
+    CustomData *cdata = &bm->vdata;
+    for (int i = 0; !htype && i < 4; i++, cdata++) {
+      for (int j = 0; j < cdata->totlayer; j++) {
+        CustomDataLayer *layer = &cdata->layers[j];
+
+        if (STREQ(layer->name, column_id.name)) {
+          htype = 1 << i;
+          break;
+        }
+      }
+    }
+
+    if (htype) {
+      BM_mesh_elem_table_ensure(object_eval_->sculpt->bm, htype);
+
+      GVArray bmarray = blender::bmesh::bmesh_attr_gvarray(
+          object_eval_->sculpt->bm, htype, column_id.name);
+
+      if (bmarray.size() > 0) {
+        printf("%s: bmesh adaptor: %s\n", __func__, column_id.name);
+        StringRefNull column_display_name = column_id.name;
+        return std::make_unique<ColumnValues>(column_display_name, std::move(bmarray));
+      }
+      else {
+        printf("%s: unknown bmesh attribute %s\n", __func__, column_id.name);
+      }
+    }
+  }
+#endif
+
   bke::GAttributeReader attribute = attributes.lookup(column_id.name);
   if (!attribute) {
     return {};
@@ -308,7 +409,11 @@ bool GeometryDataSource::has_selection_filter() const
       if (object_orig->type != OB_MESH) {
         return false;
       }
+#ifdef DEBUG_SCULPT_BM_ATTRS
+      if (!ELEM(object_orig->mode, OB_MODE_EDIT, OB_MODE_SCULPT)) {
+#else
       if (object_orig->mode != OB_MODE_EDIT) {
+#endif
         return false;
       }
       return true;
@@ -318,6 +423,15 @@ bool GeometryDataSource::has_selection_filter() const
         return false;
       }
       if (!ELEM(object_orig->mode, OB_MODE_SCULPT_CURVES, OB_MODE_EDIT)) {
+        return false;
+      }
+      return true;
+    }
+    case bke::GeometryComponent::Type::PointCloud: {
+      if (object_orig->type != OB_POINTCLOUD) {
+        return false;
+      }
+      if (object_orig->mode != OB_MODE_EDIT) {
         return false;
       }
       return true;
@@ -338,13 +452,13 @@ IndexMask GeometryDataSource::apply_selection_filter(IndexMaskMemory &memory) co
   switch (component_->type()) {
     case bke::GeometryComponent::Type::Mesh: {
       BLI_assert(object_eval_->type == OB_MESH);
-      BLI_assert(object_eval_->mode == OB_MODE_EDIT);
+      // BLI_assert(object_eval_->mode == OB_MODE_EDIT);
       Object *object_orig = DEG_get_original_object(object_eval_);
       const Mesh *mesh_eval = geometry_set_.get_mesh_for_read();
       const bke::AttributeAccessor attributes_eval = mesh_eval->attributes();
       Mesh *mesh_orig = (Mesh *)object_orig->data;
-      BMesh *bm = mesh_orig->edit_mesh->bm;
-      BM_mesh_elem_table_ensure(bm, BM_VERT);
+      BMesh *bm = get_object_bmesh(object_eval_);
+      BM_mesh_elem_table_ensure(bm, BM_VERT | BM_EDGE | BM_FACE);
 
       const int *orig_indices = (const int *)CustomData_get_layer(&mesh_eval->vdata, CD_ORIGINDEX);
       if (orig_indices != nullptr) {
@@ -395,6 +509,13 @@ IndexMask GeometryDataSource::apply_selection_filter(IndexMaskMemory &memory) co
           BLI_assert_unreachable();
       }
       return full_range;
+    }
+    case bke::GeometryComponent::Type::PointCloud: {
+      BLI_assert(object_eval_->type == OB_POINTCLOUD);
+      const bke::AttributeAccessor attributes = *component_->attributes();
+      const VArray<bool> &selection = *attributes.lookup_or_default(
+          ".selection", ATTR_DOMAIN_POINT, false);
+      return IndexMask::from_bools(selection, memory);
     }
     default:
       return full_range;
@@ -477,39 +598,32 @@ bke::GeometrySet spreadsheet_get_display_geometry_set(const SpaceSpreadsheet *ss
 {
   bke::GeometrySet geometry_set;
   if (sspreadsheet->object_eval_state == SPREADSHEET_OBJECT_EVAL_STATE_ORIGINAL) {
-    Object *object_orig = DEG_get_original_object(object_eval);
+    const Object *object_orig = DEG_get_original_object(object_eval);
     if (object_orig->type == OB_MESH) {
-      bke::MeshComponent &mesh_component =
-          geometry_set.get_component_for_write<bke::MeshComponent>();
+      const Mesh *mesh = static_cast<const Mesh *>(object_orig->data);
       if (object_orig->mode == OB_MODE_EDIT) {
-        Mesh *mesh = (Mesh *)object_orig->data;
-        BMEditMesh *em = mesh->edit_mesh;
-        if (em != nullptr) {
+        if (const BMEditMesh *em = mesh->edit_mesh) {
           Mesh *new_mesh = (Mesh *)BKE_id_new_nomain(ID_ME, nullptr);
           /* This is a potentially heavy operation to do on every redraw. The best solution here is
            * to display the data directly from the bmesh without a conversion, which can be
            * implemented a bit later. */
           BM_mesh_bm_to_me_for_eval(em->bm, new_mesh, nullptr);
-          mesh_component.replace(new_mesh, bke::GeometryOwnershipType::Owned);
+          geometry_set.replace_mesh(new_mesh, bke::GeometryOwnershipType::Owned);
         }
       }
       else {
-        Mesh *mesh = (Mesh *)object_orig->data;
-        mesh_component.replace(mesh, bke::GeometryOwnershipType::ReadOnly);
+        geometry_set.replace_mesh(const_cast<Mesh *>(mesh), bke::GeometryOwnershipType::ReadOnly);
       }
     }
     else if (object_orig->type == OB_POINTCLOUD) {
-      PointCloud *pointcloud = (PointCloud *)object_orig->data;
-      bke::PointCloudComponent &pointcloud_component =
-          geometry_set.get_component_for_write<bke::PointCloudComponent>();
-      pointcloud_component.replace(pointcloud, bke::GeometryOwnershipType::ReadOnly);
+      const PointCloud *pointcloud = static_cast<const PointCloud *>(object_orig->data);
+      geometry_set.replace_pointcloud(const_cast<PointCloud *>(pointcloud),
+                                      bke::GeometryOwnershipType::ReadOnly);
     }
     else if (object_orig->type == OB_CURVES) {
-      const Curves &curves_id = *(const Curves *)object_orig->data;
-      bke::CurveComponent &curve_component =
-          geometry_set.get_component_for_write<bke::CurveComponent>();
-      curve_component.replace(&const_cast<Curves &>(curves_id),
-                              bke::GeometryOwnershipType::ReadOnly);
+      const Curves &curves_id = *static_cast<const Curves *>(object_orig->data);
+      geometry_set.replace_curves(&const_cast<Curves &>(curves_id),
+                                  bke::GeometryOwnershipType::ReadOnly);
     }
   }
   else {

@@ -40,24 +40,20 @@ if(WIN32)
   # Some USD library headers trigger the "unreferenced formal parameter"
   # warning alert.
   # Silence them by restore warn C4100 back to w4
-  remove_cc_flag(/w34100)
+  remove_cc_flag("/w34100")
 endif()
 
 set(INC
   .
   ../common
-  ../../blenkernel
-  ../../blenlib
   ../../blenloader
   ../../blentranslation
   ../../bmesh
   ../../depsgraph
   ../../editors/include
   ../../imbuf
-  ../../makesdna
   ../../makesrna
   ../../windowmanager
-  ../../../../intern/guardedalloc
   ../../../../intern/utfconv
 )
 
@@ -128,9 +124,11 @@ set(SRC
 )
 
 set(LIB
-  bf_blenkernel
-  bf_blenlib
+  PRIVATE bf::blenkernel
+  PRIVATE bf::blenlib
+  PRIVATE bf::dna
   bf_imbuf
+  PRIVATE bf::intern::guardedalloc
   bf_io_common
 )
 
@@ -153,6 +151,10 @@ if(WITH_OPENVDB)
 endif()
 
 blender_add_lib(bf_usd "${SRC}" "${INC}" "${INC_SYS}" "${LIB}")
+
+if(COMMAND target_precompile_headers)
+  target_precompile_headers(bf_usd PRIVATE intern/usd_precomp.h)
+endif()
 
 if(WITH_GTESTS)
   set(TEST_SRC

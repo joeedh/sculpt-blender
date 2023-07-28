@@ -70,7 +70,7 @@
 #include "BKE_object.h"
 #include "BKE_paint.h"
 #include "BKE_particle.h"
-#include "BKE_pbvh.h"
+#include "BKE_pbvh_api.hh"
 #include "BKE_pointcache.h"
 #include "BKE_report.h"
 #include "BKE_scene.h"
@@ -134,7 +134,7 @@ static bool sculpt_check_boundary_vertex_in_base_mesh(const SculptSession *ss, i
 
 eSculptBoundary SCULPT_edge_is_boundary(const SculptSession *ss,
                                         const PBVHEdgeRef edge,
-                                        eSculptBoundary typemask)
+                                        eSculptBoundary boundary_types)
 {
   int oldflag = blender::bke::paint::edge_attr_get<int>(edge, ss->attrs.edge_boundary_flags);
   bool update = oldflag & (SCULPT_BOUNDARY_NEEDS_UPDATE | SCULPT_BOUNDARY_UPDATE_UV |
@@ -155,12 +155,11 @@ eSculptBoundary SCULPT_edge_is_boundary(const SculptSession *ss,
         break;
       }
       case PBVH_FACES: {
-        Span<float3> pos = {reinterpret_cast<const float3 *>(ss->vert_positions), ss->totvert};
-        Span<float3> nor = {reinterpret_cast<const float3 *>(ss->vert_normals), ss->totvert};
-
+        Span<float3> nor = {reinterpret_cast<const float3 *>(BKE_pbvh_get_vert_normals(ss->pbvh)),
+                            ss->totvert};
         blender::bke::pbvh::update_edge_boundary_faces(
             edge.i,
-            pos,
+            ss->vert_positions,
             nor,
             ss->edges,
             ss->polys,
@@ -204,8 +203,8 @@ eSculptBoundary SCULPT_edge_is_boundary(const SculptSession *ss,
     }
   }
 
-  return eSculptBoundary(
-      blender::bke::paint::edge_attr_get<int>(edge, ss->attrs.edge_boundary_flags));
+  return boundary_types & eSculptBoundary(blender::bke::paint::edge_attr_get<int>(
+                              edge, ss->attrs.edge_boundary_flags));
 }
 
 void SCULPT_edge_get_verts(const SculptSession *ss,
@@ -254,7 +253,6 @@ static void faces_update_boundary_flags(const SculptSession *ss, const PBVHVertR
   blender::bke::pbvh::update_vert_boundary_faces((int *)ss->attrs.boundary_flags->data,
                                                  ss->face_sets,
                                                  ss->hide_poly,
-                                                 ss->vert_positions,
                                                  ss->edges.data(),
                                                  ss->corner_verts.data(),
                                                  ss->corner_edges.data(),

@@ -18,8 +18,10 @@
 #include "BLI_hash_md5.h"
 #include "BLI_path_util.h"
 #include "BLI_string.h"
+#include "BLI_string_utils.h"
 #include "BLI_system.h"
 #include "BLI_threads.h"
+#include "BLI_string_utils.h"
 #include "BLI_utildefines.h"
 #include BLI_SYSTEM_PID_H
 
@@ -241,7 +243,7 @@ static bool uri_from_filename(const char *path, char *uri)
     /* Not a correct absolute path with a drive letter or UNC prefix. */
     return false;
   }
-  BLI_str_replace_char(orig_uri, '\\', '/');
+  BLI_string_replace_char(orig_uri, '\\', '/');
 #else
   SNPRINTF(orig_uri, "file://%s", path);
 #endif
@@ -296,7 +298,7 @@ static bool thumbpath_from_uri(const char *uri, char *path, const int path_maxnc
   return thumbpathname_from_uri(uri, path, path_maxncpy, nullptr, 0, size);
 }
 
-void IMB_thumb_makedirs(void)
+void IMB_thumb_makedirs()
 {
   char tpath[FILE_MAX];
 #if 0 /* UNUSED */
@@ -360,7 +362,8 @@ static ImBuf *thumb_create_ex(const char *file_path,
       }
     }
     else {
-      if (ELEM(source, THB_SOURCE_IMAGE, THB_SOURCE_BLEND, THB_SOURCE_FONT)) {
+      if (ELEM(source, THB_SOURCE_IMAGE, THB_SOURCE_BLEND, THB_SOURCE_FONT, THB_SOURCE_OBJECT_IO))
+      {
         /* only load if we didn't give an image */
         if (img == nullptr) {
           switch (source) {
@@ -373,6 +376,12 @@ static ImBuf *thumb_create_ex(const char *file_path,
             case THB_SOURCE_FONT:
               img = IMB_thumb_load_font(file_path, tsize, tsize);
               break;
+            case THB_SOURCE_OBJECT_IO: {
+              if (BLI_path_extension_check(file_path, ".svg")) {
+                img = IMB_thumb_load_image(file_path, tsize, nullptr);
+              }
+              break;
+            }
             default:
               BLI_assert_unreachable(); /* This should never happen */
           }
@@ -649,7 +658,7 @@ static struct IMBThumbLocks {
   ThreadCondition cond;
 } thumb_locks = {0};
 
-void IMB_thumb_locks_acquire(void)
+void IMB_thumb_locks_acquire()
 {
   BLI_thread_lock(LOCK_IMAGE);
 
@@ -665,7 +674,7 @@ void IMB_thumb_locks_acquire(void)
   BLI_thread_unlock(LOCK_IMAGE);
 }
 
-void IMB_thumb_locks_release(void)
+void IMB_thumb_locks_release()
 {
   BLI_thread_lock(LOCK_IMAGE);
   BLI_assert((thumb_locks.locked_paths != nullptr) && (thumb_locks.lock_counter > 0));

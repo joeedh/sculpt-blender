@@ -139,25 +139,29 @@ class NODE_HT_header(Header):
                 layout.prop(snode_id, "use_nodes")
 
         elif snode.tree_type == 'GeometryNodeTree':
+            if context.preferences.experimental.use_node_group_operators:
+                layout.prop(snode, "geometry_nodes_type", text="")
             NODE_MT_editor_menus.draw_collapsible(context, layout)
             layout.separator_spacer()
 
-            ob = context.object
+            if snode.geometry_nodes_type == 'MODIFIER':
+                ob = context.object
 
-            row = layout.row()
-            if snode.pin:
-                row.enabled = False
-                row.template_ID(snode, "node_tree", new="node.new_geometry_node_group_assign")
-            elif ob:
-                active_modifier = ob.modifiers.active
-                if active_modifier and active_modifier.type == 'NODES':
-                    if active_modifier.node_group:
-                        row.template_ID(active_modifier, "node_group", new="object.geometry_node_tree_copy_assign")
+                row = layout.row()
+                if snode.pin:
+                    row.enabled = False
+                    row.template_ID(snode, "node_tree", new="node.new_geometry_node_group_assign")
+                elif ob:
+                    active_modifier = ob.modifiers.active
+                    if active_modifier and active_modifier.type == 'NODES':
+                        if active_modifier.node_group:
+                            row.template_ID(active_modifier, "node_group", new="object.geometry_node_tree_copy_assign")
+                        else:
+                            row.template_ID(active_modifier, "node_group", new="node.new_geometry_node_group_assign")
                     else:
-                        row.template_ID(active_modifier, "node_group", new="node.new_geometry_node_group_assign")
-                else:
-                    row.template_ID(snode, "node_tree", new="node.new_geometry_nodes_modifier")
-
+                        row.template_ID(snode, "node_tree", new="node.new_geometry_nodes_modifier")
+            else:
+                layout.template_ID(snode, "node_tree", new="node.new_geometry_node_group_assign")
         else:
             # Custom node tree is edited as independent ID block
             NODE_MT_editor_menus.draw_collapsible(context, layout)
@@ -813,6 +817,10 @@ class NODE_PT_overlay(Panel):
         col.prop(overlay, "show_context_path", text="Context Path")
         col.prop(snode, "show_annotation", text="Annotations")
 
+        if snode.supports_preview:
+            col.separator()
+            col.prop(overlay, "show_previews", text="Previews")
+
         if snode.tree_type == 'GeometryNodeTree':
             col.separator()
             col.prop(overlay, "show_timing", text="Timings")
@@ -1103,6 +1111,80 @@ class NODE_PT_simulation_zone_items(Panel):
                 layout.prop(active_item, "attribute_domain")
 
 
+class NODE_UL_repeat_zone_items(bpy.types.UIList):
+    def draw_item(self, _context, layout, _data, item, icon, _active_data, _active_propname, _index):
+        if self.layout_type in {'DEFAULT', 'COMPACT'}:
+            row = layout.row(align=True)
+            row.template_node_socket(color=item.color)
+            row.prop(item, "name", text="", emboss=False, icon_value=icon)
+        elif self.layout_type == 'GRID':
+            layout.alignment = 'CENTER'
+            layout.template_node_socket(color=item.color)
+
+
+class NODE_PT_repeat_zone_items(Panel):
+    bl_space_type = 'NODE_EDITOR'
+    bl_region_type = 'UI'
+    bl_category = "Node"
+    bl_label = "Repeat"
+
+    input_node_type = 'GeometryNodeRepeatInput'
+    output_node_type = 'GeometryNodeRepeatOutput'
+
+    @classmethod
+    def get_output_node(cls, context):
+        node = context.active_node
+        if node.bl_idname == cls.input_node_type:
+            return node.paired_output
+        if node.bl_idname == cls.output_node_type:
+            return node
+        return None
+
+    @classmethod
+    def poll(cls, context):
+        snode = context.space_data
+        if snode is None:
+            return False
+        node = context.active_node
+        if node is None or node.bl_idname not in (cls.input_node_type, cls.output_node_type):
+            return False
+        if cls.get_output_node(context) is None:
+            return False
+        return True
+
+    def draw(self, context):
+        layout = self.layout
+        output_node = self.get_output_node(context)
+        split = layout.row()
+        split.template_list(
+            "NODE_UL_repeat_zone_items",
+            "",
+            output_node,
+            "repeat_items",
+            output_node,
+            "active_index")
+
+        ops_col = split.column()
+
+        add_remove_col = ops_col.column(align=True)
+        add_remove_col.operator("node.repeat_zone_item_add", icon='ADD', text="")
+        add_remove_col.operator("node.repeat_zone_item_remove", icon='REMOVE', text="")
+
+        ops_col.separator()
+
+        up_down_col = ops_col.column(align=True)
+        props = up_down_col.operator("node.repeat_zone_item_move", icon='TRIA_UP', text="")
+        props.direction = 'UP'
+        props = up_down_col.operator("node.repeat_zone_item_move", icon='TRIA_DOWN', text="")
+        props.direction = 'DOWN'
+
+        active_item = output_node.active_item
+        if active_item is not None:
+            layout.use_property_split = True
+            layout.use_property_decorate = False
+            layout.prop(active_item, "socket_type")
+
+
 # Grease Pencil properties
 class NODE_PT_annotation(AnnotationDataPanel, Panel):
     bl_space_type = 'NODE_EDITOR'
@@ -1170,6 +1252,8 @@ classes = (
     NODE_PT_panels,
     NODE_UL_simulation_zone_items,
     NODE_PT_simulation_zone_items,
+    NODE_UL_repeat_zone_items,
+    NODE_PT_repeat_zone_items,
     NODE_PT_active_node_properties,
 
     node_panel(EEVEE_MATERIAL_PT_settings),

@@ -88,7 +88,7 @@ static TexSnapshot primary_snap = {nullptr};
 static TexSnapshot secondary_snap = {nullptr};
 static CursorSnapshot cursor_snap = {nullptr};
 
-void paint_cursor_delete_textures(void)
+void paint_cursor_delete_textures()
 {
   if (primary_snap.overlay_texture) {
     GPU_texture_free(primary_snap.overlay_texture);
@@ -1988,7 +1988,7 @@ static void paint_cursor_update_rake_rotation(PaintCursorContext *pcontext)
     float zero[2] = {0.0f, 0.0f};
 
     paint_calculate_rake_rotation(
-        pcontext->ups, pcontext->brush, pcontext->translation, zero, pcontext->mode);
+        pcontext->ups, pcontext->brush, pcontext->translation, zero, pcontext->mode, true);
   }
 }
 

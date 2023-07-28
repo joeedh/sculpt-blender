@@ -266,7 +266,6 @@ static bool paint_tool_require_inbetween_mouse_events(Brush *brush, ePaintMode m
                SCULPT_TOOL_GRAB,
                SCULPT_TOOL_ROTATE,
                SCULPT_TOOL_THUMB,
-               SCULPT_TOOL_SNAKE_HOOK,
                SCULPT_TOOL_ELASTIC_DEFORM,
                SCULPT_TOOL_CLOTH,
                SCULPT_TOOL_BOUNDARY,
@@ -444,7 +443,8 @@ static bool paint_brush_update(bContext *C,
     }
     /* curve strokes do their own rake calculation */
     else if (!(brush->flag & BRUSH_CURVE)) {
-      if (!paint_calculate_rake_rotation(ups, brush, mouse, mouse_init, mode)) {
+      if (!paint_calculate_rake_rotation(
+              ups, brush, mouse, mouse_init, mode, stroke->rake_started)) {
         /* Not enough motion to define an angle. */
         if (!stroke->rake_started) {
           is_dry_run = true;
@@ -538,8 +538,8 @@ static void paint_brush_stroke_add_step(
    * windows for some tablets, then we just skip first touch. */
   if (tablet && (pressure >= 0.99f) &&
       ((pop->s.brush->flag & BRUSH_SPACING_PRESSURE) ||
-       BKE_brush_use_alpha_pressure(pop->s.brush) ||
-       BKE_brush_use_size_pressure(pop->s.brush))) {
+       BKE_brush_use_alpha_pressure(pop->s.brush) || BKE_brush_use_size_pressure(pop->s.brush)))
+  {
     return;
   }
 
@@ -551,8 +551,8 @@ static void paint_brush_stroke_add_step(
    * which is the sensitivity of the most sensitive pen tablet available */
   if (tablet && (pressure < 0.0002f) &&
       ((pop->s.brush->flag & BRUSH_SPACING_PRESSURE) ||
-       BKE_brush_use_alpha_pressure(pop->s.brush) ||
-       BKE_brush_use_size_pressure(pop->s.brush))) {
+       BKE_brush_use_alpha_pressure(pop->s.brush) || BKE_brush_use_size_pressure(pop->s.brush)))
+  {
     return;
   }
 #endif
@@ -984,7 +984,7 @@ void paint_stroke_free(bContext *C, wmOperator * /*op*/, PaintStroke *stroke)
   ups->stroke_active = false;
 
   if (stroke->timer) {
-    WM_event_remove_timer(CTX_wm_manager(C), CTX_wm_window(C), stroke->timer);
+    WM_event_timer_remove(CTX_wm_manager(C), CTX_wm_window(C), stroke->timer);
   }
 
   if (stroke->rng) {
@@ -1051,6 +1051,11 @@ bool paint_space_stroke_enabled(Brush *br, ePaintMode mode)
     return false;
   }
 
+  if (mode == PAINT_MODE_GPENCIL) {
+    /* No spacing needed for now. */
+    return false;
+  }
+
   return paint_supports_dynamic_size(br, mode);
 }
 
@@ -1078,7 +1083,7 @@ bool paint_supports_dynamic_size(Brush *br, ePaintMode mode)
 
   switch (mode) {
     case PAINT_MODE_SCULPT:
-      if (sculpt_is_grab_tool(br)) {
+      if (sculpt_is_grab_tool(br) && br->sculpt_tool != SCULPT_TOOL_SNAKE_HOOK) {
         return false;
       }
       break;
@@ -1513,7 +1518,7 @@ int paint_stroke_modal(bContext *C, wmOperator *op, const wmEvent *event, PaintS
 
     if (stroke->stroke_started) {
       if (br->flag & BRUSH_AIRBRUSH) {
-        stroke->timer = WM_event_add_timer(
+        stroke->timer = WM_event_timer_add(
             CTX_wm_manager(C), CTX_wm_window(C), TIMER, stroke->brush->rate);
       }
 
@@ -1570,7 +1575,8 @@ int paint_stroke_modal(bContext *C, wmOperator *op, const wmEvent *event, PaintS
       {
         copy_v2_v2(stroke->ups->last_rake, stroke->last_mouse_position);
       }
-      paint_calculate_rake_rotation(stroke->ups, br, mouse, stroke->last_mouse_position, mode);
+      paint_calculate_rake_rotation(
+          stroke->ups, br, mouse, stroke->last_mouse_position, mode, true);
     }
   }
   else if (first_modal ||

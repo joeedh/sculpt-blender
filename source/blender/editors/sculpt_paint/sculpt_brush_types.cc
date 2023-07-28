@@ -28,7 +28,7 @@
 #include "BKE_context.h"
 #include "BKE_kelvinlet.h"
 #include "BKE_paint.h"
-#include "BKE_pbvh.h"
+#include "BKE_pbvh_api.hh"
 
 #include "ED_view3d.h"
 
@@ -1059,7 +1059,8 @@ static void do_clay_strips_brush_task_cb_ex(void *__restrict userdata,
       data->ob, ss, ss->cache->automasking, &automask_data, data->nodes[n]);
 
   BKE_pbvh_vertex_iter_begin (ss->pbvh, data->nodes[n], vd, PBVH_ITER_UNIQUE) {
-    if (!SCULPT_brush_test_cube(&test, vd.co, mat, brush->tip_roundness, true)) {
+    if (!SCULPT_brush_test_cube(&test, vd.co, mat, brush->tip_roundness, brush->tip_scale_x, true))
+    {
       continue;
     }
 
@@ -1118,8 +1119,6 @@ void SCULPT_do_clay_strips_brush(Sculpt *sd, Object *ob, Span<PBVHNode *> nodes)
 
   float temp[3];
   float mat[4][4];
-  float scale[4][4];
-  float tmat[4][4];
 
   SCULPT_calc_brush_plane(sd, ob, nodes, area_no_sp, area_co);
   SCULPT_tilt_apply_to_normal(area_no_sp, ss->cache, brush->tilt_strength_factor);
@@ -1129,15 +1128,6 @@ void SCULPT_do_clay_strips_brush(Sculpt *sd, Object *ob, Span<PBVHNode *> nodes)
   }
   else {
     copy_v3_v3(area_no, area_no_sp);
-  }
-
-  /* Delay the first daub because grab delta is not setup. */
-  if (SCULPT_stroke_is_first_brush_step_of_symmetry_pass(ss->cache)) {
-    return;
-  }
-
-  if (is_zero_v3(ss->cache->grab_delta_symmetry)) {
-    return;
   }
 
   mul_v3_v3v3(temp, area_no_sp, ss->cache->scale);
@@ -1156,6 +1146,20 @@ void SCULPT_do_clay_strips_brush(Sculpt *sd, Object *ob, Span<PBVHNode *> nodes)
   madd_v3_v3v3fl(area_co_displaced, area_co, area_no, -radius * 0.7f);
 
   /* Initialize brush local-space matrix. */
+  SCULPT_cube_tip_init(sd, ob, brush, mat, area_co, area_no);
+
+  /* Deform the local space in Z to scale the test cube. As the test cube does not have falloff in
+   * Z this does not produce artifacts in the falloff cube and allows to deform extra vertices
+   * during big deformation while keeping the surface as uniform as possible. */
+  invert_m4(mat);
+  mul_v3_fl(mat[2], 1.25f);
+  invert_m4(mat);
+
+#if 0 /* The original matrix construction code, preserved here for reference. */
+  if (is_zero_v3(ss->cache->grab_delta_symmetry)) {
+    return;
+  }
+
   cross_v3_v3v3(mat[0], area_no, ss->cache->grab_delta_symmetry);
   mat[0][3] = 0.0f;
   cross_v3_v3v3(mat[1], area_no, mat[0]);
@@ -1170,12 +1174,8 @@ void SCULPT_do_clay_strips_brush(Sculpt *sd, Object *ob, Span<PBVHNode *> nodes)
   scale_m4_fl(scale, ss->cache->radius);
   mul_m4_m4m4(tmat, mat, scale);
 
-  /* Deform the local space in Z to scale the test cube. As the test cube does not have falloff in
-   * Z this does not produce artifacts in the falloff cube and allows to deform extra vertices
-   * during big deformation while keeping the surface as uniform as possible. */
-  mul_v3_fl(tmat[2], 1.25f);
-
   invert_m4_m4(mat, tmat);
+#endif
 
   SculptThreadedTaskData data{};
   data.sd = sd;
@@ -2548,7 +2548,7 @@ static void do_topology_relax_task_cb_ex(void *__restrict userdata,
   SCULPT_automasking_node_begin(
       data->ob, ss, ss->cache->automasking, &automask_data, data->nodes[n]);
 
-  bool do_reproject = SCULPT_need_reproject(ss);
+  eAttrCorrectMode distort_correction_mode = SCULPT_need_reproject(ss);
   bool weighted = brush->flag2 & BRUSH_SMOOTH_USE_AREA_WEIGHT;
 
   if (weighted) {
@@ -2587,8 +2587,8 @@ static void do_topology_relax_task_cb_ex(void *__restrict userdata,
     interp_v3_v3v3(vd.co, vd.co, avg, fade);
     BKE_sculpt_sharp_boundary_flag_update(ss, vd.vertex);
 
-    if (do_reproject) {
-      BKE_sculpt_reproject_cdata(ss, vd.vertex, startco, startno, false);
+    if (distort_correction_mode & ~UNDISTORT_RELAX_UVS) {
+      BKE_sculpt_reproject_cdata(ss, vd.vertex, startco, startno, ss->distort_correction_mode);
     }
 
     if (vd.is_mesh) {
@@ -2901,7 +2901,7 @@ static void do_topology_rake_bmesh_task_cb_ex(void *__restrict userdata,
   const Brush *brush = data->brush;
 
   const bool use_curvature = brush->flag2 & BRUSH_CURVATURE_RAKE;
-  const bool do_reproject = SCULPT_need_reproject(ss);
+  const eAttrCorrectMode distort_correction_mode = SCULPT_need_reproject(ss);
   float hard_corner_pin = BKE_brush_hard_corner_pin_get(ss->scene, brush);
 
   float direction[3];
@@ -2984,7 +2984,7 @@ static void do_topology_rake_bmesh_task_cb_ex(void *__restrict userdata,
                                        true,
                                        false,
                                        fade,
-                                       do_reproject);
+                                       distort_correction_mode & UNDISTORT_RELAX_UVS);
 
     sub_v3_v3v3(val, avg, vd.co);
     madd_v3_v3v3fl(val, vd.co, val, fade);
@@ -3009,9 +3009,8 @@ static void do_topology_rake_bmesh_task_cb_ex(void *__restrict userdata,
       interp_v3_v3v3(origco, origco, origco_avg, fade);
     }
 
-    if (do_reproject) {
-      /* Use interp_face_corners instead. */
-      // BKE_sculpt_reproject_cdata(ss, vd.vertex, oldco, oldno);
+    if (distort_correction_mode & ~UNDISTORT_RELAX_UVS) {
+      BKE_sculpt_reproject_cdata(ss, vd.vertex, oldco, oldno, ss->distort_correction_mode);
     }
 
     if (vd.is_mesh) {
@@ -3031,7 +3030,7 @@ void SCULPT_bmesh_topology_rake(Sculpt *sd, Object *ob, Span<PBVHNode *> nodes, 
   SculptSession *ss = ob->sculpt;
   const float strength = clamp_f(bstrength, 0.0f, 1.0f);
 
-  SCULPT_smooth_undo_push(ob, nodes);
+  SCULPT_smooth_undo_push(sd, ob, nodes, brush);
 
   /* Interactions increase both strength and quality. */
   const int iterations = 1;
