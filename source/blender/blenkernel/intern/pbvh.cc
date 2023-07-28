@@ -3685,7 +3685,7 @@ void pbvh_vertex_iter_init(PBVH *pbvh, PBVHNode *node, PBVHVertexIter *vi, int m
     vi->bm_iter_end = node->bm_unique_verts->end();
 
     vi->bm_vdata = &pbvh->header.bm->vdata;
-    vi->bm_vert = nullptr;
+    vi->bm_vert = vi->bm_iter != vi->bm_iter_end ? *vi->bm_iter : nullptr;
 
     vi->cd_vert_mask_offset = CustomData_get_offset(vi->bm_vdata, CD_PAINT_MASK);
   }

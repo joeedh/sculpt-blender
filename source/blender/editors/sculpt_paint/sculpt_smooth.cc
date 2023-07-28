@@ -1053,9 +1053,227 @@ void SCULPT_smooth_undo_push(Sculpt *sd, Object *ob, Span<PBVHNode *> nodes, Bru
   }
 }
 
+#include "sculpt_brush_iter.hh"
+static void SCULPT_smooth_new(
+    Sculpt *sd, Object *ob, Span<PBVHNode *> nodes, float bstrength, const bool smooth_mask)
+{
+  using namespace blender;
+
+  SculptSession *ss = ob->sculpt;
+  Brush *brush = BKE_paint_brush(&sd->paint);
+
+  const int max_iterations = 4;
+  const float fract = 1.0f / max_iterations;
+  int iteration, count;
+  float last;
+
+  SCULPT_boundary_info_ensure(ob);
+  SCULPT_smooth_undo_push(sd, ob, nodes, brush);
+
+  /* PBVH_FACES needs ss->epmap. */
+  if (BKE_pbvh_type(ss->pbvh) == PBVH_FACES && ss->epmap.is_empty()) {
+    SCULPT_ensure_epmap(ss);
+  }
+
+  CLAMP(bstrength, 0.0f, 1.0f);
+
+  count = int(bstrength * max_iterations);
+  last = max_iterations * (bstrength - count * fract);
+
+  if (BKE_pbvh_type(ss->pbvh) == PBVH_FACES && ss->pmap.is_empty()) {
+    BLI_assert_msg(0, "sculpt smooth: pmap missing");
+    return;
+  }
+
+  struct NodeData {
+    bool modified = false;
+  };
+
+  const bool do_reproject = SCULPT_need_reproject(ss);
+  float projection = brush->autosmooth_projection;
+  bool weighted = brush->flag2 & BRUSH_SMOOTH_USE_AREA_WEIGHT;
+  float hard_corner_pin = BKE_brush_hard_corner_pin_get(ss->scene, brush);
+  bool smooth_origco = SCULPT_tool_needs_smooth_origco(brush->sculpt_tool);
+
+  for (iteration = 0; iteration <= count; iteration++) {
+    const float strength = (iteration != count) ? 1.0f : last;
+
+    if (brush->flag2 & BRUSH_SMOOTH_USE_AREA_WEIGHT) {
+      BKE_pbvh_face_areas_begin(ss->pbvh);
+    }
+
+    editors::sculpt::exec_brush<NodeData>(
+        ob,
+        nodes,
+        true,
+        [&weighted, ss](PBVHNode *node) {
+          if (weighted) {
+            BKE_pbvh_check_tri_areas(ss->pbvh, node);
+          }
+          return NodeData();  //
+        },                    //
+        [&](auto range) {
+          for (auto &vd : range) {
+            float fade = strength * vd.falloff;
+
+            vd.node_data->modified = true;
+
+            if (smooth_mask) {
+              float val = SCULPT_neighbor_mask_average(ss, vd.vertex) - *vd.mask;
+              val *= fade * strength;
+              *vd.mask += val;
+              CLAMP(*vd.mask, 0.0f, 1.0f);
+            }
+            else {
+              float oldco[3];
+              float oldno[3];
+              copy_v3_v3(oldco, vd.co);
+              SCULPT_vertex_normal_get(ss, vd.vertex, oldno);
+
+              float avg[3], val[3];
+              SCULPT_neighbor_coords_average_interior(
+                  ss, avg, vd.vertex, projection, hard_corner_pin, weighted, false, fade);
+
+              if (smooth_origco) {
+                float origco_avg[3];
+
+                SCULPT_neighbor_coords_average_interior(
+                    ss, origco_avg, vd.vertex, projection, hard_corner_pin, weighted, true, fade);
+
+                float *origco = blender::bke::paint::vertex_attr_ptr<float>(vd.vertex,
+                                                                            ss->attrs.orig_co);
+                interp_v3_v3v3(origco, origco, origco_avg, fade);
+              }
+
+              sub_v3_v3v3(val, avg, vd.co);
+              madd_v3_v3v3fl(val, vd.co, val, fade);
+              SCULPT_clip(sd, ss, vd.co, val);
+
+              if (do_reproject) {
+                BKE_sculpt_reproject_cdata(
+                    ss, vd.vertex, oldco, oldno, ss->distort_correction_mode);
+              }
+
+              if (vd.is_mesh) {
+                BKE_pbvh_vert_tag_update_normal(ss->pbvh, vd.vertex);
+              }
+              BKE_sculpt_sharp_boundary_flag_update(ss, vd.vertex);
+            }
+          }
+        },
+        [](PBVHNode *node, NodeData *data) {
+          if (data->modified) {
+            BKE_pbvh_node_mark_update(node);
+          }
+        });
+
+#if 0
+      SculptThreadedTaskData *data = static_cast<SculptThreadedTaskData *>(userdata);
+  SculptSession *ss = data->ob->sculpt;
+  Sculpt *sd = data->sd;
+  const Brush *brush = data->brush;
+  const bool smooth_mask = data->smooth_mask;
+  float bstrength = data->strength;
+
+  PBVHVertexIter vd;
+  const bool do_reproject = SCULPT_need_reproject(ss);
+
+  CLAMP(bstrength, 0.0f, 1.0f);
+
+  SculptBrushTest test;
+  SculptBrushTestFn sculpt_brush_test_sq_fn = SCULPT_brush_test_init_with_falloff_shape(
+      ss, &test, data->brush->falloff_shape);
+
+  if (brush->flag2 & BRUSH_SMOOTH_USE_AREA_WEIGHT) {
+    BKE_pbvh_check_tri_areas(ss->pbvh, data->nodes[n]);
+  }
+
+  const int thread_id = BLI_task_parallel_thread_id(tls);
+  AutomaskingNodeData automask_data;
+  SCULPT_automasking_node_begin(
+      data->ob, ss, ss->cache->automasking, &automask_data, data->nodes[n]);
+
+  float projection = brush->autosmooth_projection;
+  bool weighted = brush->flag2 & BRUSH_SMOOTH_USE_AREA_WEIGHT;
+  bool modified = false;
+
+  float hard_corner_pin = BKE_brush_hard_corner_pin_get(ss->scene, brush);
+
+  BKE_pbvh_vertex_iter_begin (ss->pbvh, data->nodes[n], vd, PBVH_ITER_UNIQUE) {
+    if (!sculpt_brush_test_sq_fn(&test, vd.co)) {
+      continue;
+    }
+
+    modified = true;
+
+    SCULPT_automasking_node_update(ss, &automask_data, &vd);
+
+    float fade = bstrength *
+                 SCULPT_brush_strength_factor(ss,
+                                              brush,
+                                              vd.co,
+                                              sqrtf(test.dist),
+                                              vd.no,
+                                              vd.fno,
+                                              smooth_mask ? 0.0f : (vd.mask ? *vd.mask : 0.0f),
+                                              vd.vertex,
+                                              thread_id,
+                                              &automask_data);
+    if (smooth_mask) {
+      float val = SCULPT_neighbor_mask_average(ss, vd.vertex) - *vd.mask;
+      val *= fade * bstrength;
+      *vd.mask += val;
+      CLAMP(*vd.mask, 0.0f, 1.0f);
+    }
+    else {
+      float oldco[3];
+      float oldno[3];
+      copy_v3_v3(oldco, vd.co);
+      SCULPT_vertex_normal_get(ss, vd.vertex, oldno);
+
+      float avg[3], val[3];
+      SCULPT_neighbor_coords_average_interior(
+          ss, avg, vd.vertex, projection, hard_corner_pin, weighted, false, fade);
+
+      if (data->smooth_origco) {
+        float origco_avg[3];
+
+        SCULPT_neighbor_coords_average_interior(
+            ss, origco_avg, vd.vertex, projection, hard_corner_pin, weighted, true, fade);
+
+        float *origco = blender::bke::paint::vertex_attr_ptr<float>(vd.vertex, ss->attrs.orig_co);
+        interp_v3_v3v3(origco, origco, origco_avg, fade);
+      }
+
+      sub_v3_v3v3(val, avg, vd.co);
+      madd_v3_v3v3fl(val, vd.co, val, fade);
+      SCULPT_clip(sd, ss, vd.co, val);
+
+      if (do_reproject) {
+        BKE_sculpt_reproject_cdata(ss, vd.vertex, oldco, oldno, ss->distort_correction_mode);
+      }
+
+      if (vd.is_mesh) {
+        BKE_pbvh_vert_tag_update_normal(ss->pbvh, vd.vertex);
+      }
+      BKE_sculpt_sharp_boundary_flag_update(ss, vd.vertex);
+    }
+  }
+  BKE_pbvh_vertex_iter_end;
+
+  if (modified) {
+    BKE_pbvh_node_mark_update(data->nodes[n]);
+  }
+#endif
+  }
+}
+
 void SCULPT_smooth(
     Sculpt *sd, Object *ob, Span<PBVHNode *> nodes, float bstrength, const bool smooth_mask)
 {
+  SCULPT_smooth_new(sd, ob, nodes, bstrength, smooth_mask);
+  return;
+
   SculptSession *ss = ob->sculpt;
   Brush *brush = BKE_paint_brush(&sd->paint);
 

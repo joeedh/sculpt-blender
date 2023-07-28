@@ -1801,7 +1801,7 @@ static int sculpt_test_exec(bContext *C, wmOperator *op)
           copy_v3_v3(vd.co, co);
 
           if (do_reproject) {
-            BKE_sculpt_reproject_cdata(ss, vd.vertex, oldco, oldno);
+            BKE_sculpt_reproject_cdata(ss, vd.vertex, oldco, oldno, ss->distort_correction_mode);
           }
         }
         BKE_pbvh_vertex_iter_end;

@@ -20,6 +20,8 @@
 #include "BLI_vector.hh"
 
 #include "BKE_pbvh.h"
+#include "BKE_pbvh_api.hh"
+#include "BKE_dyntopo_set.hh"
 #include "intern/pbvh_intern.hh"
 
 #include <functional>
@@ -39,15 +41,6 @@
 #else
 #  define ATTR_NO_OPT
 #endif
-
-#if 1
-#  undef ATTR_NO_OPT
-#  define ATTR_NO_OPT
-#endif
-
-// #define inline ATTR_NO_OPT
-//  #define inline __forceinline
-//  #define noexcept
 
 namespace blender::bke::pbvh {
 
@@ -135,7 +128,7 @@ struct PBVHNodeVertRange {
       return false;
     }
 
-    ATTR_NO_OPT inline iterator &operator++() noexcept
+     inline iterator &operator++() noexcept
     {
       if constexpr (pbvh_type == PBVH_GRIDS) {
         bool visible = true;
@@ -193,9 +186,9 @@ struct PBVHNodeVertRange {
         bool visible = false;
 
         do {
-          if (!BLI_gsetIterator_done(&vd_.bm_unique_verts)) {
-            vd_.bm_vert = (BMVert *)BLI_gsetIterator_getKey(&vd_.bm_unique_verts);
-            BLI_gsetIterator_step(&vd_.bm_unique_verts);
+          if (vd_.bm_iter != vd_.bm_iter_end) {
+            vd_.bm_vert = *vd_.bm_iter;
+            ++vd_.bm_iter;
           }
           else {
             vd_.bm_vert = nullptr;
@@ -228,7 +221,7 @@ struct PBVHNodeVertRange {
     }
 
    private:
-    ATTR_NO_OPT inline void load_data() noexcept
+     inline void load_data() noexcept
     {
       if constexpr (pbvh_type == PBVH_GRIDS) {
         vertex = vd_.vertex;
@@ -369,7 +362,7 @@ struct VertexListRange {
       return *this;
     }
 
-    ATTR_NO_OPT inline void load_data() noexcept
+     inline void load_data() noexcept
     {
       if (i == range.start() + range.size()) {
         return;
@@ -565,7 +558,7 @@ template<typename NodeData,
          PBVHType pbvh_type,
          typename ExecFunc,
          typename FilterFunc = blender::bke::pbvh::PBVHVertexFilter>
-ATTR_NO_OPT void foreach_brush_verts_flatlist_intern(
+ void foreach_brush_verts_flatlist_intern(
     PBVH *pbvh,
     Span<PBVHNode *> nodes,
     bool threaded,
@@ -608,8 +601,6 @@ ATTR_NO_OPT void foreach_brush_verts_flatlist_intern(
 
       PBVHVertexIter vd;
       BKE_pbvh_vertex_iter_begin (pbvh, node, vd, PBVH_ITER_UNIQUE) {
-        float dist = 0.0f;
-
         FilterResult result = filter_verts(vd.vertex, vd.co, vd.no ? vd.no : vd.fno);
 
         if (result.in_range) {
@@ -752,7 +743,7 @@ void foreach_brush_verts(
     int repeat = 0)
 {
 
-  printf("limit count: %d\n", int(pbvh->leaf_limit * nodes.size()));
+  //printf("limit count: %d\n", int(pbvh->leaf_limit * nodes.size()));
 
   if (pbvh->leaf_limit * nodes.size() > 70000) {
     foreach_brush_verts_simple<NodeData>(

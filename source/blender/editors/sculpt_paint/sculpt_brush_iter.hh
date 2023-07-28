@@ -100,6 +100,8 @@ template<typename NodeData, typename VertexRange> struct ForwardVertexIter {
       typename VertexRange::iterator;  // std::invoke_result_t<decltype(&VertexRange::begin)()>;
 
   struct iterator {
+    using UserNodeData = decltype(NodeData::user_data);
+
     PBVHVertRef vertex;
     int index;
 
@@ -111,6 +113,7 @@ template<typename NodeData, typename VertexRange> struct ForwardVertexIter {
 
     AutomaskingNodeData *automask_data;
     SculptOrigVertData *orig_data;
+    UserNodeData *node_data;
 
     int vertex_node_index;
     int thread_id;
@@ -184,6 +187,7 @@ template<typename NodeData, typename VertexRange> struct ForwardVertexIter {
 
       automask_data = &vd_.node_data->automask_data;
       orig_data = &vd_.node_data->orig_data;
+      node_data = &vd_.node_data->user_data;
 
       is_mesh = vd_.is_mesh;
 
@@ -231,20 +235,19 @@ template<typename NodeData, typename VertexRange> struct ForwardVertexIter {
 };
 
 template<typename NodeData, typename ExecFunc, typename Tester = BrushTester>
-ATTR_NO_OPT void exec_brush_intern(
-    Object *ob,
-    Span<PBVHNode *> nodes,
-    bool threaded,         //
-    Tester &brush_tester,  //
-    std::function<NodeData(PBVHNode *node)> node_visit_pre,
-    ExecFunc &exec, /* [&](auto &vertex_range) {} */
-    std::function<void(PBVHNode *node, NodeData *node_data)> node_visit_post,
-    int repeat = 0,
-    bool apply_mask = true,
-    bool needs_original = false,
-    SculptUndoType original_type = SCULPT_UNDO_COORDS
+void exec_brush_intern(Object *ob,
+                       Span<PBVHNode *> nodes,
+                       bool threaded,         //
+                       Tester &brush_tester,  //
+                       std::function<NodeData(PBVHNode *node)> node_visit_pre,
+                       ExecFunc &exec, /* [&](auto &vertex_range) {} */
+                       std::function<void(PBVHNode *node, NodeData *node_data)> node_visit_post,
+                       int repeat = 0,
+                       bool apply_mask = true,
+                       bool needs_original = false,
+                       SculptUndoType original_type = SCULPT_UNDO_COORDS
 
-    ) noexcept
+                       ) noexcept
 {
   SculptSession *ss = ob->sculpt;
 

@@ -1739,6 +1739,16 @@ void SCULPT_automasking_node_update(SculptSession *ss,
                                     AutomaskingNodeData *automask_data,
                                     PBVHVertexIter *vd);
 
+template<typename NodeData, typename VD>
+static void SCULPT_automasking_node_update(SculptSession *ss,
+                                           AutomaskingNodeData *automask_data,
+                                           VD vd)
+{
+  if (automask_data->have_orig_data) {
+    SCULPT_orig_vert_data_update(ss, &automask_data->orig_data, vd.vertex);
+  }
+}
+
 float SCULPT_automasking_factor_get(AutomaskingCache *automasking,
                                     SculptSession *ss,
                                     PBVHVertRef vertex,

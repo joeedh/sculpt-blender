@@ -815,6 +815,7 @@ static void pbvh_bmesh_node_finalize(PBVH *pbvh,
 
 static void pbvh_print_mem_size(PBVH *pbvh)
 {
+#if 0
   BMesh *bm = pbvh->header.bm;
   CustomData *cdatas[4] = {&bm->vdata, &bm->edata, &bm->ldata, &bm->pdata};
 
@@ -870,6 +871,7 @@ static void pbvh_print_mem_size(PBVH *pbvh)
   tot += memsize3[0] + memsize3[1] + memsize3[2];
 
   printf("total: %.2f\n", tot);
+#endif
 }
 
 /* Recursively split the node if it exceeds the leaf_limit */
