@@ -421,7 +421,13 @@ BLI_INLINE void extract_task_range_run_iter(const MeshRenderData *mr,
         range_data.elems = static_cast<void *>(looptris.data());
       }
 #else
-      range_data.elems = is_mesh ? mr->looptris.data() : (void *)mr->edit_bmesh->looptris;
+      if (is_mesh || mr->edit_bmesh) {
+        range_data.elems = is_mesh ? mr->looptris.data() : (void *)mr->edit_bmesh->looptris;
+      }
+      else {
+        range_data.elems = nullptr;
+        return;
+      }
 #endif
       func = is_mesh ? extract_range_iter_looptri_mesh : extract_range_iter_looptri_bm;
       stop = mr->tri_len;

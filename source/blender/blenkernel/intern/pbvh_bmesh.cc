@@ -2593,7 +2593,7 @@ void BKE_pbvh_build_bmesh(PBVH *pbvh,
     }
   }
 
-  blender::bke::pbvh::defragment_pbvh(pbvh, false);
+  blender::bke::pbvh::defragment_pbvh(pbvh, true, 450.0);
 
   BM_mesh_elem_table_ensure(pbvh->header.bm, BM_VERT | BM_EDGE | BM_FACE);
   BM_mesh_elem_index_ensure(pbvh->header.bm, BM_VERT | BM_EDGE | BM_FACE);
@@ -4542,12 +4542,12 @@ void defragment_pbvh_partial(PBVH *pbvh, double time_limit_ms)
   }
 }
 
-void defragment_pbvh(PBVH *pbvh, bool partial)
+void defragment_pbvh(PBVH *pbvh, bool partial, double time_limit_ms)
 {
   bool modified = false;
 
   if (partial) {
-    defragment_pbvh_partial(pbvh);
+    defragment_pbvh_partial(pbvh, time_limit_ms);
     return;
   }
 

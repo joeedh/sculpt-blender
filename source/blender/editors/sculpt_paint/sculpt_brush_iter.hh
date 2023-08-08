@@ -50,8 +50,7 @@ class SphereTester {
     inline Result() noexcept {}
     inline Result(SphereTester *owner_) noexcept : owner(owner_) {}
 
-    ATTR_NO_OPT inline float calc_falloff(int thread_id,
-                                          AutomaskingNodeData *automask_data) const noexcept
+    inline float calc_falloff(int thread_id, AutomaskingNodeData *automask_data) const noexcept
     {
       float mask = owner->apply_mask_ ? SCULPT_vertex_mask_get(owner->ss_, vertex) : 0.0f;
 
@@ -79,9 +78,7 @@ class SphereTester {
 
   inline SphereTester() noexcept {}
 
-  ATTR_NO_OPT inline Result operator()(PBVHVertRef vertex,
-                                       const float *co,
-                                       const float *no) noexcept
+  inline Result operator()(PBVHVertRef vertex, const float *co, const float *no) noexcept
   {
     Result res(this);
 

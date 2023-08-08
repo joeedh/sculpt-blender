@@ -1086,7 +1086,9 @@ static void sculpt_undo_bmesh_enable(Object *ob, SculptUndoNode *unode, bool is_
     ss->bm_log = BM_log_from_existing_entries_create(ss->bm, ss->bm_idmap, unode->bm_entry);
     BMLogEntry *entry = is_redo ? BM_log_entry_prev(unode->bm_entry) : unode->bm_entry;
 
-    BM_log_set_current_entry(ss->bm_log, entry);
+    if (entry) {
+      BM_log_set_current_entry(ss->bm_log, entry);
+    }
   }
   else {
     BM_log_set_idmap(ss->bm_log, ss->bm_idmap);
@@ -1439,8 +1441,7 @@ static void sculpt_undo_restore_list(bContext *C, Depsgraph *depsgraph, ListBase
      * ensure object is updated after the node is handled. */
     const SculptUndoNode *first_unode = (const SculptUndoNode *)lb->first;
     if (first_unode->type != SCULPT_UNDO_GEOMETRY &&
-        first_unode->type != SCULPT_UNDO_DYNTOPO_BEGIN)
-    {
+        first_unode->type != SCULPT_UNDO_DYNTOPO_BEGIN) {
       BKE_sculpt_update_object_for_edit(depsgraph, ob, false, need_mask, false);
     }
 
