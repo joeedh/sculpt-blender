@@ -433,12 +433,22 @@ static int geometry_color_attribute_remove_exec(bContext *C, wmOperator *op)
 {
   Object *ob = ED_object_context(C);
   ID *id = static_cast<ID *>(ob->data);
+  bool is_sculpt = ob->sculpt && ob->mode == OB_MODE_SCULPT && ob->sculpt->pbvh;
+
   const std::string active_name = StringRef(BKE_id_attributes_active_color_name(id));
   if (active_name.empty()) {
     return OPERATOR_CANCELLED;
   }
 
+  if (is_sculpt) {
+    ED_sculpt_undo_geometry_begin(ob, op);
+  }
+
   if (!BKE_id_attribute_remove(id, active_name.c_str(), op->reports)) {
+    if (is_sculpt) {
+      BKE_sculptsession_sync_attributes(ob, static_cast<Mesh *>(ob->data), false);
+      ED_sculpt_undo_geometry_end(ob);
+    }
     return OPERATOR_CANCELLED;
   }
 
