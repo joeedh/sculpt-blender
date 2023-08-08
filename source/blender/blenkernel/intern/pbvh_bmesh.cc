@@ -101,6 +101,7 @@ template<typename T> T *c_array_from_vector(Vector<T> &array)
   return ret;
 }
 
+#ifdef PBVH_BMESH_DEBUG
 static void _debugprint(const char *fmt, ...)
 {
   va_list args;
@@ -109,7 +110,6 @@ static void _debugprint(const char *fmt, ...)
   va_end(args);
 }
 
-#ifdef PBVH_BMESH_DEBUG
 void pbvh_bmesh_check_nodes_simple(PBVH *pbvh)
 {
   for (int i = 0; i < pbvh->totnode; i++) {
@@ -663,7 +663,7 @@ void pbvh_bmesh_vert_remove(PBVH *pbvh, BMVert *v)
 }
 
 void pbvh_bmesh_face_remove(
-    PBVH *pbvh, BMFace *f, bool log_face, bool check_verts, bool ensure_ownership_transfer)
+    PBVH *pbvh, BMFace *f, bool log_face, bool check_verts, bool /* ensure_ownership_transfer */)
 {
   PBVHNode *f_node = pbvh_bmesh_node_from_face(pbvh, f);
 
@@ -1577,7 +1577,6 @@ static void pbvh_update_normals_task_cb(void *__restrict userdata,
   PBVHNode *node = data->node;
   const int node_nr = data->node_nr;
 
-  const int cd_face_node_offset = data->cd_face_node_offset;
   const int cd_vert_node_offset = data->cd_vert_node_offset;
 
   node->flag |= PBVH_UpdateCurvatureDir;
@@ -2894,7 +2893,6 @@ ATTR_NO_OPT bool BKE_pbvh_bmesh_check_tris(PBVH *pbvh, PBVHNode *node)
 
       for (int j = 0; j < 3; j++) {
         BMLoop *l1 = loops[loops_idx[i][j]];
-        BMLoop *l2 = loops[loops_idx[i][(j + 1) % 3]];
 
         add_tri_verts(node->tribuf, tri, l1, mat_nr, j);
         add_tri_verts(mat_tribuf, mat_tri, l1, mat_nr, j);
@@ -4272,7 +4270,6 @@ static bool defragment_node_vert(PBVH *pbvh, PBVHNode *node, BMVert *v, BMVert *
   bool modified = false;
   BMesh *bm = pbvh->header.bm;
 
-  int ni = int(node - pbvh->nodes);
   VertHive *vhive = static_cast<VertHive *>(bm->vhive);
   CustomDataHive *cd_vhive = bm->vdata.hive ? static_cast<CustomDataHive *>(bm->vdata.hive) :
                                               nullptr;
@@ -4529,7 +4526,7 @@ void defragment_pbvh_partial(PBVH *pbvh, double time_limit_ms)
   }
 
   printf("%dms %.2f %.2f\n",
-         (time_point() - time).count(),
+         int((time_point() - time).count()),
          float(PIL_check_seconds_timer() * 1000.0 - time1),
          time_limit_ms);
   printf("totdone: %d out of %d, f_prob: %.4f\n", totdone, totvert + totface, float(f_prob));
