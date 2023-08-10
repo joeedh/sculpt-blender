@@ -4280,6 +4280,7 @@ static void do_brush_action(Sculpt *sd,
           break;
         case SCULPT_UNDO_COORDS:
           BKE_pbvh_node_mark_update(nodes[i]);
+          BKE_pbvh_node_mark_update_defrag(nodes[i]);
           break;
         case SCULPT_UNDO_HIDDEN:
         case SCULPT_UNDO_DYNTOPO_BEGIN:

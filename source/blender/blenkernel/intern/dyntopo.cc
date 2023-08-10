@@ -2082,7 +2082,7 @@ EdgeQueueContext::EdgeQueueContext(BrushTester *brush_tester_,
   limit_len_max_sqr = limit_len_max * limit_len_max;
   limit_mid = limit_len_max * 0.5f + limit_len_min * 0.5f;
 
-  surface_smooth_fac = DYNTOPO_SAFE_SMOOTH_FAC;
+  surface_smooth_fac = mode & PBVH_Collapse ? 0.2 : DYNTOPO_SAFE_SMOOTH_FAC;
 
   if (mode & PBVH_LocalSubdivide) {
     mode |= PBVH_Subdivide;
