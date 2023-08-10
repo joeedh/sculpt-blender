@@ -40,7 +40,7 @@ static void extract_tris_iter_poly_bm(const MeshRenderData *mr,
                                       void *_data)
 {
   int tri_first_index = mr->poly_sorted->tri_first_index[f_index];
-  if (tri_first_index == -1) {
+  if (tri_first_index == -1 || !mr->edit_bmesh) {
     return;
   }
 
