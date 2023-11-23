@@ -6,6 +6,7 @@
  * \ingroup bke
  */
 
+#include <algorithm> /* For `min/max`. */
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -129,7 +130,7 @@ struct bUnitCollection {
 
 #define UNIT_COLLECTION_LENGTH(def) (ARRAY_SIZE(def) - 1)
 
-/* Clang-format wraps this define baddly. */
+/* Clang-format wraps this define badly. */
 /* clang-format off */
 #define NULL_UNIT { \
     /*name*/ nullptr, \
@@ -1673,17 +1674,17 @@ static const bUnitDef *get_preferred_display_unit_if_used(int type, PreferredUni
       if (units.length == USER_UNIT_ADAPTIVE) {
         return nullptr;
       }
-      return usys->units + MIN2(units.length, max_offset);
+      return usys->units + std::min(units.length, max_offset);
     case B_UNIT_MASS:
       if (units.mass == USER_UNIT_ADAPTIVE) {
         return nullptr;
       }
-      return usys->units + MIN2(units.mass, max_offset);
+      return usys->units + std::min(units.mass, max_offset);
     case B_UNIT_TIME:
       if (units.time == USER_UNIT_ADAPTIVE) {
         return nullptr;
       }
-      return usys->units + MIN2(units.time, max_offset);
+      return usys->units + std::min(units.time, max_offset);
     case B_UNIT_ROTATION:
       if (units.rotation == 0) {
         return usys->units + 0;
@@ -1696,7 +1697,7 @@ static const bUnitDef *get_preferred_display_unit_if_used(int type, PreferredUni
       if (units.temperature == USER_UNIT_ADAPTIVE) {
         return nullptr;
       }
-      return usys->units + MIN2(units.temperature, max_offset);
+      return usys->units + std::min(units.temperature, max_offset);
     default:
       break;
   }

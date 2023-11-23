@@ -5,22 +5,11 @@
 /** \file
  * \ingroup bmesh
  *
- * The BMLog is an interface for storing undo/redo steps as a BMesh is
- * modified. It only stores changes to the BMesh, not full copies.
- *
- * Currently it supports the following types of changes:
- *
- * - Adding and removing vertices
- * - Adding and removing edges
- * - Adding and removing faces
- * - Custom Attributes.
- * - Moving vertices
- * - Element header flags.
  */
 
 #include "MEM_guardedalloc.h"
 
-#include "BKE_customdata.h"
+#include "BKE_customdata.hh"
 #include "BKE_mesh.h"
 
 #include "DNA_customdata_types.h"
@@ -38,11 +27,8 @@
 #include "BLI_vector.hh"
 
 #include "bmesh.h"
-#include "bmesh_idmap.h"
-#include "bmesh_log_intern.h"
-extern "C" {
-#include "bmesh_structure.h"
-}
+#include "bmesh_idmap.hh"
+#include "bmesh_log.hh"
 
 #include <algorithm>
 #include <cstdarg>
@@ -51,22 +37,13 @@ extern "C" {
 #include <functional>
 #include <type_traits>
 
-#define USE_SIMPLE_CD_COPY
-
-extern "C" void bm_log_message(const char *fmt, ...)
-{
-  char msg[64];
-
-  va_list args;
-  va_start(args, fmt);
-  vsnprintf(msg, sizeof(msg), fmt, args);
-  va_end(args);
-}
+using blender::float3;
+using blender::Map;
+using blender::Set;
+using blender::Vector;
 
 /* Avoid C++ runtime type ids. */
 enum BMLogSetType { LOG_SET_DIFF, LOG_SET_FULL };
-
-namespace blender {
 
 template<typename T> struct BMID {
   int id = -1;
@@ -75,7 +52,7 @@ template<typename T> struct BMID {
 
   T *lookup(BMIdMap *idmap)
   {
-    return reinterpret_cast<T *>(BM_idmap_lookup(idmap, id));
+    return BM_idmap_lookup<T>(idmap, id);
   }
 
   uint64_t hash() const
@@ -239,7 +216,6 @@ struct BMLogEdge : public BMLogElem<BMEdge> {
 struct BMLogFace : public BMLogElem<BMFace> {
   Vector<BMID<BMVert>, 5> verts;
   Vector<void *, 5> loop_customdata;
-  // int material_index;
 
   void free(CustomData *domain, CustomData *loop_domain)
   {
@@ -269,7 +245,6 @@ struct BMLogSetBase {
   {
     return "";
   }
-  virtual void print_info() {}
   virtual void undo(BMesh * /*bm*/, BMLogCallbacks * /*callbacks*/) {}
   virtual void redo(BMesh * /*bm*/, BMLogCallbacks * /*callbacks*/) {}
 };
@@ -292,22 +267,6 @@ struct BMLogSetDiff : public BMLogSetBase {
   const char *debug_name() override
   {
     return "Diff";
-  }
-
-  void print_info() override
-  {
-    printf("  modified: v: %d e: %d f: %d\n",
-           int(modified_verts.size()),
-           int(modified_edges.size()),
-           int(modified_faces.size()));
-    printf("  removed: v: %d e: %d f: %d\n",
-           int(removed_verts.size()),
-           int(removed_edges.size()),
-           int(removed_faces.size()));
-    printf("  added: v: %d e: %d f: %d\n",
-           int(added_verts.size()),
-           int(added_edges.size()),
-           int(added_faces.size()));
   }
 
   void add_vert(BMesh *bm, BMVert *v);
@@ -376,8 +335,6 @@ struct BMLogSetFull : public BMLogSetBase {
   {
     return "Full";
   }
-
-  void print_info() {}
 
   void swap(BMesh *bm)
   {
@@ -539,13 +496,6 @@ struct BMLogEntry {
       *dest_block = BLI_mempool_calloc(dest->pool);
     }
 
-#ifdef USE_SIMPLE_CD_COPY
-    /* Signal simple copy by using bm->XXXdata for dest. */
-    if (!cd_layout_changed) {
-      dest = source;
-    }
-#endif
-
     CustomData_bmesh_copy_data(source, dest, src_block, dest_block);
   }
 
@@ -593,13 +543,53 @@ struct BMLogEntry {
     CustomData_free(&pdata, 0);
   }
 
+  void print()
+  {
+    int av = 0, ae = 0, af = 0, mv = 0, me = 0, mf = 0, dv = 0, de = 0, df = 0;
+    int totmesh = 0;
+
+    for (BMLogSetBase *set : sets) {
+      switch (set->type) {
+        case LOG_SET_DIFF: {
+          BMLogSetDiff *diff = static_cast<BMLogSetDiff *>(set);
+
+          av += diff->added_verts.size();
+          ae += diff->added_edges.size();
+          af += diff->added_faces.size();
+
+          mv += diff->modified_verts.size();
+          me += diff->modified_edges.size();
+          mf += diff->modified_faces.size();
+
+          dv += diff->removed_verts.size();
+          de += diff->removed_edges.size();
+          df += diff->removed_faces.size();
+          break;
+        }
+        case LOG_SET_FULL:
+          totmesh++;
+          break;
+      }
+    }
+
+    if (av + ae + af + mv + me + mf + dv + de + df) {
+      printf("  addv: %d, adde: %d, addf: %d\n", av, ae, af);
+      printf("  modv: %d, mode: %d, modf: %d\n", mv, me, mf);
+      printf("  delv: %d, dele: %d, delf: %d\n", dv, de, df);
+    }
+
+    if (totmesh > 0) {
+      printf("  totmesh: %d\n", totmesh);
+    }
+  }
+
   template<typename T> T *get_elem_from_id(BMesh * /*bm*/, BMID<T> id)
   {
-    if (id.id < 0 || id.id >= idmap->map_size) {
+    if (id.id < 0 || id.id >= idmap->map.size()) {
       return nullptr;
     }
 
-    T *elem = reinterpret_cast<T *>(BM_idmap_lookup(idmap, id.id));
+    T *elem = BM_idmap_lookup<T>(idmap, id.id);
     char htype = 0;
 
     if (!elem) {
@@ -632,10 +622,10 @@ struct BMLogEntry {
   {
     int id = _id.id;
 
-    if (check_unique && id >= 0 && id < idmap->map_size) {
-      BMElem *old = BM_idmap_lookup(idmap, id);
+    if (check_unique && id >= 0 && id < idmap->map.size()) {
+      T *old = BM_idmap_lookup<T>(idmap, id);
 
-      if (old && old != (BMElem *)elem) {
+      if (old && old != elem) {
         printf(
             "id conflict in BMLogEntry::assign_elem_id; elem %p (a %s) is being reassinged to id "
             "%d.\n",
@@ -645,18 +635,18 @@ struct BMLogEntry {
         printf(
             "  elem %p (a %s) will get a new id\n", old, get_elem_htype_str((int)old->head.htype));
 
-        BM_idmap_assign(idmap, reinterpret_cast<BMElem *>(elem), id);
+        BM_idmap_assign(idmap, elem, id);
         return;
       }
     }
 
-    BM_idmap_assign(idmap, reinterpret_cast<BMElem *>(elem), id);
+    BM_idmap_assign(idmap, elem, id);
   }
 
   template<typename T> BMID<T> get_elem_id(BMesh * /*bm*/, T *elem)
   {
-    BM_idmap_check_assign(idmap, reinterpret_cast<BMElem *>(elem));
-    return BM_idmap_get_id(idmap, reinterpret_cast<BMElem *>(elem));
+    BM_idmap_check_assign(idmap, elem);
+    return BM_idmap_get_id(idmap, elem);
   }
 
   void push_set(BMesh *bm, BMLogSetType type)
@@ -761,7 +751,6 @@ struct BMLogEntry {
   void free_logvert(BMLogVert *lv)
   {
     if (lv->customdata) {
-      CustomData_bmesh_unpoison(&vdata, lv->customdata);
       BLI_mempool_free(vdata.pool, lv->customdata);
     }
 
@@ -803,7 +792,6 @@ struct BMLogEntry {
   void free_logedge(BMesh * /*bm*/, BMLogEdge *le)
   {
     if (le->customdata) {
-      CustomData_bmesh_unpoison(&edata, le->customdata);
       BLI_mempool_free(edata.pool, le->customdata);
     }
 
@@ -860,13 +848,11 @@ struct BMLogEntry {
   {
     if (lf->loop_customdata[0]) {
       for (int i = 0; i < lf->verts.size(); i++) {
-        CustomData_bmesh_unpoison(&ldata, lf->loop_customdata[i]);
         BLI_mempool_free(ldata.pool, lf->loop_customdata[i]);
       }
     }
 
     if (lf->customdata) {
-      CustomData_bmesh_unpoison(&pdata, lf->customdata);
       BLI_mempool_free(pdata.pool, lf->customdata);
     }
 
@@ -935,30 +921,14 @@ struct BMLogEntry {
 
   void undo(BMesh *bm, BMLogCallbacks *callbacks)
   {
-#ifdef BM_LOG_PRINT_DEBUG
-    printf("\n");
-#endif
-
     for (int i = sets.size() - 1; i >= 0; i--) {
-#ifdef BM_LOG_PRINT_DEBUG
-      printf("%s: - %d of %d\n", sets[i]->debug_name(), i, (int)(sets.size() - 1));
-      sets[i]->print_info();
-#endif
       sets[i]->undo(bm, callbacks);
     }
   }
 
   void redo(BMesh *bm, BMLogCallbacks *callbacks)
   {
-#ifdef BM_LOG_PRINT_DEBUG
-    printf("\n");
-#endif
-
     for (int i = 0; i < sets.size(); i++) {
-#ifdef BM_LOG_PRINT_DEBUG
-      printf("%s: - %d of %d\n", sets[i]->debug_name(), i, (int)(sets.size() - 1));
-      sets[i]->print_info();
-#endif
       sets[i]->redo(bm, callbacks);
     }
   }
@@ -1277,7 +1247,7 @@ void BMLogSetDiff::modify_edge(BMesh *bm, BMEdge *e)
 
 void BMLogSetDiff::add_face(BMesh *bm, BMFace *f)
 {
-  BM_idmap_check_assign(entry->idmap, (BMElem *)f);
+  BM_idmap_check_assign(entry->idmap, f);
 
   BMID<BMFace> id = entry->get_elem_id<BMFace>(bm, f);
 
@@ -1347,11 +1317,7 @@ void BMLogSetDiff::swap_verts(BMesh *bm,
     }
 
     if (old_customdata) {
-      CustomData_bmesh_unpoison(&bm->vdata, old_customdata);
-      CustomData_bmesh_unpoison(&bm->vdata, v->head.data);
       memcpy(old_customdata, v->head.data, bm->vdata.totsize);
-      CustomData_bmesh_poison(&bm->vdata, old_customdata);
-      CustomData_bmesh_poison(&bm->vdata, v->head.data);
     }
 
     entry->swap_logvert(bm, lv->id, v, lv);
@@ -1365,7 +1331,6 @@ void BMLogSetDiff::swap_verts(BMesh *bm,
   }
 
   if (old_customdata) {
-    CustomData_bmesh_unpoison(&bm->vdata, old_customdata);
     BLI_mempool_free(bm->vdata.pool, old_customdata);
   }
 }
@@ -1408,7 +1373,7 @@ void BMLogSetDiff::remove_verts(BMesh *bm,
       callbacks->on_vert_kill(v, callbacks->userdata);
     }
 
-    BM_idmap_release(entry->idmap, (BMElem *)v, false);
+    BM_idmap_release(entry->idmap, v, false);
     BM_vert_kill(bm, v);
   }
 
@@ -1463,7 +1428,7 @@ void BMLogSetDiff::remove_edges(BMesh *bm,
       callbacks->on_edge_kill(e, callbacks->userdata);
     }
 
-    BM_idmap_release(entry->idmap, reinterpret_cast<BMElem *>(e), true);
+    BM_idmap_release(entry->idmap, e, true);
     BM_edge_kill(bm, e);
   }
 }
@@ -1483,11 +1448,7 @@ void BMLogSetDiff::swap_edges(BMesh *bm,
     }
 
     if (old_customdata) {
-      CustomData_bmesh_unpoison(&bm->edata, old_customdata);
-      CustomData_bmesh_unpoison(&bm->edata, e->head.data);
       memcpy(old_customdata, e->head.data, bm->edata.totsize);
-      CustomData_bmesh_poison(&bm->edata, old_customdata);
-      CustomData_bmesh_poison(&bm->edata, e->head.data);
     }
 
     entry->swap_logedge(bm, le->id, e, le);
@@ -1498,7 +1459,6 @@ void BMLogSetDiff::swap_edges(BMesh *bm,
   }
 
   if (old_customdata) {
-    CustomData_bmesh_unpoison(&bm->edata, old_customdata);
     BLI_mempool_free(bm->edata.pool, old_customdata);
   }
 }
@@ -1571,7 +1531,7 @@ void BMLogSetDiff::remove_faces(BMesh *bm,
       callbacks->on_face_kill(f, callbacks->userdata);
     }
 
-    BM_idmap_release(entry->idmap, reinterpret_cast<BMElem *>(f), true);
+    BM_idmap_release(entry->idmap, f, true);
     BM_face_kill(bm, f);
   }
 
@@ -1596,11 +1556,7 @@ void BMLogSetDiff::swap_faces(BMesh *bm,
     }
 
     if (old_customdata) {
-      CustomData_bmesh_unpoison(&bm->pdata, old_customdata);
-      CustomData_bmesh_unpoison(&bm->pdata, f->head.data);
       memcpy(old_customdata, f->head.data, bm->pdata.totsize);
-      CustomData_bmesh_poison(&bm->pdata, old_customdata);
-      CustomData_bmesh_poison(&bm->pdata, f->head.data);
     }
 
     entry->swap_logface(bm, lf->id, f, lf);
@@ -1614,7 +1570,6 @@ void BMLogSetDiff::swap_faces(BMesh *bm,
   }
 
   if (old_customdata) {
-    CustomData_bmesh_unpoison(&bm->pdata, old_customdata);
     BLI_mempool_free(bm->pdata.pool, old_customdata);
   }
 }
@@ -1668,8 +1623,6 @@ static BMIdMap *entry_get_idmap(BMLogEntry *entry)
   return entry->idmap;
 }
 
-}  // namespace blender
-
 BMLog *BM_log_from_existing_entries_create(BMesh *bm, BMIdMap *idmap, BMLogEntry *entry)
 {
   BMLog *log = BM_log_create(bm, idmap);
@@ -1708,16 +1661,15 @@ bool BM_log_free(BMLog *log)
   return true;
 }
 
-BMLogEntry *BM_log_entry_add_ex(BMesh *bm, BMLog *log, bool combine_with_last)
+BMLogEntry *BM_log_entry_add_delta_set(BMesh *bm, BMLog *log)
 {
-  if (combine_with_last && log->current_entry) {
-    log->current_entry->push_set(bm, LOG_SET_DIFF);
-  }
-  else {
+  if (!log->current_entry) {
     log->push_entry(bm);
   }
+  else {
+    log->current_entry->push_set(bm, LOG_SET_DIFF);
+  }
 
-  log->current_entry->push_set(bm, LOG_SET_DIFF);
   return log->current_entry;
 }
 
@@ -1737,7 +1689,7 @@ void BM_log_vert_removed(BMesh *bm, BMLog *log, BMVert *v)
   log->remove_vert(bm, v);
 }
 
-void BM_log_vert_before_modified(BMesh *bm, BMLog *log, BMVert *v)
+void BM_log_vert_if_modified(BMesh *bm, BMLog *log, BMVert *v)
 {
   log->modify_if_vert(bm, v);
 }
@@ -1754,7 +1706,7 @@ BMLogEntry *BM_log_entry_check_customdata(BMesh *bm, BMLog *log)
   if (!entry) {
     fprintf(stdout, "no current entry; creating...\n");
     fflush(stdout);
-    return BM_log_entry_add_ex(bm, log, true);
+    return BM_log_entry_add_delta_set(bm, log);
   }
 
   CustomData *cd1[4] = {&bm->vdata, &bm->edata, &bm->ldata, &bm->pdata};
@@ -1766,7 +1718,7 @@ BMLogEntry *BM_log_entry_check_customdata(BMesh *bm, BMLog *log)
       fflush(stdout);
 
       entry->cd_layout_changed = true;
-      return BM_log_entry_add_ex(bm, log, true);
+      return BM_log_entry_add_delta_set(bm, log);
     }
   }
 
@@ -1814,22 +1766,22 @@ void BM_log_full_mesh(BMesh *bm, BMLog *log)
 
 BMVert *BM_log_id_vert_get(BMesh * /*bm*/, BMLog *log, uint id)
 {
-  return reinterpret_cast<BMVert *>(BM_idmap_lookup(log->idmap, id));
+  return BM_idmap_lookup<BMVert>(log->idmap, id);
 }
 
 uint BM_log_vert_id_get(BMesh * /*bm*/, BMLog *log, BMVert *v)
 {
-  return BM_idmap_get_id(log->idmap, reinterpret_cast<BMElem *>(v));
+  return BM_idmap_get_id(log->idmap, v);
 }
 
 BMFace *BM_log_id_face_get(BMesh * /*bm*/, BMLog *log, uint id)
 {
-  return reinterpret_cast<BMFace *>(BM_idmap_lookup(log->idmap, id));
+  return BM_idmap_lookup<BMFace>(log->idmap, id);
 }
 
 uint BM_log_face_id_get(BMesh * /*bm*/, BMLog *log, BMFace *f)
 {
-  return BM_idmap_get_id(log->idmap, reinterpret_cast<BMElem *>(f));
+  return BM_idmap_get_id(log->idmap, f);
 }
 
 int BM_log_entry_size(BMLogEntry *entry)
@@ -1874,9 +1826,6 @@ void BM_log_set_current_entry(BMLog *log, BMLogEntry *entry)
 
 bool BM_log_entry_drop(BMLogEntry *entry)
 {
-  float size = entry->calc_size() / 1024.0f / 1024.0f;
-  printf("%s: Freeing log entry %p, size: %.3fmb\n", __func__, entry, size);
-
   if (entry->prev) {
     entry->prev->next = entry->next;
   }
@@ -1900,5 +1849,7 @@ bool BM_log_entry_drop(BMLogEntry *entry)
 
 void BM_log_print_entry(BMLog * /*log*/, BMLogEntry *entry)
 {
-  printf("entry: %p", entry);
+  printf("BMLogEntry: %p", entry);
+  entry->print();
+  printf("\n");
 }

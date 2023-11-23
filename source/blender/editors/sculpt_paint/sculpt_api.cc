@@ -55,7 +55,7 @@
 #include "BKE_brush.hh"
 #include "BKE_ccg.h"
 #include "BKE_colortools.h"
-#include "BKE_context.h"
+#include "BKE_context.hh"
 #include "BKE_idprop.h"
 #include "BKE_image.h"
 #include "BKE_key.h"
@@ -64,10 +64,10 @@
 #include "BKE_mesh.h"
 #include "BKE_mesh_fair.hh"
 #include "BKE_mesh_mapping.hh"
-#include "BKE_modifier.h"
+#include "BKE_modifier.hh"
 #include "BKE_multires.hh"
 #include "BKE_node_runtime.hh"
-#include "BKE_object.h"
+#include "BKE_object.hh"
 #include "BKE_paint.hh"
 #include "BKE_particle.h"
 #include "BKE_pbvh_api.hh"
@@ -109,7 +109,7 @@
 #include "atomic_ops.h"
 
 #include "bmesh.h"
-#include "bmesh_log.h"
+#include "bmesh_log.hh"
 #include "bmesh_tools.h"
 
 #include "UI_resources.hh"
@@ -245,7 +245,7 @@ PBVHVertRef SCULPT_edge_other_vertex(const SculptSession *ss,
 
 static void grids_update_boundary_flags(const SculptSession *ss, PBVHVertRef vertex)
 {
-  blender::bke::pbvh::update_vert_boundary_grids(ss->pbvh, vertex.i);
+  blender::bke::pbvh::update_vert_boundary_grids(ss->pbvh, vertex.i, ss->face_sets);
 }
 
 static void faces_update_boundary_flags(const SculptSession *ss, const PBVHVertRef vertex)
@@ -497,7 +497,10 @@ void SCULPT_ensure_persistent_layers(SculptSession *ss, Object *ob)
   }
 }
 
-void SCULPT_apply_dyntopo_settings(Scene *scene, SculptSession *ss, Sculpt *sculpt, Brush *brush)
+void SCULPT_apply_dyntopo_settings(Scene * /*scene*/,
+                                   SculptSession *ss,
+                                   Sculpt *sculpt,
+                                   Brush *brush)
 {
   using namespace blender::bke::dyntopo;
 

@@ -9,6 +9,7 @@
 #include "BLI_generic_span.hh"
 #include "BLI_generic_virtual_array.hh"
 #include "BLI_index_mask.hh"
+#include "BLI_offset_indices.hh"
 #include "BLI_task.hh"
 #include "BLI_virtual_array.hh"
 
@@ -63,6 +64,23 @@ inline void copy(const Span<T> src,
   BLI_assert(src.size() == dst.size());
   selection.foreach_index_optimized<int64_t>(GrainSize(grain_size),
                                              [&](const int64_t i) { dst[i] = src[i]; });
+}
+
+/**
+ * Fill the specified indices of the destination with the values in the source span.
+ */
+template<typename T, typename IndexT>
+inline void scatter(const Span<T> src,
+                    const Span<IndexT> indices,
+                    MutableSpan<T> dst,
+                    const int64_t grain_size = 4096)
+{
+  BLI_assert(indices.size() == src.size());
+  threading::parallel_for(indices.index_range(), grain_size, [&](const IndexRange range) {
+    for (const int64_t i : range) {
+      dst[indices[i]] = src[i];
+    }
+  });
 }
 
 /**
@@ -147,6 +165,49 @@ inline void gather(const VArray<T> &src,
   });
 }
 
+template<typename T>
+inline void gather_group_to_group(const OffsetIndices<int> src_offsets,
+                                  const OffsetIndices<int> dst_offsets,
+                                  const IndexMask &selection,
+                                  const Span<T> src,
+                                  MutableSpan<T> dst)
+{
+  selection.foreach_index(GrainSize(512), [&](const int64_t src_i, const int64_t dst_i) {
+    dst.slice(dst_offsets[dst_i]).copy_from(src.slice(src_offsets[src_i]));
+  });
+}
+
+template<typename T>
+inline void gather_to_groups(const OffsetIndices<int> dst_offsets,
+                             const IndexMask &src_selection,
+                             const Span<T> src,
+                             MutableSpan<T> dst)
+{
+  src_selection.foreach_index(GrainSize(1024), [&](const int src_i, const int dst_i) {
+    dst.slice(dst_offsets[dst_i]).fill(src[src_i]);
+  });
+}
+
+/**
+ * Copy the \a src data from the groups defined by \a src_offsets to the groups in \a dst defined
+ * by \a dst_offsets. Groups to use are masked by \a selection, and it is assumed that the
+ * corresponding groups have the same size.
+ */
+void copy_group_to_group(OffsetIndices<int> src_offsets,
+                         OffsetIndices<int> dst_offsets,
+                         const IndexMask &selection,
+                         GSpan src,
+                         GMutableSpan dst);
+template<typename T>
+void copy_group_to_group(OffsetIndices<int> src_offsets,
+                         OffsetIndices<int> dst_offsets,
+                         const IndexMask &selection,
+                         Span<T> src,
+                         MutableSpan<T> dst)
+{
+  copy_group_to_group(src_offsets, dst_offsets, selection, GSpan(src), GMutableSpan(dst));
+}
+
 /**
  * Count the number of occurrences of each index.
  * \param indices: The indices to count.
@@ -158,6 +219,9 @@ inline void gather(const VArray<T> &src,
 void count_indices(Span<int> indices, MutableSpan<int> counts);
 
 void invert_booleans(MutableSpan<bool> span);
+void invert_booleans(MutableSpan<bool> span, const IndexMask &mask);
+
+int64_t count_booleans(const VArray<bool> &varray);
 
 enum class BooleanMix {
   None,

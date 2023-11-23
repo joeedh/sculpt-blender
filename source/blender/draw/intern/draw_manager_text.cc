@@ -16,12 +16,12 @@
 #include "BLI_rect.h"
 #include "BLI_string.h"
 
-#include "BKE_editmesh.h"
+#include "BKE_editmesh.hh"
 #include "BKE_editmesh_cache.hh"
 #include "BKE_global.h"
 #include "BKE_mesh.hh"
 #include "BKE_mesh_wrapper.hh"
-#include "BKE_object.h"
+#include "BKE_object.hh"
 #include "BKE_unit.h"
 
 #include "DNA_mesh_types.h"

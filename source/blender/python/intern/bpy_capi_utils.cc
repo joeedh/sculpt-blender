@@ -19,7 +19,7 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BKE_context.h"
+#include "BKE_context.hh"
 #include "BKE_report.h"
 
 #include "BLT_translation.h"
@@ -33,7 +33,7 @@ short BPy_reports_to_error(ReportList *reports, PyObject *exception, const bool 
   report_str = BKE_reports_string(reports, RPT_ERROR);
 
   if (clear == true) {
-    BKE_reports_clear(reports);
+    BKE_reports_free(reports);
   }
 
   if (report_str) {

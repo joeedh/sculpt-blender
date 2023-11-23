@@ -57,9 +57,9 @@ Topology rake:
 #include "DNA_material_types.h"
 #include "DNA_mesh_types.h"
 
-#include "BKE_DerivedMesh.h"
+#include "BKE_DerivedMesh.hh"
 #include "BKE_ccg.h"
-#include "BKE_context.h"
+#include "BKE_context.hh"
 #include "BKE_global.h"
 #include "BKE_paint.hh"
 #include "BKE_pbvh_api.hh"
@@ -68,7 +68,7 @@ Topology rake:
 
 #include "atomic_ops.h"
 #include "bmesh.h"
-#include "bmesh_log.h"
+#include "bmesh_log.hh"
 #include "dyntopo_intern.hh"
 #include "pbvh_intern.hh"
 
@@ -305,12 +305,12 @@ void pbvh_kill_vert(PBVH *pbvh, BMVert *v, bool log_vert, bool log_edges)
         do {
           int id = BM_idmap_get_id(pbvh->bm_idmap, reinterpret_cast<BMElem *>(l->f));
           if (id != BM_ID_NONE) {
-            BM_idmap_release(pbvh->bm_idmap, (BMElem *)l->f, true);
+            BM_idmap_release(pbvh->bm_idmap, l->f, true);
           }
         } while ((l = l->radial_next) != e->l);
       }
 
-      BM_idmap_release(pbvh->bm_idmap, (BMElem *)e, true);
+      BM_idmap_release(pbvh->bm_idmap, e, true);
     } while ((e = BM_DISK_EDGE_NEXT(e, v)) != v->e);
   }
 
@@ -318,7 +318,7 @@ void pbvh_kill_vert(PBVH *pbvh, BMVert *v, bool log_vert, bool log_edges)
     BM_log_vert_removed(pbvh->header.bm, pbvh->bm_log, v);
   }
 
-  BM_idmap_release(pbvh->bm_idmap, (BMElem *)v, true);
+  BM_idmap_release(pbvh->bm_idmap, v, true);
   BM_vert_kill(pbvh->header.bm, v);
 }
 
@@ -843,7 +843,7 @@ static void pbvh_print_mem_size(PBVH *pbvh)
 
   int ptrsize = (int)sizeof(void *);
 
-  float memsize3[3] = {(float)(ptrsize * pbvh->bm_idmap->map_size) / 1024.0f / 1024.0f,
+  float memsize3[3] = {(float)(ptrsize * pbvh->bm_idmap->map.size()) / 1024.0f / 1024.0f,
                        (float)(ptrsize * pbvh->bm_idmap->freelist.capacity()) / 1024.0f / 1024.0f,
                        pbvh->bm_idmap->free_idx_map ?
                            (float)(4 * pbvh->bm_idmap->free_idx_map->capacity()) / 1024.0f /
@@ -1956,7 +1956,7 @@ namespace blender::bke::pbvh {
 
 float test_sharp_faces_bmesh(BMFace *f1, BMFace *f2, float limit)
 {
-  float angle = saacos(dot_v3v3(f1->no, f2->no));
+  float angle = math::safe_acos(dot_v3v3(f1->no, f2->no));
 
   /* Detect coincident triangles. */
   if (f1->len == 3 && test_colinear_tri(f1)) {
@@ -2400,7 +2400,8 @@ void BKE_pbvh_build_bmesh(PBVH *pbvh,
   pbvh->cd_face_area = cd_face_areas;
   pbvh->cd_vert_node_offset = cd_vert_node_offset;
   pbvh->cd_face_node_offset = cd_face_node_offset;
-  pbvh->cd_vert_mask_offset = CustomData_get_offset(&bm->vdata, CD_PAINT_MASK);
+  pbvh->cd_vert_mask_offset = CustomData_get_offset_named(
+      &bm->vdata, CD_PROP_FLOAT, ".sculpt_mask");
   pbvh->cd_boundary_flag = cd_boundary_flag;
   pbvh->cd_edge_boundary = cd_edge_boundary;
   pbvh->cd_origco = cd_origco;
@@ -3815,7 +3816,8 @@ void BKE_pbvh_update_offsets(PBVH *pbvh,
   pbvh->cd_face_node_offset = cd_face_node_offset;
   pbvh->cd_vert_node_offset = cd_vert_node_offset;
   pbvh->cd_face_area = cd_face_areas;
-  pbvh->cd_vert_mask_offset = CustomData_get_offset(&pbvh->header.bm->vdata, CD_PAINT_MASK);
+  pbvh->cd_vert_mask_offset = CustomData_get_offset_named(
+      &pbvh->header.bm->vdata, CD_PROP_FLOAT, ".sculpt_mask");
   pbvh->cd_faceset_offset = CustomData_get_offset_named(
       &pbvh->header.bm->pdata, CD_PROP_INT32, ".sculpt_face_set");
 

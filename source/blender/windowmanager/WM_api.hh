@@ -53,6 +53,7 @@ struct wmGizmo;
 struct wmGizmoMap;
 struct wmGizmoMapType;
 struct wmJob;
+struct wmJobWorkerStatus;
 struct wmOperator;
 struct wmOperatorType;
 struct wmPaintCursor;
@@ -172,6 +173,8 @@ enum eWM_CapabilitiesFlag {
   WM_CAPABILITY_CLIPBOARD_IMAGES = (1 << 4),
   /** Ability to sample a color outside of Blender windows. */
   WM_CAPABILITY_DESKTOP_SAMPLE = (1 << 5),
+  /** Support for IME input methods. */
+  WM_CAPABILITY_INPUT_IME = (1 << 6),
   /** The initial value, indicates the value needs to be set by inspecting GHOST. */
   WM_CAPABILITY_INITIALIZED = (1 << 31),
 };
@@ -591,6 +594,19 @@ void WM_report_banner_show(wmWindowManager *wm, wmWindow *win) ATTR_NONNULL(1);
  * Hide all currently displayed banners and abort their timer.
  */
 void WM_report_banners_cancel(Main *bmain);
+/** Move a whole list of reports to the WM ReportList, and show the banner.
+ *
+ * \note In case the given \a reports is a `nullptr`, or has its #RPT_OP_HOLD flag set, this
+ * function does nothing.
+ *
+ * \note The list of reports from given \a reports is moved into the list of WM's reports, so the
+ * given \a reports will be empty after calling this function. The \a reports #ReportList data
+ * itself is not freed or cleared though, and remains fully usable after this call.
+ *
+ * \params reports The #ReportList from which to move reports to the WM one, may be `nullptr`.
+ * \params wm the WindowManager to add given \a reports to. If `nullptr`, the first WM of current
+ * #G_MAIN will be used. */
+void WM_reports_from_reports_move(wmWindowManager *wm, ReportList *reports);
 void WM_report(eReportType type, const char *message);
 void WM_reportf(eReportType type, const char *format, ...) ATTR_PRINTF_FORMAT(2, 3);
 
@@ -1517,10 +1533,7 @@ void WM_jobs_customdata_set(wmJob *, void *customdata, void (*free)(void *));
 void WM_jobs_timer(wmJob *, double timestep, unsigned int note, unsigned int endnote);
 void WM_jobs_delay_start(wmJob *, double delay_time);
 
-using wm_jobs_start_callback = void (*)(void *custom_data,
-                                        bool *stop,
-                                        bool *do_update,
-                                        float *progress);
+using wm_jobs_start_callback = void (*)(void *custom_data, wmJobWorkerStatus *worker_status);
 void WM_jobs_callbacks(wmJob *,
                        wm_jobs_start_callback startjob,
                        void (*initjob)(void *),
@@ -1627,7 +1640,7 @@ void WM_draw_region_viewport_unbind(ARegion *region);
 
 /* Region drawing */
 
-void WM_draw_region_free(ARegion *region, bool hide);
+void WM_draw_region_free(ARegion *region);
 GPUViewport *WM_draw_region_get_viewport(ARegion *region);
 GPUViewport *WM_draw_region_get_bound_viewport(ARegion *region);
 

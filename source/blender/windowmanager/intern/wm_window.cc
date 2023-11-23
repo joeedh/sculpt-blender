@@ -31,7 +31,7 @@
 #include "BLT_translation.h"
 
 #include "BKE_blender_version.h"
-#include "BKE_context.h"
+#include "BKE_context.hh"
 #include "BKE_global.h"
 #include "BKE_icons.h"
 #include "BKE_layer.h"
@@ -480,40 +480,54 @@ void wm_window_close(bContext *C, wmWindowManager *wm, wmWindow *win)
 
 void wm_window_title(wmWindowManager *wm, wmWindow *win)
 {
+  if (win->ghostwin == nullptr) {
+    return;
+  }
+
   if (WM_window_is_temp_screen(win)) {
     /* Nothing to do for 'temp' windows,
      * because #WM_window_open always sets window title. */
+    return;
   }
-  else if (win->ghostwin) {
-    GHOST_WindowHandle handle = static_cast<GHOST_WindowHandle>(win->ghostwin);
 
-    std::string filepath = BKE_main_blendfile_path_from_global();
-    std::string filename = BLI_path_basename(filepath.c_str());
-    bool has_filepath = !filepath.empty();
-    bool include_directory = has_filepath && (filepath != filename) &&
-                             GHOST_SetPath(handle, filepath.c_str()) == GHOST_kFailure;
+  GHOST_WindowHandle handle = static_cast<GHOST_WindowHandle>(win->ghostwin);
 
-    std::string str;
-    str += wm->file_saved ? " " : "* ";
-    str += has_filepath ? filename : IFACE_("(Unsaved)");
-    if (G_MAIN->recovered) {
-      str += IFACE_(" (Recovered)");
-    }
+  const char *filepath = BKE_main_blendfile_path_from_global();
+  const char *filename = BLI_path_basename(filepath);
 
-    if (include_directory) {
-      str += " [" + filepath.substr(0, filepath.length() - filename.length()) + "]";
-    }
+  const bool has_filepath = filepath[0] != '\0';
+  const bool include_filepath = has_filepath && (filepath != filename) &&
+                                (GHOST_SetPath(handle, filepath) == GHOST_kFailure);
 
-    str += " - Blender ";
-    str += BKE_blender_version_string_compact();
-
-    GHOST_SetTitle(handle, str.c_str());
-
-    /* Informs GHOST of unsaved changes to set the window modified visual indicator (macOS)
-     * and to give a hint of unsaved changes for a user warning mechanism in case of OS application
-     * terminate request (e.g., OS Shortcut Alt+F4, Command+Q, (...) or session end). */
-    GHOST_SetWindowModifiedState(handle, bool(!wm->file_saved));
+  std::string str;
+  str += wm->file_saved ? " " : "* ";
+  if (has_filepath) {
+    const size_t filename_no_ext_len = BLI_path_extension_or_end(filename) - filename;
+    str.append(filename, filename_no_ext_len);
   }
+  else {
+    str += IFACE_("(Unsaved)");
+  }
+
+  if (G_MAIN->recovered) {
+    str += IFACE_(" (Recovered)");
+  }
+
+  if (include_filepath) {
+    str += " [";
+    str += filepath;
+    str += "]";
+  }
+
+  str += " - Blender ";
+  str += BKE_blender_version_string_compact();
+
+  GHOST_SetTitle(handle, str.c_str());
+
+  /* Informs GHOST of unsaved changes to set the window modified visual indicator (macOS)
+   * and to give a hint of unsaved changes for a user warning mechanism in case of OS application
+   * terminate request (e.g., OS Shortcut Alt+F4, Command+Q, (...) or session end). */
+  GHOST_SetWindowModifiedState(handle, bool(!wm->file_saved));
 }
 
 void WM_window_set_dpi(const wmWindow *win)
@@ -1690,7 +1704,7 @@ static bool wm_window_timers_process(const bContext *C, int *sleep_us_p)
      * Even though using `floor` or `round` is more responsive,
      * it causes CPU intensive loops that may run until the timer is reached, see: #111579. */
     const double microseconds = 1000000.0;
-    const double sleep_sec = (double(sleep_us) / microseconds);
+    const double sleep_sec = double(sleep_us) / microseconds;
     const double sleep_sec_next = ntime_min - time;
 
     if (sleep_sec_next < sleep_sec) {
@@ -1963,6 +1977,9 @@ eWM_CapabilitiesFlag WM_capabilities_flag()
   if (ghost_flag & GHOST_kCapabilityDesktopSample) {
     flag |= WM_CAPABILITY_DESKTOP_SAMPLE;
   }
+  if (ghost_flag & GHOST_kCapabilityInputIME) {
+    flag |= WM_CAPABILITY_INPUT_IME;
+  }
 
   return flag;
 }
@@ -2094,6 +2111,70 @@ void WM_event_timer_remove_notifier(wmWindowManager *wm, wmWindow *win, wmTimer 
 /** \} */
 
 /* -------------------------------------------------------------------- */
+/** \name Clipboard Wrappers
+ *
+ * GHOST function wrappers that support a "fake" clipboard used when simulating events.
+ * This is useful user actions can be simulated while the system is in use without the system's
+ * clipboard getting overwritten.
+ * \{ */
+
+struct {
+  char *buffers[2];
+} *g_wm_clipboard_text_simulate = nullptr;
+
+void wm_clipboard_free()
+{
+  if (g_wm_clipboard_text_simulate == nullptr) {
+    return;
+  }
+  for (int i = 0; i < ARRAY_SIZE(g_wm_clipboard_text_simulate->buffers); i++) {
+    char *buf = g_wm_clipboard_text_simulate->buffers[i];
+    if (buf) {
+      MEM_freeN(buf);
+    }
+  }
+  MEM_freeN(g_wm_clipboard_text_simulate);
+  g_wm_clipboard_text_simulate = nullptr;
+}
+
+static char *wm_clipboard_text_get_impl(bool selection)
+{
+  if (UNLIKELY(G.f & G_FLAG_EVENT_SIMULATE)) {
+    if (g_wm_clipboard_text_simulate == nullptr) {
+      return nullptr;
+    }
+    const char *buf_src = g_wm_clipboard_text_simulate->buffers[int(selection)];
+    if (buf_src == nullptr) {
+      return nullptr;
+    }
+    size_t size = strlen(buf_src) + 1;
+    char *buf = static_cast<char *>(malloc(size));
+    memcpy(buf, buf_src, size);
+    return buf;
+  }
+
+  return GHOST_getClipboard(selection);
+}
+
+static void wm_clipboard_text_set_impl(const char *buf, bool selection)
+{
+  if (UNLIKELY(G.f & G_FLAG_EVENT_SIMULATE)) {
+    if (g_wm_clipboard_text_simulate == nullptr) {
+      g_wm_clipboard_text_simulate = static_cast<decltype(g_wm_clipboard_text_simulate)>(
+          MEM_callocN(sizeof(*g_wm_clipboard_text_simulate), __func__));
+    }
+    char **buf_src_p = &(g_wm_clipboard_text_simulate->buffers[int(selection)]);
+    MEM_SAFE_FREE(*buf_src_p);
+    *buf_src_p = BLI_strdup(buf);
+    return;
+  }
+
+  GHOST_putClipboard(buf, selection);
+}
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
 /** \name Clipboard
  * \{ */
 
@@ -2107,7 +2188,7 @@ static char *wm_clipboard_text_get_ex(bool selection,
     return nullptr;
   }
 
-  char *buf = GHOST_getClipboard(selection);
+  char *buf = wm_clipboard_text_get_impl(selection);
   if (!buf) {
     *r_len = 0;
     return nullptr;
@@ -2196,10 +2277,10 @@ void WM_clipboard_text_set(const char *buf, bool selection)
     }
     *p2 = '\0';
 
-    GHOST_putClipboard(newbuf, selection);
+    wm_clipboard_text_set_impl(newbuf, selection);
     MEM_freeN(newbuf);
 #else
-    GHOST_putClipboard(buf, selection);
+    wm_clipboard_text_set_impl(buf, selection);
 #endif
   }
 }
@@ -2725,6 +2806,9 @@ bool WM_window_is_temp_screen(const wmWindow *win)
 void wm_window_IME_begin(wmWindow *win, int x, int y, int w, int h, bool complete)
 {
   BLI_assert(win);
+  if ((WM_capabilities_flag() & WM_CAPABILITY_INPUT_IME) == 0) {
+    return;
+  }
 
   /* Convert to native OS window coordinates. */
   float fac = GHOST_GetNativePixelSize(static_cast<GHOST_WindowHandle>(win->ghostwin));
@@ -2736,8 +2820,17 @@ void wm_window_IME_begin(wmWindow *win, int x, int y, int w, int h, bool complet
 
 void wm_window_IME_end(wmWindow *win)
 {
-  BLI_assert(win && win->ime_data);
+  if ((WM_capabilities_flag() & WM_CAPABILITY_INPUT_IME) == 0) {
+    return;
+  }
 
+  BLI_assert(win);
+  /* NOTE(@ideasman42): on WAYLAND a call to "begin" must be closed by an "end" call.
+   * Even if no IME events were generated (which assigned `ime_data`).
+   * TODO: check if #GHOST_EndIME can run on WIN32 & APPLE without causing problems. */
+#  if defined(WIN32) || defined(__APPLE__)
+  BLI_assert(win->ime_data);
+#  endif
   GHOST_EndIME(static_cast<GHOST_WindowHandle>(win->ghostwin));
   win->ime_data = nullptr;
   win->ime_data_is_composing = false;

@@ -16,7 +16,7 @@
 
 #include "DNA_mesh_types.h"
 
-#include "BKE_context.h"
+#include "BKE_context.hh"
 #include "BKE_dyntopo.hh"
 #include "BKE_paint.hh"
 #include "BKE_pbvh_api.hh"
@@ -205,7 +205,7 @@ static int sculpt_detail_flood_fill_run(Scene *scene,
     remesher.start();
 
     float quality = ss->cached_dyntopo.quality;
-    float time_limit = (min_ff(1.0f * (100.0f - quality + 2500.0f * quality), 2500.0f))*0.001f;
+    float time_limit = (min_ff(1.0f * (100.0f - quality + 2500.0f * quality), 2500.0f)) * 0.001f;
     float quality_time = PIL_check_seconds_timer();
 
     printf("Remesh\n");
@@ -232,7 +232,7 @@ static int sculpt_detail_flood_fill_run(Scene *scene,
     remesher.finish();
 
     /* Push a new subentry. */
-    BM_log_entry_add_ex(ss->bm, ss->bm_log, true);
+    BM_log_entry_add_delta_set(ss->bm, ss->bm_log);
     blender::bke::dyntopo::after_stroke(ss->pbvh, true);
 
     unlock_main_thread();
@@ -270,7 +270,7 @@ static int sculpt_detail_flood_fill_exec(bContext *C, wmOperator *op)
   BMVert *v;
 
   BM_ITER_MESH (v, &iter, bm, BM_VERTS_OF_MESH) {
-    BM_log_vert_before_modified(bm, ss->bm_log, v);
+    BM_log_vert_if_modified(bm, ss->bm_log, v);
   }
 
   double time = PIL_check_seconds_timer();
@@ -308,20 +308,17 @@ struct FloodFillJob {
 
 static FloodFillJob flood_fill_job;
 
-static void start_fill_job(void * /*custom_data*/,
-                           bool *stop,
-                           bool *do_update,
-                           float * /*progress*/)
+static void start_fill_job(void * /*custom_data*/, wmJobWorkerStatus *status)
 {
   printf("Start detail fill job.\n");
 
   auto lock_main_thread = [&]() { WM_job_main_thread_lock_acquire(flood_fill_job.job); };
   auto unlock_main_thread = [&]() { WM_job_main_thread_lock_release(flood_fill_job.job); };
-  auto update_main_thread = [&]() { *do_update = true; };
-  auto should_stop = [&]() { return *stop; };
+  auto update_main_thread = [&]() { status->do_update = true; };
+  auto should_stop = [&]() { return status->stop; };
 
   while (true) {
-    if (*stop) {
+    if (status->stop) {
       break;
     }
 
@@ -339,7 +336,7 @@ static void start_fill_job(void * /*custom_data*/,
       break;
     }
 
-    *do_update = true;
+    status->do_update = true;
     PIL_sleep_ms(15);
   }
 
@@ -377,7 +374,7 @@ int sculpt_detail_flood_fill_invoke(bContext *C, wmOperator *op, const wmEvent *
     BMVert *v;
 
     BM_ITER_MESH (v, &iter, bm, BM_VERTS_OF_MESH) {
-      BM_log_vert_before_modified(bm, ss->bm_log, v);
+      BM_log_vert_if_modified(bm, ss->bm_log, v);
     }
 
     flood_fill_job.tool_settings = CTX_data_tool_settings(C);
@@ -387,7 +384,7 @@ int sculpt_detail_flood_fill_invoke(bContext *C, wmOperator *op, const wmEvent *
     flood_fill_job.C = C;
     flood_fill_job.scene = CTX_data_scene(C);
     flood_fill_job.depsgraph = CTX_data_ensure_evaluated_depsgraph(C);
-    ED_view3d_viewcontext_init(C, &flood_fill_job.vc, flood_fill_job.depsgraph);
+    flood_fill_job.vc = ED_view3d_viewcontext_init(C, flood_fill_job.depsgraph);
 
     if (!flood_fill_job.vc.rv3d) {
       LISTBASE_FOREACH (ScrArea *, area, &CTX_wm_screen(C)->areabase) {
@@ -586,7 +583,7 @@ static int sample_detail(bContext *C, const int event_xy[2], int mode)
 
   Depsgraph *depsgraph = CTX_data_ensure_evaluated_depsgraph(C);
   ViewContext vc;
-  ED_view3d_viewcontext_init(C, &vc, depsgraph);
+  vc = ED_view3d_viewcontext_init(C, depsgraph);
 
   Object *ob = vc.obact;
   if (ob == nullptr) {

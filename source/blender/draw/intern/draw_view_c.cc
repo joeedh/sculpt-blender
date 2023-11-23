@@ -17,6 +17,7 @@
 #include "ED_util.hh"
 #include "ED_view3d.hh"
 
+#include "GPU_debug.h"
 #include "GPU_immediate.h"
 #include "GPU_matrix.h"
 #include "GPU_shader.h"
@@ -29,7 +30,7 @@
 #include "BLI_math_rotation.h"
 
 #include "BKE_global.h"
-#include "BKE_object.h"
+#include "BKE_object.hh"
 #include "BKE_paint.hh"
 
 #include "view3d_intern.h"
@@ -40,12 +41,14 @@
 
 void DRW_draw_region_info()
 {
+  GPU_debug_group_begin("RegionInfo");
   const DRWContextState *draw_ctx = DRW_context_state_get();
   ARegion *region = draw_ctx->region;
 
   DRW_draw_cursor();
 
   view3d_draw_region_info(draw_ctx->evil_C, region);
+  GPU_debug_group_end();
 }
 
 /* **************************** 3D Cursor ******************************** */
@@ -109,8 +112,8 @@ void DRW_draw_cursor()
   const View3DCursor *cursor = &scene->cursor;
 
   int co[2];
-  if (!ED_view3d_project_int_global(
-          region, cursor->location, co, V3D_PROJ_TEST_NOP | V3D_PROJ_TEST_CLIP_NEAR) ==
+  if (ED_view3d_project_int_global(
+          region, cursor->location, co, V3D_PROJ_TEST_NOP | V3D_PROJ_TEST_CLIP_NEAR) !=
       V3D_PROJ_RET_OK)
   {
     return;

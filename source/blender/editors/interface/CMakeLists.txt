@@ -102,6 +102,7 @@ set(LIB
   PRIVATE bf::dna
   bf_editor_datafiles
   PRIVATE bf::intern::guardedalloc
+  PRIVATE bf::animrig
 )
 
 if(WITH_INTERNATIONAL)
@@ -116,10 +117,8 @@ if(WITH_PYTHON)
   add_definitions(-DWITH_PYTHON)
 endif()
 
-if(WIN32 OR APPLE)
-  if(WITH_INPUT_IME)
-    add_definitions(-DWITH_INPUT_IME)
-  endif()
+if(WITH_INPUT_IME)
+  add_definitions(-DWITH_INPUT_IME)
 endif()
 
 if(WITH_EXPERIMENTAL_FEATURES)

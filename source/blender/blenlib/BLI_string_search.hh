@@ -26,7 +26,8 @@ struct SearchItem {
    * given higher weight.
    */
   int main_group_id;
-  int length;
+  int main_group_length;
+  int total_length;
   int weight;
   /**
    * This is a logical time stamp, i.e. the greater it is, the more recent the item was used. The
@@ -44,6 +45,17 @@ struct RecentCache {
 };
 
 /**
+ * Sometimes every search item has multiple parts. For example, when using menu search, each nested
+ * menu is a separate part. Usually, one of those parts is highlighted in the UI and should be
+ * prioritized in the search.
+ */
+enum class MainWordsHeuristic {
+  FirstGroup,
+  LastGroup,
+  All,
+};
+
+/**
  * Non templated base class so that its methods can be implemented outside of this header.
  */
 class StringSearchBase {
@@ -51,6 +63,7 @@ class StringSearchBase {
   LinearAllocator<> allocator_;
   Vector<SearchItem> items_;
   const RecentCache *recent_cache_ = nullptr;
+  MainWordsHeuristic main_words_heuristic_;
 
  protected:
   void add_impl(StringRef str, void *user_data, int weight);
@@ -69,9 +82,10 @@ class StringSearchBase {
  */
 template<typename T> class StringSearch : private StringSearchBase {
  public:
-  StringSearch(const RecentCache *recent_cache = nullptr)
+  StringSearch(const RecentCache *recent_cache, const MainWordsHeuristic main_words_heuristic)
   {
-    this->recent_cache_ = recent_cache;
+    recent_cache_ = recent_cache;
+    main_words_heuristic_ = main_words_heuristic;
   }
 
   /**

@@ -12,15 +12,15 @@
 #include "draw_manager.h"
 #include "draw_pbvh.h"
 
-#include "BKE_curve.h"
+#include "BKE_curve.hh"
 #include "BKE_duplilist.h"
 #include "BKE_global.h"
 #include "BKE_image.h"
 #include "BKE_mesh.hh"
-#include "BKE_object.h"
+#include "BKE_object.hh"
 #include "BKE_paint.hh"
 #include "BKE_pbvh_api.hh"
-#include "BKE_volume.h"
+#include "BKE_volume.hh"
 
 /* For debug cursor position. */
 #include "WM_api.hh"
@@ -730,7 +730,7 @@ static void drw_call_obinfos_init(DRWObjectInfos *ob_infos, Object *ob)
 
 static void drw_call_culling_init(DRWCullingState *cull, Object *ob)
 {
-  const BoundBox *bbox;
+  std::optional<BoundBox> bbox;
   if (ob != nullptr && (bbox = BKE_object_boundbox_get(ob))) {
     float corner[3];
     /* Get BoundSphere center and radius from the BoundBox. */
@@ -1361,8 +1361,8 @@ static void drw_sculpt_generate_calls(DRWSculptCallbackData *scd)
   Mesh *mesh = static_cast<Mesh *>(scd->ob->data);
   BKE_pbvh_update_normals(pbvh, mesh->runtime->subdiv_ccg);
 
-  BKE_pbvh_draw_cb(pbvh,
-                   mesh,
+  BKE_pbvh_draw_cb(*mesh,
+                   pbvh,
                    update_only_visible,
                    &update_frustum,
                    &draw_frustum,

@@ -17,7 +17,7 @@
 #include "DNA_world_types.h"
 
 #include "BKE_callbacks.h"
-#include "BKE_context.h"
+#include "BKE_context.hh"
 #include "BKE_global.h"
 #include "BKE_image.h"
 #include "BKE_image_format.h"
@@ -26,7 +26,7 @@
 #include "BKE_material.h"
 #include "BKE_node.hh"
 #include "BKE_node_runtime.hh"
-#include "BKE_node_tree_update.h"
+#include "BKE_node_tree_update.hh"
 #include "BKE_report.h"
 #include "BKE_scene.h"
 #include "BKE_workspace.h"
@@ -39,6 +39,7 @@
 
 #include "DEG_depsgraph.hh"
 #include "DEG_depsgraph_build.hh"
+#include "DEG_depsgraph_debug.hh"
 #include "DEG_depsgraph_query.hh"
 
 #include "RE_engine.h"
@@ -65,7 +66,7 @@
 
 #include "IMB_imbuf_types.h"
 
-#include "NOD_composite.h"
+#include "NOD_composite.hh"
 #include "NOD_geometry.hh"
 #include "NOD_shader.h"
 #include "NOD_socket.hh"
@@ -234,6 +235,7 @@ static void compo_initjob(void *cjv)
   ViewLayer *view_layer = cj->view_layer;
 
   cj->compositor_depsgraph = DEG_graph_new(bmain, scene, view_layer, DAG_EVAL_RENDER);
+  DEG_debug_name_set(cj->compositor_depsgraph, "COMPOSITOR");
   DEG_graph_build_for_compositor_preview(cj->compositor_depsgraph, cj->ntree);
 
   /* NOTE: Don't update animation to preserve unkeyed changes, this means can not use
@@ -267,12 +269,7 @@ static void compo_progressjob(void *cjv, float progress)
 }
 
 /* Only this runs inside thread. */
-static void compo_startjob(void *cjv,
-                           /* Cannot be const, this function implements wm_jobs_start_callback.
-                            * NOLINTNEXTLINE: readability-non-const-parameter. */
-                           bool *stop,
-                           bool *do_update,
-                           float *progress)
+static void compo_startjob(void *cjv, wmJobWorkerStatus *worker_status)
 {
   CompoJob *cj = (CompoJob *)cjv;
   bNodeTree *ntree = cj->localtree;
@@ -282,9 +279,9 @@ static void compo_startjob(void *cjv,
     return;
   }
 
-  cj->stop = stop;
-  cj->do_update = do_update;
-  cj->progress = progress;
+  cj->stop = &worker_status->stop;
+  cj->do_update = &worker_status->do_update;
+  cj->progress = &worker_status->progress;
 
   ntree->runtime->test_break = compo_breakjob;
   ntree->runtime->tbh = cj;
@@ -420,7 +417,7 @@ bool composite_node_editable(bContext *C)
 
 static void send_notifiers_after_tree_change(ID *id, bNodeTree *ntree)
 {
-  WM_main_add_notifier(NC_NODE | NA_EDITED, nullptr);
+  WM_main_add_notifier(NC_NODE | NA_EDITED, id);
 
   if (ntree->type == NTREE_SHADER && id != nullptr) {
     if (GS(id->name) == ID_MA) {
@@ -851,9 +848,9 @@ namespace blender::ed::space_node {
 
 static bool socket_is_occluded(const float2 &location,
                                const bNode &node_the_socket_belongs_to,
-                               const SpaceNode &snode)
+                               const Span<bNode *> sorted_nodes)
 {
-  LISTBASE_FOREACH_BACKWARD (bNode *, node, &snode.edittree->nodes) {
+  for (bNode *node : sorted_nodes) {
     if (node == &node_the_socket_belongs_to) {
       /* Nodes after this one are underneath and can't occlude the socket. */
       return false;
@@ -1138,7 +1135,7 @@ bool node_is_previewable(const SpaceNode &snode, const bNodeTree &ntree, const b
     return false;
   }
   if (ntree.type == NTREE_SHADER) {
-    return U.experimental.use_shader_node_previews && !(node.is_frame());
+    return U.experimental.use_shader_node_previews && !node.is_frame();
   }
   return node.typeinfo->flag & NODE_PREVIEW;
 }
@@ -1173,13 +1170,14 @@ bNodeSocket *node_find_indicated_socket(SpaceNode &snode,
 
   bNodeTree &node_tree = *snode.edittree;
   node_tree.ensure_topology_cache();
-  const Span<bNode *> nodes = node_tree.all_nodes();
-  if (nodes.is_empty()) {
+
+  const Array<bNode *> sorted_nodes = tree_draw_order_calc_nodes_reversed(*snode.edittree);
+  if (sorted_nodes.is_empty()) {
     return nullptr;
   }
 
-  for (int i = nodes.index_range().last(); i >= 0; i--) {
-    bNode &node = *nodes[i];
+  for (const int i : sorted_nodes.index_range()) {
+    bNode &node = *sorted_nodes[i];
 
     BLI_rctf_init_pt_radius(&rect, cursor, size_sock_padded);
     if (!(node.flag & NODE_HIDDEN)) {
@@ -1200,13 +1198,13 @@ bNodeSocket *node_find_indicated_socket(SpaceNode &snode,
           const float2 location = sock->runtime->location;
           if (sock->flag & SOCK_MULTI_INPUT && !(node.flag & NODE_HIDDEN)) {
             if (cursor_isect_multi_input_socket(cursor, *sock)) {
-              if (!socket_is_occluded(location, node, snode)) {
+              if (!socket_is_occluded(location, node, sorted_nodes)) {
                 return sock;
               }
             }
           }
           else if (BLI_rctf_isect_pt(&rect, location.x, location.y)) {
-            if (!socket_is_occluded(location, node, snode)) {
+            if (!socket_is_occluded(location, node, sorted_nodes)) {
               return sock;
             }
           }
@@ -1218,7 +1216,7 @@ bNodeSocket *node_find_indicated_socket(SpaceNode &snode,
         if (node.is_socket_icon_drawn(*sock)) {
           const float2 location = sock->runtime->location;
           if (BLI_rctf_isect_pt(&rect, location.x, location.y)) {
-            if (!socket_is_occluded(location, node, snode)) {
+            if (!socket_is_occluded(location, node, sorted_nodes)) {
               return sock;
             }
           }

@@ -17,9 +17,10 @@
 #include "BKE_lib_id.h"
 #include "BKE_mesh.hh"
 #include "BKE_mesh_wrapper.hh"
-#include "BKE_modifier.h"
+#include "BKE_modifier.hh"
+#include "BKE_object_types.hh"
 #include "BKE_pointcloud.h"
-#include "BKE_volume.h"
+#include "BKE_volume.hh"
 
 #include "DNA_collection_types.h"
 #include "DNA_object_types.h"
@@ -205,11 +206,7 @@ std::optional<Bounds<float3>> GeometrySet::compute_boundbox_without_instances() 
     bounds = bounds::merge(bounds, pointcloud->bounds_min_max());
   }
   if (const Mesh *mesh = this->get_mesh()) {
-    Bounds<float3> mesh_bounds{float3(std::numeric_limits<float>::max()),
-                               float3(std::numeric_limits<float>::lowest())};
-    if (BKE_mesh_wrapper_minmax(mesh, mesh_bounds.min, mesh_bounds.max)) {
-      bounds = bounds::merge(bounds, {mesh_bounds});
-    }
+    bounds = bounds::merge(bounds, mesh->bounds_min_max());
   }
   if (const Volume *volume = this->get_volume()) {
     Bounds<float3> volume_bounds{float3(std::numeric_limits<float>::max()),
@@ -239,6 +236,9 @@ std::ostream &operator<<(std::ostream &stream, const GeometrySet &geometry_set)
   if (const Curves *curves = geometry_set.get_curves()) {
     parts.append(std::to_string(curves->geometry.point_num) + " control points");
     parts.append(std::to_string(curves->geometry.curve_num) + " curves");
+  }
+  if (const GreasePencil *grease_pencil = geometry_set.get_grease_pencil()) {
+    parts.append(std::to_string(grease_pencil->layers().size()) + " grease pencil layers");
   }
   if (const PointCloud *point_cloud = geometry_set.get_pointcloud()) {
     parts.append(std::to_string(point_cloud->totpoint) + " points");
@@ -602,6 +602,33 @@ void GeometrySet::attribute_foreach(const Span<GeometryComponent::Type> componen
   }
 }
 
+void GeometrySet::propagate_attributes_from_layer_to_instances(
+    const AttributeAccessor src_attributes,
+    MutableAttributeAccessor dst_attributes,
+    const AnonymousAttributePropagationInfo &propagation_info)
+{
+  src_attributes.for_all([&](const AttributeIDRef &id, const AttributeMetaData meta_data) {
+    if (id.is_anonymous() && !propagation_info.propagate(id.anonymous_id())) {
+      return true;
+    }
+    const GAttributeReader src = src_attributes.lookup(id, ATTR_DOMAIN_LAYER);
+    if (src.sharing_info && src.varray.is_span()) {
+      const AttributeInitShared init(src.varray.get_internal_span().data(), *src.sharing_info);
+      if (dst_attributes.add(id, ATTR_DOMAIN_INSTANCE, meta_data.data_type, init)) {
+        return true;
+      }
+    }
+    GSpanAttributeWriter dst = dst_attributes.lookup_or_add_for_write_only_span(
+        id, ATTR_DOMAIN_INSTANCE, meta_data.data_type);
+    if (!dst) {
+      return true;
+    }
+    array_utils::copy(src.varray, dst.span);
+    dst.finish();
+    return true;
+  });
+}
+
 void GeometrySet::gather_attributes_for_propagation(
     const Span<GeometryComponent::Type> component_types,
     const GeometryComponent::Type dst_component_type,
@@ -723,7 +750,7 @@ void GeometrySet::modify_geometry_sets(ForeachSubGeometryCallback callback)
 
 bool object_has_geometry_set_instances(const Object &object)
 {
-  const GeometrySet *geometry_set = object.runtime.geometry_set_eval;
+  const GeometrySet *geometry_set = object.runtime->geometry_set_eval;
   if (geometry_set == nullptr) {
     return false;
   }

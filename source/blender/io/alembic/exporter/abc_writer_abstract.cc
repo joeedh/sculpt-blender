@@ -6,7 +6,7 @@
 
 #include "BKE_animsys.h"
 #include "BKE_key.h"
-#include "BKE_object.h"
+#include "BKE_object.hh"
 
 #include "DNA_modifier_types.h"
 
@@ -99,7 +99,7 @@ const Imath::Box3d &ABCAbstractWriter::bounding_box() const
 
 void ABCAbstractWriter::update_bounding_box(Object *object)
 {
-  const BoundBox *bb = BKE_object_boundbox_get(object);
+  const std::optional<BoundBox> bb = BKE_object_boundbox_get(object);
 
   if (!bb) {
     if (object->type != OB_CAMERA) {

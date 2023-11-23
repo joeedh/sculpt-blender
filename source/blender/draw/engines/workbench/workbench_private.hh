@@ -40,7 +40,7 @@ class ShaderCache {
   GPUShader *prepass_shader_cache_[pipeline_type_len][geometry_type_len][shader_type_len]
                                   [lighting_type_len][2 /*clip*/] = {{{{{nullptr}}}}};
   GPUShader *resolve_shader_cache_[pipeline_type_len][lighting_type_len][2 /*cavity*/]
-                                  [2 /*curvature*/][2 /*shadow*/] = {{{{nullptr}}}};
+                                  [2 /*curvature*/][2 /*shadow*/] = {{{{{nullptr}}}}};
 };
 
 struct Material {
@@ -391,6 +391,8 @@ class ShadowPass {
             GPUTexture &depth_stencil_tx,
             /* Needed when there are opaque "In Front" objects in the scene */
             bool force_fail_method);
+
+  bool is_debug();
 };
 
 class VolumePass {
@@ -515,10 +517,6 @@ class DofPass {
 class AntiAliasingPass {
  private:
   bool enabled_ = false;
-  /* Current TAA sample index in [0..samples_len_] range. */
-  int sample_ = 0;
-  /* Total number of samples to after which TAA stops accumulating samples. */
-  int samples_len_ = 0;
   /* Weight accumulated. */
   float weight_accum_ = 0;
   /* Samples weight for this iteration. */
@@ -563,10 +561,14 @@ class AntiAliasingPass {
   void init(const SceneState &scene_state);
   void sync(const SceneState &scene_state, SceneResources &resources);
   void setup_view(View &view, const SceneState &scene_state);
-  void draw(Manager &manager,
-            View &view,
-            const SceneState &scene_state,
-            SceneResources &resources);
+  void draw(
+      Manager &manager,
+      View &view,
+      const SceneState &scene_state,
+      SceneResources &resources,
+      /** Passed directly since we may need to copy back the results from the first sample,
+       * and resources.depth_in_front_tx is only valid when mesh passes have to draw to it. */
+      GPUTexture *depth_in_front_tx);
 };
 
 }  // namespace blender::workbench

@@ -1,9 +1,9 @@
 
 msgid ""
 msgstr ""
-"Project-Id-Version: Blender 4.0.0 Beta (b'3d6713e0867a')\n"
+"Project-Id-Version: Blender 4.1.0 Alpha (b'7ce745a76b47')\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2023-10-03 09:29:22\n"
+"POT-Creation-Date: 2023-11-20 11:21:26\n"
 "PO-Revision-Date: \n"
 "Last-Translator: \n"
 "Language-Team: \n"
@@ -272,6 +272,10 @@ msgstr "Ilmoitus"
 
 msgid "Full"
 msgstr "Täysi"
+
+
+msgid "Auto"
+msgstr "Automaattinen"
 
 
 msgid "Fribidi Library"
@@ -1080,10 +1084,6 @@ msgstr "Vapaa"
 
 msgid "Aligned"
 msgstr "Linjattu"
-
-
-msgid "Auto"
-msgstr "Automaattinen"
 
 
 msgid "Handle 2"
@@ -4661,6 +4661,10 @@ msgid "Auto-Masking Strokes"
 msgstr "Automaattinen maskauspiirto"
 
 
+msgid "Active Grease Pencil layer"
+msgstr "Aktiivinen öljykynän taso"
+
+
 msgid "Push"
 msgstr "Työnnä"
 
@@ -4679,6 +4683,10 @@ msgstr "Normaalit"
 
 msgid "Layers"
 msgstr "Tasot"
+
+
+msgid "Corner"
+msgstr "Kulma"
 
 
 msgid "Sculpt"
@@ -6651,6 +6659,10 @@ msgid "Default Attribute"
 msgstr "Oletusominaisuus"
 
 
+msgid "Layer Selection"
+msgstr "Tasovalinta"
+
+
 msgid "Active Node"
 msgstr "Aktiivinen noodi"
 
@@ -6731,10 +6743,6 @@ msgid "Export cameras"
 msgstr "Vie kamerat"
 
 
-msgid "Export vertex colors with meshes"
-msgstr "Vie kärkien värit muotojen kanssa"
-
-
 msgid "Lighting Mode"
 msgstr "Valotustila"
 
@@ -6761,10 +6769,6 @@ msgstr "Objektiasetukset"
 
 msgid "Animation settings"
 msgstr "Animaatioasetukset"
-
-
-msgid "Material Groups"
-msgstr "Materiaaliryhmät"
 
 
 msgctxt "Operator"
@@ -7056,10 +7060,6 @@ msgid "Active Layer"
 msgstr "Aktiivinen taso"
 
 
-msgid "Active Grease Pencil layer"
-msgstr "Aktiivinen öljykynän taso"
-
-
 msgctxt "Operator"
 msgid "Add New Layer"
 msgstr "Lisää uusi taso"
@@ -7312,6 +7312,10 @@ msgid "Sigma"
 msgstr "Sigma"
 
 
+msgid "Flat"
+msgstr "Tasainen"
+
+
 msgid "Invert alpha channel"
 msgstr "Käännä alfa-kanava"
 
@@ -7433,14 +7437,6 @@ msgstr "Pikselin koko"
 
 msgid "3D"
 msgstr "3D"
-
-
-msgid "Flat"
-msgstr "Tasainen"
-
-
-msgid "Corner"
-msgstr "Kulma"
 
 
 msgid "Order U"
@@ -8751,38 +8747,6 @@ msgid "Undefined Type"
 msgstr "Määrittelemätön tyyppi"
 
 
-msgid "Micrometers"
-msgstr "Mikrometrit"
-
-
-msgid "Feet"
-msgstr "Jalat"
-
-
-msgid "Inches"
-msgstr "Tuumat"
-
-
-msgid "Tonnes"
-msgstr "Tonnit"
-
-
-msgid "100 Kilograms"
-msgstr "100 kilogrammaa"
-
-
-msgid "Hours"
-msgstr "Tunnit"
-
-
-msgid "Minutes"
-msgstr "Minuuti"
-
-
-msgid "Microseconds"
-msgstr "Mikrosekunnit"
-
-
 msgid "Error writing frame"
 msgstr "Virhe kirjoittaessa kehystä"
 
@@ -9283,6 +9247,10 @@ msgid "Grouping"
 msgstr "Ryhmittäminen"
 
 
+msgid "Material Groups"
+msgstr "Materiaaliryhmät"
+
+
 msgid "Data Types"
 msgstr "Tietotyypit"
 
@@ -9751,16 +9719,16 @@ msgid "Height:"
 msgstr "Korkeus:"
 
 
-msgid "File path"
-msgstr "Tiedostopolku"
-
-
 msgid "Today"
 msgstr "Tänään"
 
 
 msgid "Yesterday"
 msgstr "Eilen"
+
+
+msgid "File path"
+msgstr "Tiedostopolku"
 
 
 msgid "Cancel"
@@ -9929,10 +9897,6 @@ msgstr "kirjoita"
 
 msgid "remove"
 msgstr "poista"
-
-
-msgid "Cannot ungroup"
-msgstr "Ryhmitystä ei voida purkaa"
 
 
 msgid "Not inside node group"
@@ -10280,10 +10244,6 @@ msgstr "Käyräobjekti"
 
 msgid "Generate Data Layers"
 msgstr "Luo tietotasoja"
-
-
-msgid "Layer Selection"
-msgstr "Tasovalinta"
 
 
 msgid "Layer Mapping"

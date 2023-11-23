@@ -25,7 +25,7 @@
 #include "PIL_time.h"
 #include "atomic_ops.h"
 
-#include "BKE_customdata.h"
+#include "BKE_customdata.hh"
 #include "BKE_dyntopo.hh"
 #include "BKE_paint.hh"
 #include "BKE_pbvh_api.hh"
@@ -33,7 +33,7 @@
 
 #include "../../bmesh/intern/bmesh_collapse.hh"
 #include "bmesh.h"
-#include "bmesh_log.h"
+#include "bmesh_log.hh"
 
 #include "dyntopo_intern.hh"
 #include "pbvh_intern.hh"
@@ -65,22 +65,22 @@ template<typename T = BMVert> static void check_new_elem_id(T *elem, PBVH *pbvh)
 {
   int id = BM_ELEM_CD_GET_INT(elem, pbvh->bm_idmap->cd_id_off[int(elem->head.htype)]);
   if (id != BM_ID_NONE) {
-    BMElem *existing = id < pbvh->bm_idmap->map_size ? BM_idmap_lookup(pbvh->bm_idmap, id) :
-                                                       nullptr;
+    T *existing = id < pbvh->bm_idmap->map.size() ? BM_idmap_lookup<T>(pbvh->bm_idmap, id) :
+                                                    nullptr;
 
     if (existing) {
-      BM_idmap_check_assign(pbvh->bm_idmap, reinterpret_cast<BMElem *>(elem));
+      BM_idmap_check_assign(pbvh->bm_idmap, elem);
       BM_idmap_release(pbvh->bm_idmap, existing, true);
     }
 
-    BM_idmap_assign(pbvh->bm_idmap, reinterpret_cast<BMElem *>(elem), id);
+    BM_idmap_assign(pbvh->bm_idmap, elem, id);
 
     if (existing) {
       BM_idmap_check_assign(pbvh->bm_idmap, existing);
     }
   }
   else {
-    BM_idmap_check_assign(pbvh->bm_idmap, reinterpret_cast<BMElem *>(elem));
+    BM_idmap_check_assign(pbvh->bm_idmap, elem);
   }
 }
 
@@ -424,88 +424,116 @@ bool pbvh_bmesh_collapse_edge_uvs(
   return snap;
 }
 
-class DyntopoCollapseCallbacks {
-  PBVH *pbvh;
-  BMesh *bm;
+static void on_vert_kill(void *customdata, BMVert *v)
+{
+  PBVH *pbvh = static_cast<PBVH *>(customdata);
+  BMesh *bm = pbvh->header.bm;
 
- public:
-  DyntopoCollapseCallbacks(PBVH *pbvh_) : pbvh(pbvh_), bm(pbvh_->header.bm) {}
+  BM_log_vert_removed(bm, pbvh->bm_log, v);
+  pbvh_bmesh_vert_remove(pbvh, v);
+  BM_idmap_release(pbvh->bm_idmap, v, false);
+}
 
-  inline void on_vert_kill(BMVert *v)
-  {
-    BM_log_vert_removed(bm, pbvh->bm_log, v);
-    pbvh_bmesh_vert_remove(pbvh, v);
-    BM_idmap_release(pbvh->bm_idmap, reinterpret_cast<BMElem *>(v), false);
-  }
-  inline void on_edge_kill(BMEdge *e)
-  {
-    dyntopo_add_flag(pbvh, e->v1, SCULPTFLAG_NEED_VALENCE);
-    dyntopo_add_flag(pbvh, e->v2, SCULPTFLAG_NEED_VALENCE);
+static void on_edge_kill(void *customdata, BMEdge *e)
+{
+  PBVH *pbvh = static_cast<PBVH *>(customdata);
+  BMesh *bm = pbvh->header.bm;
+  dyntopo_add_flag(pbvh, e->v1, SCULPTFLAG_NEED_VALENCE);
+  dyntopo_add_flag(pbvh, e->v2, SCULPTFLAG_NEED_VALENCE);
 
-    BM_log_edge_removed(bm, pbvh->bm_log, e);
-    BM_idmap_release(pbvh->bm_idmap, reinterpret_cast<BMElem *>(e), false);
-  }
-  inline void on_face_kill(BMFace *f)
-  {
-    BM_log_face_removed(bm, pbvh->bm_log, f);
-    pbvh_bmesh_face_remove(pbvh, f, false, true, true);
-    BM_idmap_release(pbvh->bm_idmap, reinterpret_cast<BMElem *>(f), false);
-  }
+  BM_log_edge_removed(bm, pbvh->bm_log, e);
+  BM_idmap_release(pbvh->bm_idmap, e, false);
+}
 
-  inline void on_vert_create(BMVert *v)
-  {
-    check_new_elem_id(v, pbvh);
-    pbvh_boundary_update_bmesh(pbvh, v);
-    dyntopo_add_flag(pbvh, v, SCULPTFLAG_NEED_VALENCE);
-    BM_log_vert_added(bm, pbvh->bm_log, v);
-  }
+static void on_face_kill(void *customdata, BMFace *f)
+{
+  PBVH *pbvh = static_cast<PBVH *>(customdata);
+  BMesh *bm = pbvh->header.bm;
+  BM_log_face_removed(bm, pbvh->bm_log, f);
+  pbvh_bmesh_face_remove(pbvh, f, false, true, true);
+  BM_idmap_release(pbvh->bm_idmap, f, false);
+}
 
-  inline void on_vert_combine(BMVert *dest, BMVert *source)
-  {
-    /* Combine boundary flags. */
-    int boundflag = BM_ELEM_CD_GET_INT(source, pbvh->cd_boundary_flag);
-    BM_ELEM_CD_SET_INT(dest, pbvh->cd_boundary_flag, boundflag);
+static void on_vert_create(void *customdata, BMVert *v)
+{
+  PBVH *pbvh = static_cast<PBVH *>(customdata);
+  BMesh *bm = pbvh->header.bm;
+  check_new_elem_id(v, pbvh);
+  pbvh_boundary_update_bmesh(pbvh, v);
+  dyntopo_add_flag(pbvh, v, SCULPTFLAG_NEED_VALENCE);
+  BM_log_vert_added(bm, pbvh->bm_log, v);
+}
 
-    dyntopo_add_flag(pbvh, dest, SCULPTFLAG_NEED_VALENCE);
-  }
+static void on_edge_create(void *customdata, BMEdge *e)
+{
+  PBVH *pbvh = static_cast<PBVH *>(customdata);
+  BMesh *bm = pbvh->header.bm;
+  dyntopo_add_flag(pbvh, e->v1, SCULPTFLAG_NEED_VALENCE);
+  dyntopo_add_flag(pbvh, e->v2, SCULPTFLAG_NEED_VALENCE);
 
-  inline void on_edge_combine(BMEdge *dest, BMEdge *source)
-  {
-    dyntopo_add_flag(pbvh, dest->v1, SCULPTFLAG_NEED_VALENCE);
-    dyntopo_add_flag(pbvh, dest->v2, SCULPTFLAG_NEED_VALENCE);
+  check_new_elem_id(e, pbvh);
+  pbvh_boundary_update_bmesh(pbvh, e);
+  BM_log_edge_added(bm, pbvh->bm_log, e);
+}
 
-    /* Combine boundary flags. */
-    int boundflag = BM_ELEM_CD_GET_INT(source, pbvh->cd_edge_boundary);
-    BM_ELEM_CD_SET_INT(dest, pbvh->cd_edge_boundary, boundflag);
+static void on_face_create(void *customdata, BMFace *f)
+{
+  PBVH *pbvh = static_cast<PBVH *>(customdata);
+  BMesh *bm = pbvh->header.bm;
+  check_new_elem_id(f, pbvh);
+  BM_log_face_added(bm, pbvh->bm_log, f);
+  BM_ELEM_CD_SET_INT(f, pbvh->cd_face_node_offset, DYNTOPO_NODE_NONE);
+  BKE_pbvh_bmesh_add_face(pbvh, f, false, false);
 
-    pbvh_boundary_update_bmesh(pbvh, dest->v1);
-    pbvh_boundary_update_bmesh(pbvh, dest->v2);
-  }
+  BMLoop *l = f->l_first;
+  do {
+    dyntopo_add_flag(pbvh, l->v, SCULPTFLAG_NEED_VALENCE);
+    pbvh_boundary_update_bmesh(pbvh, l->v);
+    pbvh_boundary_update_bmesh(pbvh, l->e);
+  } while ((l = l->next) != f->l_first);
+}
 
-  inline void on_edge_create(BMEdge *e)
-  {
-    dyntopo_add_flag(pbvh, e->v1, SCULPTFLAG_NEED_VALENCE);
-    dyntopo_add_flag(pbvh, e->v2, SCULPTFLAG_NEED_VALENCE);
+static void on_vert_combine(void *customdata, BMVert *dest, BMVert *source)
+{
+  PBVH *pbvh = static_cast<PBVH *>(customdata);
+  /* Combine boundary flags. */
+  int boundflag = BM_ELEM_CD_GET_INT(source, pbvh->cd_boundary_flag);
+  BM_ELEM_CD_SET_INT(dest, pbvh->cd_boundary_flag, boundflag);
 
-    check_new_elem_id(e, pbvh);
-    pbvh_boundary_update_bmesh(pbvh, e);
-    BM_log_edge_added(bm, pbvh->bm_log, e);
-  }
-  inline void on_face_create(BMFace *f)
-  {
-    check_new_elem_id(f, pbvh);
-    BM_log_face_added(bm, pbvh->bm_log, f);
-    BM_ELEM_CD_SET_INT(f, pbvh->cd_face_node_offset, DYNTOPO_NODE_NONE);
-    BKE_pbvh_bmesh_add_face(pbvh, f, false, false);
+  dyntopo_add_flag(pbvh, dest, SCULPTFLAG_NEED_VALENCE);
+}
 
-    BMLoop *l = f->l_first;
-    do {
-      dyntopo_add_flag(pbvh, l->v, SCULPTFLAG_NEED_VALENCE);
-      pbvh_boundary_update_bmesh(pbvh, l->v);
-      pbvh_boundary_update_bmesh(pbvh, l->e);
-    } while ((l = l->next) != f->l_first);
-  }
-};
+static void on_edge_combine(void *customdata, BMEdge *dest, BMEdge *source)
+{
+  PBVH *pbvh = static_cast<PBVH *>(customdata);
+  dyntopo_add_flag(pbvh, dest->v1, SCULPTFLAG_NEED_VALENCE);
+  dyntopo_add_flag(pbvh, dest->v2, SCULPTFLAG_NEED_VALENCE);
+
+  /* Combine boundary flags. */
+  int boundflag = BM_ELEM_CD_GET_INT(source, pbvh->cd_edge_boundary);
+  BM_ELEM_CD_SET_INT(dest, pbvh->cd_edge_boundary, boundflag);
+
+  pbvh_boundary_update_bmesh(pbvh, dest->v1);
+  pbvh_boundary_update_bmesh(pbvh, dest->v2);
+}
+
+void dyntopo_do_collapse(PBVH *pbvh, BMEdge *e, BMVert *v_del)
+{
+
+  blender::bmesh::CollapseCallbacks cb;
+
+  cb.customdata = static_cast<void *>(pbvh);
+  cb.on_vert_kill = on_vert_kill;
+  cb.on_edge_kill = on_edge_kill;
+  cb.on_face_kill = on_face_kill;
+  cb.on_vert_create = on_vert_create;
+  cb.on_edge_create = on_edge_create;
+  cb.on_face_create = on_face_create;
+  cb.on_vert_combine = on_vert_combine;
+  cb.on_edge_combine = on_edge_combine;
+
+  blender::bmesh::join_vert_kill_edge(pbvh->header.bm, e, v_del, true, &cb);
+}
 
 /*
  * This function is rather complicated.  It has to
@@ -596,8 +624,6 @@ BMVert *EdgeQueueContext::collapse_edge(PBVH *pbvh, BMEdge *e, BMVert *v1, BMVer
     return nullptr;
   }
 
-  DyntopoCollapseCallbacks callbacks(pbvh);
-
   /* Make sure original data is initialized before we snap it. */
   BKE_pbvh_bmesh_check_origdata(ss, v_conn, pbvh->stroke_id);
   BKE_pbvh_bmesh_check_origdata(ss, v_del, pbvh->stroke_id);
@@ -613,7 +639,7 @@ BMVert *EdgeQueueContext::collapse_edge(PBVH *pbvh, BMEdge *e, BMVert *v1, BMVer
   }
 
   /* Full non-manifold collapse. */
-  blender::bmesh::join_vert_kill_edge(pbvh->header.bm, e, v_del, true, callbacks);
+  dyntopo_do_collapse(pbvh, e, v_del);
 
   if (BM_elem_is_free((BMElem *)v_conn, BM_VERT)) {
     printf("v_conn was freed\n");
@@ -678,7 +704,7 @@ BMVert *EdgeQueueContext::collapse_edge(PBVH *pbvh, BMEdge *e, BMVert *v1, BMVer
       BMVert *v2 = BM_edge_other_vert(e2, v_conn);
 
       BM_log_edge_removed(pbvh->header.bm, pbvh->bm_log, e2);
-      BM_idmap_release(pbvh->bm_idmap, reinterpret_cast<BMElem *>(e2), true);
+      BM_idmap_release(pbvh->bm_idmap, e2, true);
       BM_edge_kill(pbvh->header.bm, e2);
 
       dyntopo_add_flag(pbvh, v2, SCULPTFLAG_NEED_VALENCE | SCULPTFLAG_NEED_TRIANGULATE);
@@ -693,7 +719,7 @@ BMVert *EdgeQueueContext::collapse_edge(PBVH *pbvh, BMEdge *e, BMVert *v1, BMVer
     }
 
     BM_log_vert_removed(pbvh->header.bm, pbvh->bm_log, v_conn);
-    BM_idmap_release(pbvh->bm_idmap, reinterpret_cast<BMElem *>(v_conn), true);
+    BM_idmap_release(pbvh->bm_idmap, v_conn, true);
     BM_vert_kill(pbvh->header.bm, v_conn);
 
     return nullptr;

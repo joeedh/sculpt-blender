@@ -7,7 +7,7 @@
  *
  * Main BlenFont (BLF) API, public functions for font handling.
  *
- * Wraps OpenGL and FreeType.
+ * Wraps GPU display and FreeType.
  */
 
 #include <cmath>
@@ -324,6 +324,14 @@ void BLF_disable(int fontid, int option)
   }
 }
 
+void BLF_character_weight(int fontid, int weight)
+{
+  FontBLF *font = blf_get(fontid);
+  if (font) {
+    font->char_weight = weight;
+  }
+}
+
 void BLF_aspect(int fontid, float x, float y, float z)
 {
   FontBLF *font = blf_get(fontid);
@@ -521,7 +529,7 @@ void BLF_batch_draw_end()
   g_batch.enabled = false;
 }
 
-static void blf_draw_gl__start(const FontBLF *font)
+static void blf_draw_gpu__start(const FontBLF *font)
 {
   /*
    * The pixmap alignment hack is handle
@@ -549,7 +557,7 @@ static void blf_draw_gl__start(const FontBLF *font)
   }
 }
 
-static void blf_draw_gl__end(const FontBLF *font)
+static void blf_draw_gpu__end(const FontBLF *font)
 {
   if ((font->flags & (BLF_ROTATION | BLF_MATRIX | BLF_ASPECT)) != 0) {
     GPU_matrix_pop();
@@ -563,14 +571,14 @@ void BLF_draw_ex(int fontid, const char *str, const size_t str_len, ResultBLF *r
   BLF_RESULT_CHECK_INIT(r_info);
 
   if (font) {
-    blf_draw_gl__start(font);
+    blf_draw_gpu__start(font);
     if (font->flags & BLF_WORD_WRAP) {
       blf_font_draw__wrap(font, str, str_len, r_info);
     }
     else {
       blf_font_draw(font, str, str_len, r_info);
     }
-    blf_draw_gl__end(font);
+    blf_draw_gpu__end(font);
   }
 }
 void BLF_draw(int fontid, const char *str, const size_t str_len)
@@ -595,9 +603,9 @@ int BLF_draw_mono(int fontid, const char *str, const size_t str_len, int cwidth,
   int columns = 0;
 
   if (font) {
-    blf_draw_gl__start(font);
+    blf_draw_gpu__start(font);
     columns = blf_font_draw_mono(font, str, str_len, cwidth, tab_columns);
-    blf_draw_gl__end(font);
+    blf_draw_gpu__end(font);
   }
 
   return columns;

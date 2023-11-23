@@ -35,11 +35,14 @@ enum eShaderType {
   DEFERRED_COMBINE,
   DEFERRED_LIGHT,
   DEFERRED_CAPTURE_EVAL,
+  DEFERRED_PLANAR_EVAL,
 
   DEBUG_SURFELS,
   DEBUG_IRRADIANCE_GRID,
 
   DISPLAY_PROBE_GRID,
+  DISPLAY_PROBE_REFLECTION,
+  DISPLAY_PROBE_PLANAR,
 
   DOF_BOKEH_LUT,
   DOF_DOWNSAMPLE,
@@ -60,7 +63,14 @@ enum eShaderType {
   DOF_TILES_FLATTEN,
 
   HIZ_UPDATE,
+  HIZ_UPDATE_LAYER,
   HIZ_DEBUG,
+
+  HORIZON_DENOISE,
+  HORIZON_SCAN_DIFFUSE,
+  HORIZON_SCAN_REFLECT,
+  HORIZON_SCAN_REFRACT,
+  HORIZON_SETUP,
 
   LIGHT_CULLING_DEBUG,
   LIGHT_CULLING_SELECT,
@@ -91,6 +101,7 @@ enum eShaderType {
   RAY_TILE_CLASSIFY,
   RAY_TILE_COMPACT,
   RAY_TRACE_FALLBACK,
+  RAY_TRACE_PLANAR,
   RAY_TRACE_SCREEN_DIFFUSE,
   RAY_TRACE_SCREEN_REFLECT,
   RAY_TRACE_SCREEN_REFRACT,
@@ -127,6 +138,7 @@ enum eShaderType {
   SURFEL_RAY,
 
   VOLUME_INTEGRATION,
+  VOLUME_OCCUPANCY_CONVERT,
   VOLUME_RESOLVE,
   VOLUME_SCATTER,
   VOLUME_SCATTER_WITH_LIGHTS,
@@ -161,8 +173,7 @@ class ShaderModule {
                                    ListBase &materials,
                                    bNodeTree *nodetree,
                                    eMaterialPipeline pipeline_type,
-                                   eMaterialGeometry geometry_type,
-                                   bool is_lookdev);
+                                   eMaterialGeometry geometry_type);
 
   void material_create_info_ammend(GPUMaterial *mat, GPUCodegenOutput *codegen);
 
