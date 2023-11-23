@@ -6275,9 +6275,7 @@ float3x3 SCULPT_create_repeat_frame(Object *ob, float4x4 viewinv, float3 normal)
   using namespace blender::math;
 
   float3 view_tan = {1.0f, 0.0f, 0.0f};
-  bool success;
-
-  float4x4 world_to_object = invert(float4x4(ob->object_to_world), success);
+  float4x4 world_to_object = float4x4(ob->world_to_object);
 
   /* Get view tangent (x axis). */
   view_tan = float3x3(viewinv * world_to_object) * view_tan;
@@ -6462,7 +6460,7 @@ static void sculpt_stroke_update_step(bContext *C,
   }
 
   if (ss->bm && do_dyntopo) {
-    if (ss->cache->stroke_distance_t - ss->cache->last_dyntopo_nodesplit_t > 0.3f) {
+    if (ss->cache->stroke_distance_t - ss->cache->last_dyntopo_nodesplit_t > 0.8f) {
       ss->cache->last_dyntopo_nodesplit_t = ss->cache->stroke_distance_t;
       blender::bke::pbvh::split_bmesh_nodes(ss->pbvh);
     }
