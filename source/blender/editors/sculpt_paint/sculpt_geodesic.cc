@@ -75,7 +75,7 @@ static bool sculpt_geodesic_mesh_test_dist_add(blender::Span<blender::float3> ve
 
   const float *co0 = vert_positions[v0];
   const float *co1 = vert_positions[v1];
-  const float *co2 = v2 != SCULPT_GEODESIC_VERTEX_NONE ? vert_positions[v2] : nullptr;
+  const float *co2 = v2 != SCULPT_GEODESIC_VERTEX_NONE ? &vert_positions[v2][0] : nullptr;
 
   float dist0;
   if (v2 != SCULPT_GEODESIC_VERTEX_NONE) {
@@ -214,9 +214,10 @@ static bool sculpt_geodesic_mesh_test_dist_add_bmesh(BMVert *v0,
 
   const float *v0co = !vert_positions.is_empty() ? vert_positions[BM_elem_index_get(v0)] : v0->co;
   const float *v1co = !vert_positions.is_empty() ? vert_positions[BM_elem_index_get(v1)] : v1->co;
-  const float *v2co = v2 ? (!vert_positions.is_empty() ? vert_positions[BM_elem_index_get(v2)] :
-                                                         v2->co) :
-                           nullptr;
+  const float *v2co = v2 ?
+                          (!vert_positions.is_empty() ? &vert_positions[BM_elem_index_get(v2)][0] :
+                                                        v2->co) :
+                          nullptr;
 
   if (BM_elem_flag_test(v0, BMESH_INITIAL_VERT_TAG)) {
     return false;
